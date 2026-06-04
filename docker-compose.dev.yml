@@ -1,0 +1,31 @@
+# Local development — spins up a Postgres instance only.
+# The Next.js app runs with `npm run dev` (hot-reload), not in Docker.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d   # start Postgres
+#   docker compose -f docker-compose.dev.yml down     # stop & remove
+#
+# DATABASE_URL for .env:
+#   DATABASE_URL="postgresql://calari:calari@localhost:5432/calari_internal"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: calari_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: calari
+      POSTGRES_PASSWORD: calari
+      POSTGRES_DB: calari_internal
+    ports:
+      - "5432:5432"
+    volumes:
+      - calari_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calari -d calari_internal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  calari_pgdata:

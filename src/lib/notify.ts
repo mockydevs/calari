@@ -1,0 +1,42 @@
+import { prisma } from "@/lib/db";
+import { Resend } from "resend";
+
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+type NotifyArgs = {
+  userId: string;
+  type: string;
+  message: string;
+  link: string;
+};
+
+/** Creates an in-app notification row and (if configured) sends an email. */
+export async function notify({ userId, type, message, link }: NotifyArgs) {
+  const notification = await prisma.notification.create({
+    data: { userId, type, message, link },
+  });
+
+  if (resend) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (user?.email) {
+      const url = `${process.env.APP_URL ?? "http://localhost:3000"}${link}`;
+      try {
+        await resend.emails.send({
+          from: process.env.EMAIL_FROM ?? "Calari Internal <noreply@calarisolutions.com>",
+          to: user.email,
+          subject: message,
+          html: `<p>${message}</p><p><a href="${url}">Open in Calari Internal</a></p>`,
+        });
+      } catch (err) {
+        console.error("notify: email send failed", err);
+      }
+    }
+  }
+
+  return notification;
+}
+
+/** Record an activity-log entry on a build. */
+export async function logActivity(buildId: string, actor: string, message: string) {
+  return prisma.activity.create({ data: { buildId, actor, message } });
+}
