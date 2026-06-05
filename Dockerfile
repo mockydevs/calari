@@ -47,10 +47,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static      ./.next/static
 # ── Prisma schema + migrations ────────────────
 COPY --from=builder --chown=nextjs:nodejs /app/prisma  ./prisma
 
-# ── Full node_modules for Prisma CLI at startup ──
-# The standalone build bundles its own deps for the Next.js server.
-# node_modules here is used only by docker-start.sh to run prisma migrate deploy.
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+# ── node_modules (full, with generated Prisma client) ──
+# Use builder's node_modules — it ran prisma generate so @prisma/client is
+# fully initialised. Also needed by docker-start.sh for prisma migrate deploy.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 # ── Startup script ────────────────────────────
 COPY --chown=nextjs:nodejs scripts/docker-start.sh ./docker-start.sh
