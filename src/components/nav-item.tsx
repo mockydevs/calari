@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import {
   Bell,
   BriefcaseBusiness,
+  CircleUserRound,
   KanbanSquare,
   KeyRound,
   LayoutDashboard,
@@ -20,6 +21,7 @@ const ICON_MAP = {
   Users,
   Settings,
   Bell,
+  CircleUserRound,
 } as const;
 
 export type NavIconName = keyof typeof ICON_MAP;

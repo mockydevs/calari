@@ -3,8 +3,9 @@ import { prisma } from "@/lib/db";
 import { NavItem } from "@/components/nav-item";
 import type { NavIconName } from "@/components/nav-item";
 import { LogOut, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
-export async function Sidebar({ user }: { user: { id: string; name: string; role: string } }) {
+export async function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null } }) {
   const unread = await prisma.notification.count({ where: { userId: user.id, read: false } });
   const isAdmin = user.role === "ADMIN";
 
@@ -13,6 +14,7 @@ export async function Sidebar({ user }: { user: { id: string; name: string; role
     { href: "/builds", label: "Builds", iconName: "BriefcaseBusiness", show: true },
     { href: "/builds/kanban", label: "Board", iconName: "KanbanSquare", show: true },
     { href: "/clients", label: "Clients", iconName: "Users", show: isAdmin },
+    { href: "/settings/profile", label: "Profile", iconName: "CircleUserRound", show: true },
     { href: "/settings/team", label: "Team", iconName: "Settings", show: isAdmin },
     { href: "/settings/ai", label: "AI Keys", iconName: "KeyRound", show: isAdmin },
   ];
@@ -59,11 +61,19 @@ export async function Sidebar({ user }: { user: { id: string; name: string; role
           <NavItem href="/notifications" label="Notifications" iconName="Bell" badge={unread} />
         </ul>
 
-        <div className="mt-3 rounded-lg border border-white/[0.08] bg-white/[0.04] p-3">
+        <Link href="/settings/profile" className="mt-3 block rounded-lg border border-white/[0.08] bg-white/[0.04] p-3 transition-colors hover:bg-white/[0.07]">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-xs font-semibold text-cyan-100 ring-1 ring-cyan-300/20">
-              {initials}
-            </span>
+            {user.image ? (
+              <span
+                aria-hidden="true"
+                className="h-9 w-9 shrink-0 rounded-full bg-cover bg-center ring-1 ring-cyan-300/20"
+                style={{ backgroundImage: `url(${user.image})` }}
+              />
+            ) : (
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-xs font-semibold text-cyan-100 ring-1 ring-cyan-300/20">
+                {initials}
+              </span>
+            )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium leading-tight text-white">{user.name}</p>
               <p className="mt-1 flex items-center gap-1.5 truncate text-xs capitalize leading-tight text-slate-400">
@@ -72,7 +82,7 @@ export async function Sidebar({ user }: { user: { id: string; name: string; role
               </p>
             </div>
           </div>
-        </div>
+        </Link>
 
         <form
           action={async () => {

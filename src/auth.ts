@@ -17,7 +17,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user || !user.active || !user.passwordHash) return null;
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
-        return { id: user.id, name: user.name, email: user.email, role: user.role };
+        return { id: user.id, name: user.name, email: user.email, image: user.image, role: user.role };
       },
     }),
   ],
@@ -26,13 +26,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id as string;
         token.role = (user as { role: "ADMIN" | "MEMBER" }).role;
+        token.image = user.image ?? null;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as "ADMIN" | "MEMBER";
+        const user = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { id: true, name: true, email: true, image: true, role: true },
+        });
+        if (user) {
+          session.user.id = user.id;
+          session.user.name = user.name;
+          session.user.email = user.email;
+          session.user.image = user.image ?? null;
+          session.user.role = user.role;
+        } else {
+          session.user.id = token.id as string;
+          session.user.role = token.role as "ADMIN" | "MEMBER";
+          session.user.image = (token.image as string | null | undefined) ?? null;
+        }
       }
       return session;
     },

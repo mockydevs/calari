@@ -5,6 +5,7 @@ import { selfSignup } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default async function SelfSignupPage() {
   const session = await auth();
@@ -58,11 +59,11 @@ export default async function SelfSignupPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" name="password" type="password" required minLength={8} autoComplete="new-password" />
+              <PasswordInput id="password" name="password" required minLength={8} autoComplete="new-password" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="confirmPassword">Confirm password</Label>
-              <Input id="confirmPassword" name="confirmPassword" type="password" required minLength={8} autoComplete="new-password" />
+              <PasswordInput id="confirmPassword" name="confirmPassword" required minLength={8} autoComplete="new-password" />
             </div>
             <Button type="submit" className="w-full">
               Submit access request
@@ -80,4 +81,3 @@ export default async function SelfSignupPage() {
     </main>
   );
 }
-
