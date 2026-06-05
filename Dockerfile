@@ -58,7 +58,7 @@ RUN chmod +x ./docker-start.sh
 
 # ── Health check ──────────────────────────────
 # Coolify & orchestrators use this to decide when the container is ready.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=5 \
     CMD wget -qO- http://localhost:3000/api/health || exit 1
 
 USER nextjs
