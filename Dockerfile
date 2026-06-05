@@ -4,6 +4,7 @@
 # Stage 1 — install all dependencies
 # ─────────────────────────────────────────────
 FROM node:22-alpine AS deps
+RUN apk add --no-cache libc6-compat openssl ca-certificates
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -12,6 +13,7 @@ RUN npm ci
 # Stage 2 — build the Next.js app
 # ─────────────────────────────────────────────
 FROM node:22-alpine AS builder
+RUN apk add --no-cache libc6-compat openssl ca-certificates
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -41,6 +43,8 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs
 
+RUN apk add --no-cache openssl ca-certificates curl tini
+
 # ── Next.js standalone build ──────────────────
 COPY --from=builder /app/public                         ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone  ./
@@ -48,6 +52,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static      ./.next/static
 
 # ── Prisma schema + migrations ────────────────
 COPY --from=builder --chown=nextjs:nodejs /app/prisma  ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 
 # ── node_modules (full, with generated Prisma client) ──
 # Use builder's node_modules — it ran prisma generate so @prisma/client is
@@ -61,10 +66,12 @@ RUN chmod +x ./docker-start.sh
 # ── Health check ──────────────────────────────
 # Coolify & orchestrators use this to decide when the container is ready.
 HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=5 \
-    CMD wget -qO- http://localhost:3000/api/health || exit 1
+    CMD curl -f http://localhost:3000/api/health || exit 1
 
 USER nextjs
 EXPOSE 3000
+
+ENTRYPOINT ["tini", "--"]
 
 # Runs migrations then starts the server
 CMD ["./docker-start.sh"]
