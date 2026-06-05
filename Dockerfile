@@ -45,15 +45,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone  ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static      ./.next/static
 
 # ── Prisma schema + migrations ────────────────
-# Required by `prisma migrate deploy` at startup
 COPY --from=builder --chown=nextjs:nodejs /app/prisma  ./prisma
 
-# ── Prisma CLI + migration engine ─────────────
-# `prisma migrate deploy` needs the CLI entry-point and the migration engine
-# binary. Both come from the Alpine-targeted build in the builder stage so
-# the platform matches the runner.
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma   ./node_modules/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma   ./node_modules/@prisma
+# ── Full node_modules for Prisma CLI at startup ──
+# The standalone build bundles its own deps for the Next.js server.
+# node_modules here is used only by docker-start.sh to run prisma migrate deploy.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 # ── Startup script ────────────────────────────
 COPY --chown=nextjs:nodejs scripts/docker-start.sh ./docker-start.sh
