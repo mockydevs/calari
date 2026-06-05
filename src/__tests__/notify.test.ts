@@ -14,10 +14,12 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("resend", () => ({
-  Resend: vi.fn().mockImplementation(() => ({
-    emails: { send: vi.fn().mockResolvedValue({ id: "email_1" }) },
-  })),
+vi.mock("nodemailer", () => ({
+  default: {
+    createTransport: vi.fn().mockReturnValue({
+      sendMail: vi.fn().mockResolvedValue({ messageId: "email_1" }),
+    }),
+  },
 }));
 
 // Import after mocks are set up
@@ -48,7 +50,7 @@ describe("notify", () => {
     expect(mockNotificationCreate).not.toHaveBeenCalled();
   });
 
-  it("does not throw when user has no email (no Resend key)", async () => {
+  it("does not throw when user has no email", async () => {
     mockUserFindUnique.mockResolvedValueOnce(null);
     await expect(
       notify({ userId: "u1", type: "BUILD_ASSIGNED", message: "msg", link: "/builds/1" })

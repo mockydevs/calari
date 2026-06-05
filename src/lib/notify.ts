@@ -1,7 +1,15 @@
+import nodemailer from "nodemailer";
 import { prisma } from "@/lib/db";
-import { Resend } from "resend";
 
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT ?? 587),
+  secure: Number(process.env.SMTP_PORT) === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 type NotifyArgs = {
   userId: string;
@@ -40,13 +48,13 @@ export async function notify({ userId, type, message, link }: NotifyArgs) {
     data: { userId, type, message, link },
   });
 
-  if (resend) {
+  if (process.env.SMTP_HOST) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (user?.email) {
       const url = `${process.env.APP_URL ?? "http://localhost:3000"}${link}`;
       try {
-        await resend.emails.send({
-          from: process.env.EMAIL_FROM ?? "Calari Internal <noreply@calarisolutions.com>",
+        await transporter.sendMail({
+          from: process.env.EMAIL_FROM ?? "Calari Internal <work@calari.tech>",
           to: user.email,
           subject: message,
           html: `<p>${message}</p><p><a href="${url}">Open in Calari Internal</a></p>`,

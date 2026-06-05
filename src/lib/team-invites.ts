@@ -1,8 +1,16 @@
 import crypto from "node:crypto";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { nanoid } from "@/lib/utils";
 
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT ?? 587),
+  secure: Number(process.env.SMTP_PORT) === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 export function createInviteToken() {
   return nanoid(32);
@@ -26,10 +34,10 @@ export async function sendTeamInviteEmail({
   name: string;
   inviteUrl: string;
 }) {
-  if (!resend) return false;
+  if (!process.env.SMTP_HOST) return false;
 
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? "Calari Internal <noreply@calarisolutions.com>",
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM ?? "Calari Internal <work@calari.tech>",
     to: email,
     subject: "You're invited to Calari Internal",
     html: `
