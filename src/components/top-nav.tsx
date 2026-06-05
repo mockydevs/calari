@@ -14,11 +14,11 @@ export async function TopNav({ user }: { user: { id: string; name: string; role:
   ];
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 shadow-sm shadow-slate-900/[0.03] backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <nav className="flex flex-wrap items-center gap-2 text-sm">
-          <Link href="/dashboard" className="mr-2 flex items-center gap-2 rounded-md px-1 py-1 font-semibold text-slate-950 transition-colors hover:text-blue-700">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-xs font-bold text-white">CI</span>
+          <Link href="/dashboard" className="mr-2 flex items-center gap-2 rounded-md px-1 py-1 font-semibold text-slate-950 transition-colors hover:text-cyan-700">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-cyan-500 to-emerald-500 text-xs font-black text-white">CI</span>
             Calari Internal
           </Link>
           {navItems.filter((item) => item.show).map((item) => {

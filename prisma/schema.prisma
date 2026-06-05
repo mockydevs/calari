@@ -44,6 +44,30 @@ enum ContactSourceType {
   OTHER
 }
 
+enum AIProvider {
+  OPENAI
+  ANTHROPIC
+  GOOGLE
+  GROQ
+  MISTRAL
+  OPENROUTER
+  OTHER
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IMPLEMENTED
+}
+
+enum ApprovalType {
+  BRIEF
+  CHANGE_REQUEST
+  DELIVERY
+  CLIENT
+}
+
 model User {
   id             String         @id @default(cuid())
   name           String
@@ -57,6 +81,14 @@ model User {
   notifications  Notification[]
   comments       Comment[]
   uploads        Document[]
+  createdApiKeys AiApiKey[]     @relation("ApiKeyCreator")
+  updatedApiKeys AiApiKey[]     @relation("ApiKeyUpdater")
+  sentInvites    TeamInvite[]   @relation("InviteSender")
+  createdChanges ChangeRequest[] @relation("ChangeCreator")
+  ownedChanges   ChangeRequest[] @relation("ChangeOwner")
+  approvals      ApprovalRecord[]
+  memorySnapshots BuildMemorySnapshot[]
+  notificationPreference NotificationPreference?
   createdAt      DateTime       @default(now())
 
   accounts Account[]
@@ -92,6 +124,12 @@ model Build {
   comments       Comment[]
   meetingNotes   MeetingNote[]
   activities     Activity[]
+  changeRequests ChangeRequest[]
+  approvals      ApprovalRecord[]
+  memorySnapshots BuildMemorySnapshot[]
+  portalFeedback ClientPortalFeedback[]
+  clientPortalEnabled Boolean    @default(false)
+  clientPortalToken   String?    @unique
   dueDate        DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -138,6 +176,8 @@ model Task {
   assigneeId   String?
   documents    Document[]
   comments     Comment[]
+  blocks       TaskDependency[] @relation("TaskBlocks")
+  blockedBy    TaskDependency[] @relation("TaskBlockedBy")
   dueDate      DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -149,6 +189,8 @@ model Document {
   url        String
   mimeType   String?
   sizeBytes  Int?
+  aiReadable Boolean  @default(false)
+  extractedText String?
   build      Build?   @relation(fields: [buildId], references: [id], onDelete: Cascade)
   buildId    String?
   task       Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -191,6 +233,77 @@ model Activity {
   createdAt DateTime @default(now())
 }
 
+model ChangeRequest {
+  id          String              @id @default(cuid())
+  title       String
+  description String
+  impact      String?
+  status      ChangeRequestStatus @default(PENDING)
+  requester   String?
+  dueDate     DateTime?
+  build       Build               @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  buildId     String
+  owner       User?               @relation("ChangeOwner", fields: [ownerId], references: [id])
+  ownerId     String?
+  createdBy   User                @relation("ChangeCreator", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([buildId, status])
+}
+
+model ApprovalRecord {
+  id        String       @id @default(cuid())
+  type      ApprovalType
+  note      String?
+  build     Build        @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  buildId   String
+  approver  User         @relation(fields: [approverId], references: [id])
+  approverId String
+  createdAt DateTime     @default(now())
+
+  @@index([buildId, type])
+}
+
+model BuildMemorySnapshot {
+  id            String   @id @default(cuid())
+  summary       String
+  openQuestions String?
+  scopeChanges  String?
+  createdByAi   Boolean  @default(false)
+  build         Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  buildId       String
+  createdBy     User?    @relation(fields: [createdById], references: [id])
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  @@index([buildId, createdAt])
+}
+
+model TaskDependency {
+  id          String @id @default(cuid())
+  blocker    Task   @relation("TaskBlocks", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockerId  String
+  blocked    Task   @relation("TaskBlockedBy", fields: [blockedId], references: [id], onDelete: Cascade)
+  blockedId  String
+  createdAt  DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+model ClientPortalFeedback {
+  id        String   @id @default(cuid())
+  name      String?
+  message   String
+  build     Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  buildId   String
+  createdAt DateTime @default(now())
+
+  @@index([buildId, createdAt])
+}
+
 model Notification {
   id        String   @id @default(cuid())
   type      String
@@ -200,6 +313,53 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id])
   userId    String
   createdAt DateTime @default(now())
+}
+
+model NotificationPreference {
+  id                 String  @id @default(cuid())
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String  @unique
+  buildAssigned      Boolean @default(true)
+  taskUpdated        Boolean @default(true)
+  followUpNotes      Boolean @default(true)
+  changeRequests     Boolean @default(true)
+  readyForReview     Boolean @default(true)
+  documentUploaded   Boolean @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model AiApiKey {
+  id             String     @id @default(cuid())
+  provider       AIProvider
+  label          String
+  encryptedKey   String
+  keyPreview     String
+  active         Boolean    @default(true)
+  createdBy      User       @relation("ApiKeyCreator", fields: [createdById], references: [id])
+  createdById    String
+  updatedBy      User?      @relation("ApiKeyUpdater", fields: [updatedById], references: [id])
+  updatedById    String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([provider, active])
+}
+
+model TeamInvite {
+  id          String    @id @default(cuid())
+  email       String
+  name        String
+  role        Role      @default(MEMBER)
+  tokenHash   String    @unique
+  acceptedAt  DateTime?
+  expiresAt   DateTime
+  invitedBy   User      @relation("InviteSender", fields: [invitedById], references: [id])
+  invitedById String
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
 }
 
 // --- Auth.js (database sessions) ---

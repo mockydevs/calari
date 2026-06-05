@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { auth } from "@/auth";
-import { TopNav } from "@/components/top-nav";
+import { Sidebar } from "@/components/sidebar";
+import { SidebarWrapper } from "@/components/sidebar-wrapper";
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -19,9 +20,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await auth();
   return (
     <html lang="en" className={plusJakarta.variable}>
-      <body className="min-h-screen bg-[#f6f8fb] text-slate-950 antialiased">
-        {session?.user ? <TopNav user={session.user} /> : null}
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <body className="min-h-screen bg-[#f5f7fb] text-slate-950 antialiased">
+        {session?.user ? (
+          <div className="flex min-h-screen">
+            <SidebarWrapper>
+              <Sidebar user={session.user} />
+            </SidebarWrapper>
+            <div className="flex min-h-screen flex-1 flex-col lg:pl-72">
+              <main className="mx-auto flex w-full max-w-[1480px] flex-1 flex-col px-4 pb-10 pt-[76px] sm:px-6 lg:px-8 lg:pt-8">
+                {children}
+              </main>
+            </div>
+          </div>
+        ) : (
+          <main className="min-h-screen">{children}</main>
+        )}
       </body>
     </html>
   );

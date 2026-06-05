@@ -10,8 +10,32 @@ type NotifyArgs = {
   link: string;
 };
 
+type PreferenceKey =
+  | "buildAssigned"
+  | "taskUpdated"
+  | "followUpNotes"
+  | "changeRequests"
+  | "readyForReview"
+  | "documentUploaded";
+
+function preferenceKeyForType(type: string): PreferenceKey | null {
+  if (type === "BUILD_ASSIGNED") return "buildAssigned";
+  if (type === "TASK_UPDATED") return "taskUpdated";
+  if (type === "MEETING_NOTE_ADDED") return "followUpNotes";
+  if (type === "CHANGE_REQUEST") return "changeRequests";
+  if (type === "READY_FOR_REVIEW" || type === "CHANGES_REQUESTED") return "readyForReview";
+  if (type === "DOCUMENT_UPLOADED") return "documentUploaded";
+  return null;
+}
+
 /** Creates an in-app notification row and (if configured) sends an email. */
 export async function notify({ userId, type, message, link }: NotifyArgs) {
+  const preferenceKey = preferenceKeyForType(type);
+  if (preferenceKey) {
+    const preferences = await prisma.notificationPreference.findUnique({ where: { userId } });
+    if (preferences && preferences[preferenceKey] === false) return null;
+  }
+
   const notification = await prisma.notification.create({
     data: { userId, type, message, link },
   });

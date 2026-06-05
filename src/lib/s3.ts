@@ -24,6 +24,18 @@ export async function getPresignedUploadUrl(key: string, contentType: string): P
   return getSignedUrl(s3, command, { expiresIn: 300 });
 }
 
+/** Upload a server-side buffer directly to storage */
+export async function uploadObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+}
+
 /** Public URL for a stored object */
 export function getPublicUrl(key: string): string {
   if (ENDPOINT) {

@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { getPresignedUploadUrl, getPublicUrl } from "@/lib/s3";
 import { prisma } from "@/lib/db";
 import { logActivity, notify } from "@/lib/notify";
+import { isAiReadableDocument } from "@/lib/document-text";
 import { nanoid } from "@/lib/utils";
 import type { Role } from "@prisma/client";
 
@@ -101,6 +102,7 @@ export async function PUT(req: Request) {
       url: publicUrl,
       mimeType: body.contentType ?? null,
       sizeBytes: body.sizeBytes ?? null,
+      aiReadable: isAiReadableDocument(body.filename, body.contentType),
       buildId: body.taskId ? null : target.build.id,
       taskId: body.taskId ?? null,
       uploaderId: session.user.id,

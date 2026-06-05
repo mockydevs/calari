@@ -1,4 +1,4 @@
-import { Building2, Plus } from "lucide-react";
+import { Building2, Plus, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/db";
 import { createClient } from "./actions";
@@ -18,62 +18,97 @@ export default async function ClientsPage() {
   });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <div className="space-y-4 lg:col-span-2">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-950">Clients</h1>
-          <p className="mt-1 text-sm text-slate-500">Manage the client records used for build intake and reporting.</p>
-        </div>
-        <Card>
-          <CardContent className="p-0">
-            {clients.length === 0 ? (
-              <p className="p-6 text-sm text-slate-500">No clients yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[580px] text-sm">
-                  <thead className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-5 py-3 font-semibold">Name</th>
-                      <th className="px-5 py-3 font-semibold">Company</th>
-                      <th className="px-5 py-3 font-semibold">Builds</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {clients.map((client) => (
-                      <tr key={client.id} className="bg-white">
-                        <td className="px-5 py-3 font-medium text-slate-950">{client.name}</td>
-                        <td className="px-5 py-3 text-slate-600">{client.company ?? "-"}</td>
-                        <td className="px-5 py-3 text-slate-600">{client._count.builds}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+    <div className="space-y-5">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">
+          Admin
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Clients</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Manage the client records used for build intake and reporting.
+        </p>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
+        <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
+          {clients.length === 0 ? (
+            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100">
+                <Users className="h-5 w-5 text-slate-400" />
               </div>
-            )}
+              <p className="mt-3 text-sm font-semibold text-slate-950">No clients yet</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Add your first client using the form.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-sm">
+                <thead className="border-b border-slate-100 bg-slate-50/80">
+                  <tr>
+                    {["Name", "Company", "Builds"].map((h) => (
+                      <th
+                        key={h}
+                        className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {clients.map((client) => (
+                    <tr key={client.id} className="transition-colors hover:bg-cyan-50/30">
+                      <td className="px-5 py-3.5 font-semibold text-slate-950">{client.name}</td>
+                      <td className="px-5 py-3.5 text-slate-600">{client.company ?? "-"}</td>
+                      <td className="px-5 py-3.5">
+                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                          {client._count.builds}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+                <Building2 className="h-4 w-4" />
+              </span>
+              Add client
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form action={createClient} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="name">Name</Label>
+                <Input id="name" name="name" required placeholder="Jane Smith" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="company">Company</Label>
+                <Input id="company" name="company" placeholder="Acme Corp" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" name="email" type="email" placeholder="jane@acme.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea id="notes" name="notes" rows={3} placeholder="Any relevant context" />
+              </div>
+              <Button type="submit" className="w-full">
+                <Plus className="h-4 w-4" />
+                Create client
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-blue-700" />
-            Add client
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form action={createClient} className="space-y-3">
-            <div className="space-y-1"><Label htmlFor="name">Name</Label><Input id="name" name="name" required /></div>
-            <div className="space-y-1"><Label htmlFor="company">Company</Label><Input id="company" name="company" /></div>
-            <div className="space-y-1"><Label htmlFor="email">Email</Label><Input id="email" name="email" type="email" /></div>
-            <div className="space-y-1"><Label htmlFor="notes">Notes</Label><Textarea id="notes" name="notes" /></div>
-            <Button type="submit" className="w-full">
-              <Plus className="h-4 w-4" />
-              Create client
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -1,22 +1,40 @@
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
-const buildColors: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-700",
-  AI_DRAFTED: "bg-violet-100 text-violet-700",
-  ASSIGNED: "bg-blue-100 text-blue-700",
-  IN_PROGRESS: "bg-amber-100 text-amber-700",
-  READY_FOR_REVIEW: "bg-indigo-100 text-indigo-700",
-  CHANGES_REQUESTED: "bg-orange-100 text-orange-700",
-  DELIVERED: "bg-emerald-100 text-emerald-700",
+interface StatusConfig {
+  dot: string;
+  bg: string;
+  text: string;
+  label: string;
+}
+
+const buildConfig: Record<string, StatusConfig> = {
+  DRAFT: { dot: "bg-slate-400", bg: "bg-slate-100", text: "text-slate-600", label: "Draft" },
+  AI_DRAFTED: { dot: "bg-violet-500", bg: "bg-violet-50", text: "text-violet-700", label: "AI Drafted" },
+  ASSIGNED: { dot: "bg-cyan-500", bg: "bg-cyan-50", text: "text-cyan-700", label: "Assigned" },
+  IN_PROGRESS: { dot: "bg-amber-500", bg: "bg-amber-50", text: "text-amber-700", label: "In Progress" },
+  READY_FOR_REVIEW: { dot: "bg-indigo-500", bg: "bg-indigo-50", text: "text-indigo-700", label: "Ready for Review" },
+  CHANGES_REQUESTED: { dot: "bg-orange-500", bg: "bg-orange-50", text: "text-orange-700", label: "Changes Requested" },
+  DELIVERED: { dot: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700", label: "Delivered" },
 };
-const taskColors: Record<string, string> = {
-  TODO: "bg-slate-100 text-slate-700",
-  IN_PROGRESS: "bg-amber-100 text-amber-700",
-  BLOCKED: "bg-red-100 text-red-700",
-  DONE: "bg-emerald-100 text-emerald-700",
+
+const taskConfig: Record<string, StatusConfig> = {
+  TODO: { dot: "bg-slate-400", bg: "bg-slate-100", text: "text-slate-600", label: "To Do" },
+  IN_PROGRESS: { dot: "bg-amber-500", bg: "bg-amber-50", text: "text-amber-700", label: "In Progress" },
+  BLOCKED: { dot: "bg-red-500", bg: "bg-red-50", text: "text-red-700", label: "Blocked" },
+  DONE: { dot: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700", label: "Done" },
 };
 
 export function StatusBadge({ status, kind = "build" }: { status: string; kind?: "build" | "task" }) {
-  const map = kind === "task" ? taskColors : buildColors;
-  return <Badge className={map[status] ?? "bg-slate-100 text-slate-700"}>{status.replace(/_/g, " ")}</Badge>;
+  const config = (kind === "task" ? taskConfig : buildConfig)[status];
+  const label = config?.label ?? status.replace(/_/g, " ");
+  const bg = config?.bg ?? "bg-slate-100";
+  const text = config?.text ?? "text-slate-600";
+  const dot = config?.dot ?? "bg-slate-400";
+
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ring-black/[0.03]", bg, text)}>
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dot)} />
+      {label}
+    </span>
+  );
 }

@@ -3,10 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockNotificationCreate = vi.fn().mockResolvedValue({ id: "notif_1" });
 const mockActivityCreate = vi.fn().mockResolvedValue({ id: "act_1" });
 const mockUserFindUnique = vi.fn().mockResolvedValue(null);
+const mockNotificationPreferenceFindUnique = vi.fn().mockResolvedValue(null);
 
 vi.mock("@/lib/db", () => ({
   prisma: {
     notification: { create: mockNotificationCreate },
+    notificationPreference: { findUnique: mockNotificationPreferenceFindUnique },
     activity: { create: mockActivityCreate },
     user: { findUnique: mockUserFindUnique },
   },
@@ -37,6 +39,13 @@ describe("notify", () => {
     mockNotificationCreate.mockResolvedValueOnce({ id: "notif_test" });
     const result = await notify({ userId: "u1", type: "TASK_UPDATED", message: "Task done", link: "/builds/1" });
     expect(result).toEqual({ id: "notif_test" });
+  });
+
+  it("skips notifications disabled in user preferences", async () => {
+    mockNotificationPreferenceFindUnique.mockResolvedValueOnce({ buildAssigned: false });
+    const result = await notify({ userId: "u1", type: "BUILD_ASSIGNED", message: "Build assigned", link: "/builds/1" });
+    expect(result).toBeNull();
+    expect(mockNotificationCreate).not.toHaveBeenCalled();
   });
 
   it("does not throw when user has no email (no Resend key)", async () => {

@@ -19,6 +19,24 @@ const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/webp",
 ]);
+const ALLOWED_EXTENSIONS = new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".txt",
+  ".csv",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+]);
+
+function extensionFor(filename: string) {
+  const index = filename.lastIndexOf(".");
+  return index === -1 ? "" : filename.slice(index).toLowerCase();
+}
 
 type Props = {
   buildId?: string;
@@ -33,8 +51,9 @@ export function DocumentUploader({ buildId, taskId, compact = false }: Props) {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
-  function onFileChange(file: File | null) {
+function onFileChange(file: File | null) {
     setMessage("");
     setError("");
     if (!file) {
@@ -46,12 +65,24 @@ export function DocumentUploader({ buildId, taskId, compact = false }: Props) {
       setError("File must be 15 MB or smaller.");
       return;
     }
-    if (file.type && !ALLOWED_TYPES.has(file.type)) {
+    if (!ALLOWED_EXTENSIONS.has(extensionFor(file.name)) && (!file.type || !ALLOWED_TYPES.has(file.type))) {
       setSelectedFile(null);
       setError("Upload a PDF, document, spreadsheet, text file, or image.");
       return;
     }
     setSelectedFile(file);
+  }
+
+  function onDrop(event: React.DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    const file = event.dataTransfer.files[0] ?? null;
+    if (file && inputRef.current) {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      inputRef.current.files = dataTransfer.files;
+    }
+    onFileChange(file);
   }
 
   async function uploadSelectedFile() {
@@ -109,18 +140,32 @@ export function DocumentUploader({ buildId, taskId, compact = false }: Props) {
   }
 
   return (
-    <div className={cn("rounded-md border border-dashed border-slate-300 bg-slate-50 p-3", compact ? "space-y-2" : "space-y-3")}>
-      <label className="flex cursor-pointer items-center gap-3 rounded-md bg-white px-3 py-3 text-sm text-slate-700 ring-1 ring-inset ring-slate-200 transition-colors hover:bg-slate-50">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+    <div className={cn("rounded-lg border border-dashed border-slate-300 bg-slate-50/80 p-3", compact ? "space-y-2" : "space-y-3")}>
+      <label
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={onDrop}
+        className={cn(
+          "flex cursor-pointer items-center gap-3 rounded-md bg-white px-3 py-3 text-sm text-slate-700 ring-1 ring-inset ring-slate-200 transition-colors duration-200 hover:bg-cyan-50/40 hover:ring-cyan-200",
+          isDragging && "bg-cyan-50/70 ring-cyan-300",
+        )}
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-cyan-50 text-cyan-700">
           <FileUp className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block font-medium text-slate-950">{selectedFile ? selectedFile.name : "Choose file"}</span>
-          <span className="block truncate text-xs text-slate-500">PDF, docs, sheets, text, or images up to 15 MB</span>
+          <span className="block font-semibold text-slate-950">
+            {selectedFile ? selectedFile.name : "Drop file here or choose file"}
+          </span>
+          <span className="block truncate text-xs text-slate-500">PDF, DOC/DOCX, sheets, text, or images up to 15 MB</span>
         </span>
         <input
           ref={inputRef}
           type="file"
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.png,.jpg,.jpeg,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv,image/png,image/jpeg,image/webp"
           className="sr-only"
           onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
         />

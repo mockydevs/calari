@@ -1,6 +1,5 @@
 import OpenAI from "openai";
-
-const client = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+import { getActiveProviderApiKey } from "@/lib/api-keys";
 
 export type AIBriefDraft = {
   goals: string;
@@ -79,10 +78,13 @@ From the client meeting notes you are given, extract a structured build plan:
 - integrations: the tools/platforms involved
 - goals: a concise summary of the outcome the client wants
 - tasks: concrete build tasks for a team member (automations, funnels, forms, integrations)
+Meeting notes may include the original kickoff plus later follow-up updates. Treat the earliest notes as the baseline build intent. Treat later notes as change requests, refinements, corrections, or decisions that supersede earlier details only when they clearly conflict. Preserve original context that has not been changed.
 Be specific and practical. If something is not mentioned, infer sensible defaults for an automation build but keep them minimal. Return only data matching the schema.`;
 
 export async function generateBriefFromNotes(notes: string): Promise<AIBriefDraft> {
-  if (!client) throw new Error("OPENAI_API_KEY is not configured");
+  const apiKey = await getActiveProviderApiKey("OPENAI");
+  if (!apiKey) throw new Error("OpenAI API key is not configured");
+  const client = new OpenAI({ apiKey });
   const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
   const completion = await client.chat.completions.create({
