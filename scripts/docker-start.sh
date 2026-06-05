@@ -1,5 +1,6 @@
 #!/bin/sh
 set -e
+export PRISMA_HIDE_UPDATE_MESSAGE=1
 
 # Run pending Prisma migrations against the external database before serving traffic.
 PRISMA="node node_modules/prisma/build/index.js"
