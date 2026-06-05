@@ -2,11 +2,13 @@
 set -e
 
 # Run pending Prisma migrations against the external database before serving traffic.
+PRISMA="node node_modules/prisma/build/index.js"
+
 if [ -d prisma/migrations ]; then
   echo "==> Baselining initial migration (safe no-op if already applied)..."
-  node node_modules/.bin/prisma migrate resolve --applied 20260606000000_init 2>/dev/null || true
+  $PRISMA migrate resolve --applied 20260606000000_init 2>/dev/null || true
   echo "==> Running database migrations..."
-  node node_modules/.bin/prisma migrate deploy
+  $PRISMA migrate deploy
   echo "==> Migrations complete."
 else
   echo "==> No migrations directory found — skipping migrate deploy."

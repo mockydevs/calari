@@ -52,9 +52,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma  ./prisma
 # `prisma migrate deploy` needs the CLI entry-point and the migration engine
 # binary. Both come from the Alpine-targeted build in the builder stage so
 # the platform matches the runner.
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma  ./node_modules/.bin/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma       ./node_modules/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma      ./node_modules/@prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma   ./node_modules/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma   ./node_modules/@prisma
 
 # ── Startup script ────────────────────────────
 COPY --chown=nextjs:nodejs scripts/docker-start.sh ./docker-start.sh
