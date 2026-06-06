@@ -63,7 +63,8 @@ The database is managed externally — connect via `DATABASE_URL`.
    | `DATABASE_URL` | External Postgres connection string |
    | `AUTH_SECRET` | Run `npx auth secret` to generate |
    | `AUTH_TRUST_HOST` | `true` |
-   | `APP_URL` | Public URL, e.g. `https://internal.calarisolutions.com` |
+   | `AUTH_URL` / `NEXTAUTH_URL` | Public auth URL, e.g. `https://work.calari.tech` |
+   | `APP_URL` / `NEXT_PUBLIC_APP_URL` | Public app URL, e.g. `https://work.calari.tech` |
    | `OPENAI_API_KEY` | AI brief generation |
    | `OPENAI_MODEL` | Defaults to `gpt-4o-mini` |
    | `RESEND_API_KEY` | Email notifications |
@@ -82,4 +83,5 @@ The database is managed externally — connect via `DATABASE_URL`.
 ### Health check
 
 Coolify's health check → `GET /api/health`.
-Returns `200 {"status":"ok","db":"ok"}` when healthy, `503` if the DB is unreachable.
+Returns `200 {"status":"ok","db":"ok"}` when healthy, or `200` with a degraded DB state
+so the proxy keeps serving the app while the database recovers.

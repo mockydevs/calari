@@ -28,7 +28,10 @@ services:
       # ── Auth ───────────────────────────────────────────────────────────────
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
-      APP_URL: ${APP_URL}
+      AUTH_URL: ${AUTH_URL:-https://work.calari.tech}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://work.calari.tech}
+      APP_URL: ${PUBLIC_APP_URL:-https://work.calari.tech}
+      NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://work.calari.tech}
 
       # ── AI (OpenAI) ────────────────────────────────────────────────────────
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
