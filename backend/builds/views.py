@@ -105,19 +105,35 @@ def _501(exc):
 
 
 # ─── Builds ───────────────────────────────────────────────────────────────────
+# Relations the detail page renders — each is a separate round-trip to the DB,
+# so we only load them for `retrieve` (and the generate-brief response), never
+# for list/mutating actions which otherwise paid the full prefetch cost.
+_DETAIL_PREFETCH = (
+    "contact_sources", "stages__manual_actions", "tasks__assignee",
+    "documents__uploader", "comments__author",
+    "change_requests__owner", "change_requests__created_by",
+    "approvals__approver", "memory_snapshots__created_by", "activities",
+)
+
+
 class BuildViewSet(viewsets.ModelViewSet):
-    queryset = Build.objects.select_related("client", "creator", "assignee").prefetch_related(
-        "contact_sources", "stages__manual_actions", "tasks__assignee",
-        "documents__uploader", "comments__author",
-        "change_requests__owner", "change_requests__created_by",
-        "approvals__approver", "memory_snapshots__created_by", "activities",
-    ).all()
+    queryset = Build.objects.select_related("client", "creator", "assignee").all()
     permission_classes = PERMS
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["status", "assignee", "client"]
     search_fields = ["title", "goals", "integrations", "client__name"]
     ordering_fields = ["created_at", "updated_at", "due_date"]
     ordering = ["-created_at"]
+
+    def _detail_queryset(self):
+        return Build.objects.select_related("client", "creator", "assignee").prefetch_related(*_DETAIL_PREFETCH)
+
+    def get_queryset(self):
+        # Only the detail view needs the full relation graph; everything else
+        # (list, assign, status, enable-portal, destroy, …) stays lean.
+        if self.action == "retrieve":
+            return self._detail_queryset()
+        return Build.objects.select_related("client", "creator", "assignee").all()
 
     def get_serializer_class(self):
         return BuildListSerializer if self.action == "list" else BuildSerializer
@@ -217,7 +233,7 @@ class BuildViewSet(viewsets.ModelViewSet):
             )
             _log(build, request.user, "AI brief generated.")
 
-        return Response(BuildSerializer(self.get_queryset().get(pk=build.pk)).data)
+        return Response(BuildSerializer(self._detail_queryset().get(pk=build.pk)).data)
 
     @action(detail=True, methods=["post"], url_path="brief-qa-check")
     def brief_qa(self, request, pk=None):

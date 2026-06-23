@@ -3,6 +3,7 @@ import { KanbanSquare, Plus, Rows3 } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { BuildStatusBadge, type BuildRow } from "./_shared";
+import { BuildDeleteButton } from "./build-row-actions";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,7 @@ export default async function BuildsPage() {
                   {["Build", "Client", "Status", "Assignee", "Updated"].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
                   ))}
+                  {isAdmin && <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -72,6 +74,13 @@ export default async function BuildsPage() {
                     <td className="px-5 py-3.5"><BuildStatusBadge status={b.status} /></td>
                     <td className="px-5 py-3.5 text-slate-600">{b.assignee_name || <span className="text-slate-400">Unassigned</span>}</td>
                     <td className="px-5 py-3.5 text-slate-400">{formatDate(b.updated_at)}</td>
+                    {isAdmin && (
+                      <td className="px-5 py-3.5">
+                        <div className="flex justify-end">
+                          <BuildDeleteButton id={b.id} title={b.title} />
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

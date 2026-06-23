@@ -4,9 +4,10 @@ import { ArrowLeft, Bot, FileText, Link2, MessageSquare, Plus, ShieldCheck, Spar
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
-  addComment, addMeetingNote, assignBuild, createChangeRequest, createTask, deleteBuild, enablePortal,
+  addComment, addMeetingNote, assignBuild, createChangeRequest, createTask, enablePortal,
   generateBrief, recordApproval, setBuildStatus, setChangeRequestStatus, updateTaskStatus, uploadDocument,
 } from "../actions";
+import { BuildDeleteButton } from "../build-row-actions";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
   TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES, type BuildDetail, type MeetingNote,
@@ -104,10 +105,9 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
             {build.client_portal_enabled && build.client_portal_token && (
               <span className="text-xs text-slate-500">Token: <code className="rounded bg-slate-100 px-1">{build.client_portal_token}</code></span>
             )}
-            <form action={deleteBuild} className="ml-auto">
-              <input type="hidden" name="id" value={id} />
-              <Button type="submit" size="sm" variant="outline" className="text-red-600 hover:bg-red-50">Delete build</Button>
-            </form>
+            <div className="ml-auto">
+              <BuildDeleteButton id={Number(id)} title={build.title} label="Delete build" />
+            </div>
           </div>
         )}
       </section>
