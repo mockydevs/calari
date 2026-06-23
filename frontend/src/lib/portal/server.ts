@@ -119,7 +119,12 @@ export async function portalLogin(
  */
 export async function djangoServerFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const { access, refresh } = await getTokens();
-  const url = `${DJANGO_API}/${path.replace(/^\/+/, "")}`;
+  // DRF requires a trailing slash; add it before any query string (APPEND_SLASH
+  // can't redirect a POST without losing the body → 500).
+  const clean = path.replace(/^\/+/, "");
+  const [base, query] = clean.split("?");
+  const withSlash = base.endsWith("/") ? base : `${base}/`;
+  const url = `${DJANGO_API}/${withSlash}${query ? `?${query}` : ""}`;
   const doFetch = (token?: string) =>
     fetch(url, {
       ...init,
