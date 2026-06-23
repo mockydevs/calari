@@ -1,6 +1,6 @@
 import { Building2, Plus, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/auth-helpers";
-import { prisma } from "@/lib/db";
+import { serverApi } from "@/lib/portal/server";
 import { createClient } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,22 @@ import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
+type DjangoClient = {
+  id: number;
+  name: string;
+  company_name: string;
+  email: string;
+  phone_number: string;
+  is_active: boolean;
+};
+
 export default async function ClientsPage() {
   await requireAdmin();
-  const clients = await prisma.client.findMany({
-    include: { _count: { select: { builds: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+  // Consumes the Django backend (projects.Clients) instead of Prisma.
+  const clients = await serverApi
+    .get<DjangoClient[] | { results: DjangoClient[] }>("projects/clients")
+    .then((r) => (Array.isArray(r) ? r : r.results ?? []))
+    .catch(() => [] as DjangoClient[]);
 
   return (
     <div className="space-y-5">
@@ -46,7 +56,7 @@ export default async function ClientsPage() {
               <table className="w-full min-w-[520px] text-sm">
                 <thead className="border-b border-slate-100 bg-slate-50/80">
                   <tr>
-                    {["Name", "Company", "Builds"].map((h) => (
+                    {["Name", "Company", "Email"].map((h) => (
                       <th
                         key={h}
                         className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
@@ -60,12 +70,8 @@ export default async function ClientsPage() {
                   {clients.map((client) => (
                     <tr key={client.id} className="transition-colors hover:bg-cyan-50/30">
                       <td className="px-5 py-3.5 font-semibold text-slate-950">{client.name}</td>
-                      <td className="px-5 py-3.5 text-slate-600">{client.company ?? "-"}</td>
-                      <td className="px-5 py-3.5">
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                          {client._count.builds}
-                        </span>
-                      </td>
+                      <td className="px-5 py-3.5 text-slate-600">{client.company_name || "-"}</td>
+                      <td className="px-5 py-3.5 text-slate-600">{client.email || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
