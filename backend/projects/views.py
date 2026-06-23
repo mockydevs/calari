@@ -817,6 +817,96 @@ def dashboard_stats(request):
     })
 
 
+@extend_schema(
+    tags=['Projects'],
+    summary='Admin dashboard — full operational overview',
+    description='Aggregate counts (projects/clients/tasks/users/blockers), staff workload, and recent records. Managers only.',
+    responses={200: OpenApiResponse(description='Admin dashboard payload')},
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_dashboard(request):
+    if not _is_manager(request.user):
+        return Response({'detail': 'Forbidden.'}, status=drf_status.HTTP_403_FORBIDDEN)
+
+    today = timezone.now().date()
+    P, T, C, U = Projects.objects, Tasks.objects, Clients.objects, User.objects
+    total_tasks = T.count()
+    done_tasks = T.filter(status='done').count()
+
+    # Per-user open-task and project counts in two grouped queries (avoids N+1).
+    open_tasks_by_user = dict(
+        T.exclude(status='done').exclude(assigned_to=None)
+         .values_list('assigned_to').annotate(c=Count('id'))
+    )
+    projects_by_user = dict(
+        P.exclude(assigned_to=None).values_list('assigned_to').annotate(c=Count('id'))
+    )
+
+    workload = [
+        {
+            'id': u.id,
+            'name': u.display_name,
+            'role': u.role,
+            'tasks': open_tasks_by_user.get(u.id, 0),
+            'projects': projects_by_user.get(u.id, 0),
+        }
+        for u in U.filter(is_active=True).order_by('-is_superuser', 'role', 'full_name')
+    ]
+
+    def proj_row(p):
+        return {
+            'id': p.id, 'name': p.name, 'status': p.status, 'priority': p.priority,
+            'client_name': p.client.name if p.client else None,
+            'assigned_to_name': p.assigned_to.display_name if p.assigned_to else None,
+            'start_date': p.start_date, 'end_date': p.end_date,
+        }
+
+    def task_row(t):
+        return {
+            'id': t.id, 'name': t.name, 'status': t.status, 'due_date': t.due_date,
+            'project_id': t.project_id, 'project_name': t.project.name if t.project else None,
+            'assigned_to_name': t.assigned_to.display_name if t.assigned_to else None,
+        }
+
+    def client_row(c):
+        return {
+            'id': c.id, 'name': c.name, 'email': c.email, 'company_name': c.company_name,
+            'is_active': c.is_active, 'created_at': c.created_at,
+        }
+
+    return Response({
+        'projects': {
+            'total': P.count(),
+            'active': P.filter(status='active').count(),
+            'completed': P.filter(status='completed').count(),
+            'on_hold': P.filter(status='on_hold').count(),
+            'cancelled': P.filter(status='cancelled').count(),
+            'overdue': P.filter(status='active', end_date__lt=today).count(),
+        },
+        'clients': {'total': C.count(), 'active': C.filter(is_active=True).count()},
+        'tasks': {
+            'total': total_tasks, 'done': done_tasks, 'pending': total_tasks - done_tasks,
+            'overdue': T.exclude(status='done').filter(due_date__lt=today).count(),
+        },
+        'users': {
+            'total': U.count(),
+            'active': U.filter(is_active=True).count(),
+            'inactive': U.filter(is_active=False).count(),
+            'superusers': U.filter(Q(role='superuser') | Q(is_superuser=True)).count(),
+            'admins': U.filter(role='admin').count(),
+        },
+        'blockers': {
+            'project_open': projectBlockers.objects.filter(resolved=False).count(),
+            'task_open': TaskBlockers.objects.filter(resolved=False).count(),
+        },
+        'staff_workload': workload,
+        'recent_projects': [proj_row(p) for p in P.select_related('client', 'assigned_to').order_by('-created_at')[:5]],
+        'recent_tasks': [task_row(t) for t in T.select_related('project', 'assigned_to').order_by('-created_at')[:5]],
+        'recent_clients': [client_row(c) for c in C.order_by('-created_at')[:5]],
+    })
+
+
 # ─────────────────────────────────────────────────────────────
 # Personalized Dashboard Data
 # ─────────────────────────────────────────────────────────────

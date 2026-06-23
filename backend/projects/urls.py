@@ -23,6 +23,7 @@ router.register(r'task-activity',        views.TaskActivityViewSet,         base
 
 urlpatterns = [
     path('dashboard-stats/', views.dashboard_stats, name='dashboard-stats'),
+    path('admin-dashboard/', views.admin_dashboard, name='admin-dashboard'),
     path('my-dashboard/', views.my_dashboard, name='my-dashboard'),
     path('my-projects/', views.my_projects, name='my-projects'),
     path('projects/<int:pk>/progress/', views.project_progress, name='project-progress'),

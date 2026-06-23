@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { PRIORITY_LABELS, PROJECT_STATUS_LABELS, type Project } from "@/lib/portal/types";
 import { cn } from "@/lib/utils";
+import { AdminDashboard, type AdminStats } from "./admin-view";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,12 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 export default async function DashboardPage() {
   const user = await requireUser();
   const isAdmin = user.role === "ADMIN";
+
+  // Admins get the full operational overview.
+  if (isAdmin) {
+    const stats = await serverApi.get<AdminStats>("projects/admin-dashboard").catch(() => null);
+    if (stats) return <AdminDashboard stats={stats} />;
+  }
 
   const projects = await serverApi
     .get<Project[] | { results: Project[] }>("projects/my-projects")
