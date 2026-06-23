@@ -36,7 +36,7 @@ export default async function LoginPage({
 
         <div className="space-y-8">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-pink-300">
               Delivery operations
             </p>
             <h1 className="mt-4 max-w-sm text-4xl font-semibold leading-tight tracking-tight">
@@ -51,7 +51,7 @@ export default async function LoginPage({
             {["AI-assisted build briefs", "Role-aware admin controls", "Task, file, and review tracking"].map(
               (item) => (
                 <div key={item} className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-300/15">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-500/10 text-pink-300 ring-1 ring-pink-300/15">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
                   {item}
@@ -64,7 +64,7 @@ export default async function LoginPage({
         <p className="text-xs text-slate-500">Calari Solutions</p>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center bg-[linear-gradient(180deg,#ecfeff_0%,#f8fafc_46%,#eef2f7_100%)] px-6 py-12 text-slate-950">
+      <div className="flex flex-1 flex-col items-center justify-center bg-[linear-gradient(180deg,#fdf2f8_0%,#f8fafc_46%,#eef2f7_100%)] px-6 py-12 text-slate-950">
         <div className="mb-8 flex items-center gap-3 lg:hidden">
           <span className="inline-flex items-center rounded-lg bg-slate-950 px-3 py-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -74,7 +74,7 @@ export default async function LoginPage({
 
         <div className="w-full max-w-md rounded-lg border border-white/80 bg-white/90 p-8 shadow-xl shadow-slate-900/10 backdrop-blur">
           <div className="mb-7">
-            <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+            <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg bg-pink-50 text-pink-700 ring-1 ring-pink-100">
               <LockKeyhole className="h-5 w-5" />
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Sign in</h1>

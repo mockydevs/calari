@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { KanbanSquare, Plus, Rows3 } from "lucide-react";
+import { ArrowUpRight, KanbanSquare, Plus, Rows3 } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { BuildStatusBadge, type BuildRow } from "./_shared";
@@ -24,7 +24,7 @@ export default async function BuildsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Delivery records</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Delivery records</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Builds</h1>
           <p className="mt-1 text-sm text-slate-600">Track each client build from draft through delivery.</p>
         </div>
@@ -34,7 +34,7 @@ export default async function BuildsPage() {
             Board view
           </Link>
           {isAdmin && (
-            <Link href="/builds/new" className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-cyan-800">
+            <Link href="/builds/new" className="inline-flex h-9 items-center gap-2 rounded-md bg-pink-700 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-pink-800">
               <Plus className="h-4 w-4" />
               New build
             </Link>
@@ -66,9 +66,12 @@ export default async function BuildsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {builds.map((b) => (
-                  <tr key={b.id} className="group transition-colors hover:bg-cyan-50/30">
+                  <tr key={b.id} className="group transition-colors hover:bg-pink-50/30">
                     <td className="px-5 py-3.5">
-                      <Link href={`/builds/${b.id}`} className="font-semibold text-slate-950 transition-colors group-hover:text-cyan-700">{b.title}</Link>
+                      <Link href={`/builds/${b.id}`} className="inline-flex items-center gap-1 font-semibold text-slate-950 transition-colors group-hover:text-pink-700">
+                        {b.title}
+                        <ArrowUpRight className="h-3.5 w-3.5 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-pink-600" />
+                      </Link>
                     </td>
                     <td className="px-5 py-3.5 text-slate-600">{b.client_name || "—"}</td>
                     <td className="px-5 py-3.5"><BuildStatusBadge status={b.status} /></td>

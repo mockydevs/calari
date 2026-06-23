@@ -27,7 +27,7 @@ export function ClientRow({ client }: { client: ClientItem }) {
         <input name="email" type="email" defaultValue={client.email} placeholder="Email" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm" />
         <div className="flex items-center gap-1.5">
           <input type="hidden" name="phone" value={client.phone_number} />
-          <button type="submit" className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-cyan-600 text-white hover:bg-cyan-700" aria-label="Save"><Check className="h-4 w-4" /></button>
+          <button type="submit" className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-pink-600 text-white hover:bg-pink-700" aria-label="Save"><Check className="h-4 w-4" /></button>
           <button type="button" onClick={() => setEditing(false)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" aria-label="Cancel"><X className="h-4 w-4" /></button>
         </div>
       </form>
@@ -35,12 +35,12 @@ export function ClientRow({ client }: { client: ClientItem }) {
   }
 
   return (
-    <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 px-5 py-3.5 transition-colors hover:bg-cyan-50/30">
+    <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 px-5 py-3.5 transition-colors hover:bg-pink-50/30">
       <span className="font-semibold text-slate-950">{client.name}</span>
       <span className="text-slate-600">{client.company_name || "—"}</span>
       <span className="text-slate-600">{client.email || "—"}</span>
       <div className="flex items-center gap-1.5">
-        <button onClick={() => setEditing(true)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-cyan-50 hover:text-cyan-700" aria-label="Edit"><Pencil className="h-4 w-4" /></button>
+        <button onClick={() => setEditing(true)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-pink-50 hover:text-pink-700" aria-label="Edit"><Pencil className="h-4 w-4" /></button>
         <form action={deleteClient}>
           <input type="hidden" name="id" value={client.id} />
           <button

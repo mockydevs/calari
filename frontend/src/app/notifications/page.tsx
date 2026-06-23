@@ -47,7 +47,7 @@ export default async function NotificationsPage() {
     <div className="mx-auto w-full max-w-3xl space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Inbox</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Inbox</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Notifications</h1>
           <p className="mt-1 text-sm text-slate-600">
             {unreadCount > 0
@@ -81,7 +81,7 @@ export default async function NotificationsPage() {
                 type="checkbox"
                 name={name}
                 defaultChecked={preferences[name]}
-                className="h-4 w-4 rounded border-slate-300 text-cyan-700"
+                className="h-4 w-4 rounded border-slate-300 text-pink-700"
               />
               {label}
             </label>
@@ -106,11 +106,11 @@ export default async function NotificationsPage() {
             {items.map((n) => (
               <li
                 key={n.id}
-                className={`flex items-start justify-between gap-4 px-5 py-4 transition-colors hover:bg-cyan-50/30 ${!n.read ? "bg-cyan-50/40" : ""}`}
+                className={`flex items-start justify-between gap-4 px-5 py-4 transition-colors hover:bg-pink-50/30 ${!n.read ? "bg-pink-50/40" : ""}`}
               >
                 <div className="flex min-w-0 items-start gap-3">
-                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${!n.read ? "bg-cyan-600" : "bg-transparent"}`} />
-                  <Link href={n.link || "#"} className="text-sm font-medium text-slate-800 transition-colors hover:text-cyan-700">
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${!n.read ? "bg-pink-600" : "bg-transparent"}`} />
+                  <Link href={n.link || "#"} className="text-sm font-medium text-slate-800 transition-colors hover:text-pink-700">
                     {n.message}
                   </Link>
                 </div>

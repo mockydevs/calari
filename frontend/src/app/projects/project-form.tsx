@@ -13,7 +13,7 @@ import {
 export type Option = { id: number; name: string };
 
 const selectCls =
-  "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/30";
+  "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30";
 
 export function ProjectFormButton({
   clients,
@@ -41,7 +41,7 @@ export function ProjectFormButton({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex h-10 items-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-cyan-800"
+          className="inline-flex h-10 items-center gap-2 rounded-md bg-pink-700 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-pink-800"
         >
           <Plus className="h-4 w-4" /> New project
         </button>
@@ -55,7 +55,7 @@ export function ProjectFormButton({
           <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
-                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
                   <Plus className="h-4 w-4" />
                 </span>
                 {isEdit ? "Edit project" : "New project"}

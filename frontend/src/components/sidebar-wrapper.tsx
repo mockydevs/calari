@@ -22,7 +22,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-emerald-500 text-xs font-black text-white shadow-sm">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-pink-500 to-emerald-500 text-xs font-black text-white shadow-sm">
             CI
           </span>
           <span className="text-sm font-semibold text-slate-950">Calari Internal</span>

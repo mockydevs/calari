@@ -19,17 +19,18 @@ export default async function ProfilePage() {
   const initials = name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-5">
+    <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Account</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Account</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Profile</h1>
         <p className="mt-1 text-sm text-slate-600">Your account details and password.</p>
       </div>
 
+      <div className="grid items-start gap-5 lg:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
               <UserRound className="h-4 w-4" />
             </span>
             Profile details
@@ -37,13 +38,13 @@ export default async function ProfilePage() {
         </CardHeader>
         <CardContent>
           <div className="mb-5 flex items-center gap-4">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-50 text-sm font-semibold text-cyan-700 ring-1 ring-cyan-100">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-50 text-sm font-semibold text-pink-700 ring-1 ring-pink-100">
               {initials}
             </span>
             <div>
               <p className="text-sm font-semibold text-slate-950">{name}</p>
               <p className="text-xs text-slate-500">{me?.email || appUser.email}</p>
-              <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-cyan-700">{appUser.role}</p>
+              <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-pink-700">{appUser.role}</p>
             </div>
           </div>
           <form action={updateProfile} className="space-y-4">
@@ -66,7 +67,7 @@ export default async function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
               <LockKeyhole className="h-4 w-4" />
             </span>
             Change password
@@ -93,6 +94,7 @@ export default async function ProfilePage() {
           </form>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

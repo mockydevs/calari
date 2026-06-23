@@ -115,7 +115,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       {/* AI Brief */}
       <Panel
         title="Brief"
-        icon={<Sparkles className="h-4 w-4 text-cyan-700" />}
+        icon={<Sparkles className="h-4 w-4 text-pink-700" />}
         action={isAdmin && (
           <form action={generateBrief}>
             <input type="hidden" name="buildId" value={id} />
@@ -171,7 +171,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       </Panel>
 
       {/* Tasks */}
-      <Panel title="Tasks" icon={<FileText className="h-4 w-4 text-cyan-700" />}>
+      <Panel title="Tasks" icon={<FileText className="h-4 w-4 text-pink-700" />}>
         {tasks.length === 0 ? <p className="text-sm text-slate-500">No tasks yet.</p> : (
           <ul className="divide-y divide-slate-100">
             {tasks.map((t) => (
@@ -195,7 +195,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       </Panel>
 
       {/* Change requests */}
-      <Panel title="Change requests" icon={<MessageSquare className="h-4 w-4 text-cyan-700" />}>
+      <Panel title="Change requests" icon={<MessageSquare className="h-4 w-4 text-pink-700" />}>
         {changeRequests.length === 0 ? <p className="text-sm text-slate-500">No change requests.</p> : (
           <ul className="space-y-2">{changeRequests.map((c) => (
             <li key={c.id} className="rounded-md border border-slate-200 p-3">
@@ -222,7 +222,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       </Panel>
 
       {/* Approvals */}
-      <Panel title="Approvals" icon={<ShieldCheck className="h-4 w-4 text-cyan-700" />}>
+      <Panel title="Approvals" icon={<ShieldCheck className="h-4 w-4 text-pink-700" />}>
         {approvals.length === 0 ? <p className="text-sm text-slate-500">No approvals recorded.</p> : (
           <ul className="space-y-1.5">{approvals.map((a) => (
             <li key={a.id} className="flex items-center justify-between text-sm">
@@ -242,11 +242,11 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       </Panel>
 
       {/* Files */}
-      <Panel title="Files" icon={<FileText className="h-4 w-4 text-cyan-700" />}>
+      <Panel title="Files" icon={<FileText className="h-4 w-4 text-pink-700" />}>
         {documents.length === 0 ? <p className="text-sm text-slate-500">No files.</p> : (
           <ul className="space-y-1.5">{documents.map((d) => (
             <li key={d.id} className="flex items-center justify-between text-sm">
-              <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-cyan-700 hover:underline">{d.filename}</a>
+              <a href={d.url} target="_blank" rel="noreferrer" className="font-medium text-pink-700 hover:underline">{d.filename}</a>
               <span className="text-xs text-slate-400">{d.uploaded_by_name} · {formatDate(d.created_at)}</span>
             </li>
           ))}</ul>
@@ -259,7 +259,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       </Panel>
 
       {/* Comments */}
-      <Panel title="Comments" icon={<MessageSquare className="h-4 w-4 text-cyan-700" />}>
+      <Panel title="Comments" icon={<MessageSquare className="h-4 w-4 text-pink-700" />}>
         {comments.length === 0 ? <p className="text-sm text-slate-500">No comments.</p> : (
           <ul className="space-y-3">{comments.map((c) => (
             <li key={c.id} className="text-sm">
@@ -277,7 +277,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
 
       {/* Activity */}
       {activities.length > 0 && (
-        <Panel title="Activity" icon={<FileText className="h-4 w-4 text-cyan-700" />}>
+        <Panel title="Activity" icon={<FileText className="h-4 w-4 text-pink-700" />}>
           <ul className="space-y-1.5">{activities.map((a) => (
             <li key={a.id} className="flex items-center justify-between text-xs">
               <span className="text-slate-700"><span className="font-medium">{a.actor}</span> {a.message}</span>

@@ -16,7 +16,7 @@ type DInvite = { id: number; name: string; email: string; role: string; expires_
 
 const ROLE_STYLES: Record<string, string> = {
   superuser: "bg-violet-50 text-violet-700",
-  admin: "bg-cyan-50 text-cyan-700",
+  admin: "bg-pink-50 text-pink-700",
   employee: "bg-slate-100 text-slate-600",
   finance: "bg-amber-50 text-amber-700",
 };
@@ -36,7 +36,7 @@ export default async function TeamPage() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Admin</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Admin</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Team</h1>
         <p className="mt-1 text-sm text-slate-600">Invite team members and manage access.</p>
       </div>
@@ -84,7 +84,7 @@ export default async function TeamPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {users.map((u) => (
-                      <tr key={u.id} className="hover:bg-cyan-50/30">
+                      <tr key={u.id} className="hover:bg-pink-50/30">
                         <td className="px-5 py-3.5 font-semibold text-slate-950">{u.full_name || u.username}</td>
                         <td className="px-5 py-3.5 text-slate-600">{u.email}</td>
                         <td className="px-5 py-3.5">
@@ -115,7 +115,7 @@ export default async function TeamPage() {
 
           <section className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-4">
-              <MailPlus className="h-4 w-4 text-cyan-700" />
+              <MailPlus className="h-4 w-4 text-pink-700" />
               <h2 className="text-sm font-semibold text-slate-950">Outstanding invites</h2>
             </div>
             {invites.length === 0 ? (
@@ -128,7 +128,7 @@ export default async function TeamPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {invites.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-cyan-50/30">
+                      <tr key={inv.id} className="hover:bg-pink-50/30">
                         <td className="px-5 py-3.5"><p className="font-semibold text-slate-950">{inv.name}</p><p className="text-xs text-slate-500">{inv.email}</p></td>
                         <td className="px-5 py-3.5 capitalize text-slate-600">{inv.role}</td>
                         <td className="px-5 py-3.5 text-slate-500">{formatDate(inv.expires_at)}</td>
@@ -150,7 +150,7 @@ export default async function TeamPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100"><MailPlus className="h-4 w-4" /></span>
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100"><MailPlus className="h-4 w-4" /></span>
               Invite member
             </CardTitle>
           </CardHeader>
@@ -162,7 +162,7 @@ export default async function TeamPage() {
                 <Label htmlFor="role">Role</Label>
                 <Select id="role" name="role" defaultValue="MEMBER"><option value="MEMBER">Member</option><option value="ADMIN">Admin</option></Select>
               </div>
-              <div className="rounded-lg bg-cyan-50 px-3 py-3 text-xs leading-5 text-cyan-800 ring-1 ring-cyan-100">
+              <div className="rounded-lg bg-pink-50 px-3 py-3 text-xs leading-5 text-pink-800 ring-1 ring-pink-100">
                 <div className="mb-1 flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Invite</div>
                 The invitee receives an emailed signup link to set their password.
               </div>

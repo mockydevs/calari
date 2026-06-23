@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FolderKanban } from "lucide-react";
+import { ArrowUpRight, FolderKanban } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
@@ -17,12 +17,12 @@ type UserRow = { id: number; full_name?: string; username?: string };
 const STATUS_STYLE: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   on_hold: "bg-amber-50 text-amber-700 ring-amber-200",
-  completed: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  completed: "bg-pink-50 text-pink-700 ring-pink-200",
   cancelled: "bg-red-50 text-red-700 ring-red-200",
 };
 const PRIORITY_STYLE: Record<string, string> = {
   low: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  medium: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  medium: "bg-pink-50 text-pink-700 ring-pink-200",
   high: "bg-amber-50 text-amber-700 ring-amber-200",
   critical: "bg-red-50 text-red-700 ring-red-200",
 };
@@ -52,7 +52,7 @@ export default async function ProjectsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Delivery</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Delivery</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Projects</h1>
           <p className="mt-1 text-sm text-slate-600">
             Client projects tracked in the Calari portal backend.
@@ -84,10 +84,11 @@ export default async function ProjectsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {projects.map((p) => (
-                  <tr key={p.id} className="group transition-colors hover:bg-cyan-50/30">
+                  <tr key={p.id} className="group transition-colors hover:bg-pink-50/30">
                     <td className="px-5 py-3.5">
-                      <Link href={`/projects/${p.id}`} className="font-semibold text-slate-950 transition-colors group-hover:text-cyan-700">
+                      <Link href={`/projects/${p.id}`} className="inline-flex items-center gap-1 font-semibold text-slate-950 transition-colors group-hover:text-pink-700">
                         {p.name}
+                        <ArrowUpRight className="h-3.5 w-3.5 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-pink-600" />
                       </Link>
                     </td>
                     <td className="px-5 py-3.5 text-slate-600">{p.client_name || "—"}</td>
@@ -104,7 +105,7 @@ export default async function ProjectsPage() {
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full rounded-full bg-cyan-600" style={{ width: `${p.progress_percent ?? 0}%` }} />
+                          <div className="h-full rounded-full bg-pink-600" style={{ width: `${p.progress_percent ?? 0}%` }} />
                         </div>
                         <span className="tabular-nums text-xs text-slate-500">{p.progress_percent ?? 0}%</span>
                       </div>

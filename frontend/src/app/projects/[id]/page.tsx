@@ -20,17 +20,17 @@ type ClientRow = { id: number; name: string };
 type UserRow = { id: number; full_name?: string; username?: string };
 
 const iconBtn = "inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100";
-const addInput = "h-8 flex-1 rounded-md border border-slate-300 px-2.5 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/30";
+const addInput = "h-8 flex-1 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30";
 
 const STATUS_STYLE: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   on_hold: "bg-amber-50 text-amber-700 ring-amber-200",
-  completed: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  completed: "bg-pink-50 text-pink-700 ring-pink-200",
   cancelled: "bg-red-50 text-red-700 ring-red-200",
 };
 const PRIORITY_STYLE: Record<string, string> = {
   low: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  medium: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  medium: "bg-pink-50 text-pink-700 ring-pink-200",
   high: "bg-amber-50 text-amber-700 ring-amber-200",
   critical: "bg-red-50 text-red-700 ring-red-200",
 };
@@ -69,7 +69,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
         Project not found.{" "}
-        <Link href="/projects" className="font-semibold text-cyan-700">Back to projects</Link>
+        <Link href="/projects" className="font-semibold text-pink-700">Back to projects</Link>
       </div>
     );
   }
@@ -109,7 +109,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             {isAdmin && <ProjectFormButton clients={clientOptions} users={userOptions} project={project} />}
             <Link
               href={`/projects/${id}/board`}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-cyan-800"
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-pink-700 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-pink-800"
             >
               <KanbanSquare className="h-4 w-4" /> Task board
             </Link>
@@ -145,7 +145,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                         <input type="hidden" name="id" value={m.id} />
                         <input type="hidden" name="projectId" value={id} />
                         <input type="hidden" name="completed" value={String(m.completed)} />
-                        <button className={`flex h-5 w-5 items-center justify-center rounded border ${m.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300 text-transparent hover:border-cyan-500"}`} aria-label="Toggle complete">
+                        <button className={`flex h-5 w-5 items-center justify-center rounded border ${m.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300 text-transparent hover:border-pink-500"}`} aria-label="Toggle complete">
                           <Check className="h-3.5 w-3.5" />
                         </button>
                       </form>
@@ -169,7 +169,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <input type="hidden" name="projectId" value={id} />
               <input name="name" required placeholder="New milestone…" className={addInput} />
               <input name="due_date" type="date" className="h-8 rounded-md border border-slate-300 px-2 text-sm" />
-              <button className="inline-flex h-8 items-center gap-1 rounded-md bg-cyan-700 px-2.5 text-xs font-semibold text-white hover:bg-cyan-800"><Plus className="h-3.5 w-3.5" /> Add</button>
+              <button className="inline-flex h-8 items-center gap-1 rounded-md bg-pink-700 px-2.5 text-xs font-semibold text-white hover:bg-pink-800"><Plus className="h-3.5 w-3.5" /> Add</button>
             </form>
           </Panel>
           <Panel title="Contacts" icon={<Users className="h-3.5 w-3.5" />}>
@@ -201,7 +201,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <input name="role" placeholder="Role" className={addInput} />
               <input name="email" type="email" placeholder="Email" className={addInput} />
               <input name="phone_number" placeholder="Phone" className={addInput} />
-              <button className="inline-flex h-8 items-center justify-center gap-1 rounded-md bg-cyan-700 px-2.5 text-xs font-semibold text-white hover:bg-cyan-800 sm:col-span-2"><Plus className="h-3.5 w-3.5" /> Add contact</button>
+              <button className="inline-flex h-8 items-center justify-center gap-1 rounded-md bg-pink-700 px-2.5 text-xs font-semibold text-white hover:bg-pink-800 sm:col-span-2"><Plus className="h-3.5 w-3.5" /> Add contact</button>
             </form>
           </Panel>
         </div>

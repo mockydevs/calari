@@ -21,7 +21,7 @@ const COLUMN_DOT: Record<TaskStatus, string> = {
 const PRIORITY_BORDER: Record<string, string> = {
   critical: "border-l-red-500",
   high: "border-l-amber-500",
-  medium: "border-l-cyan-500",
+  medium: "border-l-pink-500",
   low: "border-l-emerald-500",
 };
 
@@ -82,7 +82,7 @@ export default function ProjectBoardPage() {
             return (
               <div
                 key={status}
-                className={`flex flex-col rounded-lg border bg-slate-50/60 ${dragOver === status ? "border-cyan-400 ring-2 ring-cyan-200" : "border-slate-200"}`}
+                className={`flex flex-col rounded-lg border bg-slate-50/60 ${dragOver === status ? "border-pink-400 ring-2 ring-pink-200" : "border-slate-200"}`}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOver(status);

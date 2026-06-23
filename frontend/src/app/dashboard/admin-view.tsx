@@ -20,7 +20,7 @@ export type AdminStats = {
 const STATUS_STYLE: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   on_hold: "bg-amber-50 text-amber-700 ring-amber-200",
-  completed: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  completed: "bg-pink-50 text-pink-700 ring-pink-200",
   cancelled: "bg-red-50 text-red-700 ring-red-200",
   done: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   todo: "bg-slate-100 text-slate-600 ring-slate-200",
@@ -64,14 +64,14 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Admin workspace</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Admin workspace</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Admin dashboard</h1>
         <p className="mt-1 text-sm text-slate-600">Operational overview — projects, clients, tasks, and team workload.</p>
       </div>
 
       {/* Project stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="Total projects" value={projects.total} icon={FolderKanban} tone="bg-cyan-50 text-cyan-700 ring-cyan-100" />
+        <StatCard label="Total projects" value={projects.total} icon={FolderKanban} tone="bg-pink-50 text-pink-700 ring-pink-100" />
         <StatCard label="Active" value={projects.active} icon={CheckCircle2} tone="bg-emerald-50 text-emerald-700 ring-emerald-100" />
         <StatCard label="Completed" value={projects.completed} icon={CheckCircle2} tone="bg-indigo-50 text-indigo-700 ring-indigo-100" />
         <StatCard label="On hold" value={projects.on_hold} icon={PauseCircle} tone="bg-amber-50 text-amber-700 ring-amber-100" />
@@ -83,7 +83,7 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Total clients" value={clients.total} icon={Building2} tone="bg-indigo-50 text-indigo-700 ring-indigo-100" />
         <StatCard label="Active clients" value={clients.active} icon={Building2} tone="bg-emerald-50 text-emerald-700 ring-emerald-100" />
-        <StatCard label="Total tasks" value={tasks.total} icon={ListChecks} tone="bg-cyan-50 text-cyan-700 ring-cyan-100" />
+        <StatCard label="Total tasks" value={tasks.total} icon={ListChecks} tone="bg-pink-50 text-pink-700 ring-pink-100" />
         <StatCard label="Pending tasks" value={tasks.pending} icon={ListChecks} tone="bg-amber-50 text-amber-700 ring-amber-100" />
         <StatCard label="Project blockers" value={blockers.project_open} icon={ShieldAlert} tone="bg-red-50 text-red-700 ring-red-100" />
         <StatCard label="Task blockers" value={blockers.task_open} icon={ShieldAlert} tone="bg-red-50 text-red-700 ring-red-100" />
@@ -95,7 +95,7 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
         <StatCard label="Active" value={users.active} icon={Users} tone="bg-emerald-50 text-emerald-700 ring-emerald-100" />
         <StatCard label="Inactive" value={users.inactive} icon={Users} tone="bg-slate-100 text-slate-500 ring-slate-200" />
         <StatCard label="Superusers" value={users.superusers} icon={ShieldAlert} tone="bg-indigo-50 text-indigo-700 ring-indigo-100" />
-        <StatCard label="Admins" value={users.admins} icon={ShieldAlert} tone="bg-cyan-50 text-cyan-700 ring-cyan-100" />
+        <StatCard label="Admins" value={users.admins} icon={ShieldAlert} tone="bg-pink-50 text-pink-700 ring-pink-100" />
       </div>
 
       {/* Quick actions */}
@@ -105,8 +105,8 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
           {QUICK_ACTIONS.map((a) => {
             const Icon = a.icon;
             return (
-              <Link key={a.label} href={a.href} className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-4 text-center text-sm font-medium text-slate-700 transition-colors hover:border-cyan-300 hover:bg-cyan-50/50 hover:text-cyan-800">
-                <Icon className="h-5 w-5 text-cyan-700" />
+              <Link key={a.label} href={a.href} className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-4 text-center text-sm font-medium text-slate-700 transition-colors hover:border-pink-300 hover:bg-pink-50/50 hover:text-pink-800">
+                <Icon className="h-5 w-5 text-pink-700" />
                 {a.label}
               </Link>
             );
@@ -120,7 +120,7 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
           <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
               <h2 className="text-sm font-semibold text-slate-950">Recent projects</h2>
-              <Link href="/projects" className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">View all</Link>
+              <Link href="/projects" className="text-xs font-semibold text-pink-700 hover:text-pink-900">View all</Link>
             </div>
             <Rows
               empty="No projects yet."
@@ -170,7 +170,7 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
                     <p className="text-xs capitalize text-slate-400">{s.role}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-4 text-sm tabular-nums">
-                    <span className="flex flex-col items-center"><span className="font-semibold text-cyan-700">{s.tasks}</span><span className="text-[10px] uppercase text-slate-400">tasks</span></span>
+                    <span className="flex flex-col items-center"><span className="font-semibold text-pink-700">{s.tasks}</span><span className="text-[10px] uppercase text-slate-400">tasks</span></span>
                     <span className="flex flex-col items-center"><span className="font-semibold text-indigo-700">{s.projects}</span><span className="text-[10px] uppercase text-slate-400">proj</span></span>
                   </div>
                 </li>
@@ -184,7 +184,7 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
       <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <h2 className="text-sm font-semibold text-slate-950">Recent clients</h2>
-          <Link href="/clients" className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">View all</Link>
+          <Link href="/clients" className="text-xs font-semibold text-pink-700 hover:text-pink-900">View all</Link>
         </div>
         {stats.recent_clients.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-slate-400">No clients yet.</p>
@@ -213,7 +213,7 @@ function Rows({ rows, empty }: { rows: { key: number; href: string; main: string
       {rows.map((r) => (
         <li key={r.key} className="flex items-center justify-between gap-3 px-5 py-3">
           <div className="min-w-0">
-            <Link href={r.href} className="truncate text-sm font-semibold text-slate-900 hover:text-cyan-700">{r.main}</Link>
+            <Link href={r.href} className="truncate text-sm font-semibold text-slate-900 hover:text-pink-700">{r.main}</Link>
             <p className="truncate text-xs text-slate-400">{r.sub} · {r.meta}</p>
           </div>
           {r.right}

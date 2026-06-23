@@ -49,7 +49,7 @@ export default async function AiSettingsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Admin settings</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Admin settings</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">AI providers</h1>
         <p className="mt-1 text-sm text-slate-600">
           Add API keys for OpenAI, Claude, and other providers. Keys are encrypted and only previews are shown.
@@ -68,7 +68,7 @@ export default async function AiSettingsPage() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-50 text-pink-700 ring-1 ring-pink-100">
                       <Bot className="h-4 w-4" />
                     </span>
                     <div>
@@ -106,7 +106,7 @@ export default async function AiSettingsPage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {providerKeys.map((key) => (
-                          <tr key={key.id} className="transition-colors hover:bg-cyan-50/30">
+                          <tr key={key.id} className="transition-colors hover:bg-pink-50/30">
                             <td className="px-5 py-3.5">
                               <div className="flex items-center gap-2">
                                 <span className="font-semibold text-slate-950">{key.label}</span>
@@ -148,7 +148,7 @@ export default async function AiSettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
                 <KeyRound className="h-4 w-4" />
               </span>
               Add provider key
@@ -174,13 +174,13 @@ export default async function AiSettingsPage() {
                 <p className="text-xs text-slate-500">The key is encrypted before storage and cannot be viewed again.</p>
               </div>
               <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 text-sm">
-                <input name="active" type="checkbox" defaultChecked className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-700" />
+                <input name="active" type="checkbox" defaultChecked className="mt-1 h-4 w-4 rounded border-slate-300 text-pink-700" />
                 <span>
                   <span className="block font-semibold text-slate-950">Make active for this provider</span>
                   <span className="block text-xs text-slate-500">Activating this key disables other active keys for the same provider.</span>
                 </span>
               </label>
-              <div className="rounded-lg bg-cyan-50 px-3 py-3 text-xs leading-5 text-cyan-800 ring-1 ring-cyan-100">
+              <div className="rounded-lg bg-pink-50 px-3 py-3 text-xs leading-5 text-pink-800 ring-1 ring-pink-100">
                 <div className="mb-1 flex items-center gap-2 font-semibold">
                   <ShieldCheck className="h-4 w-4" />
                   Security note

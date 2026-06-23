@@ -52,7 +52,7 @@ const ICONS: Record<Variant, React.ComponentType<{ className?: string }>> = {
 const ACCENT: Record<Variant, string> = {
   success: "text-emerald-600",
   error: "text-red-600",
-  info: "text-cyan-700",
+  info: "text-pink-700",
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {

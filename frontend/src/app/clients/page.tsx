@@ -31,7 +31,7 @@ export default async function ClientsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">
           Admin
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Clients</h1>
@@ -69,7 +69,7 @@ export default async function ClientsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
                 <Building2 className="h-4 w-4" />
               </span>
               Add client

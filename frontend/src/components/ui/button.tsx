@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const variants = {
-  default: "bg-cyan-700 text-white shadow-sm shadow-cyan-900/10 hover:bg-cyan-800",
+  default: "bg-gradient-to-r from-pink-600 to-fuchsia-600 text-white shadow-sm shadow-pink-900/15 hover:from-pink-700 hover:to-fuchsia-700",
   primary: "bg-slate-950 text-white shadow-sm shadow-slate-900/10 hover:bg-slate-800",
   outline: "border border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50",
   ghost: "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
@@ -25,7 +25,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        "inline-flex cursor-pointer items-center justify-center gap-2 font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex cursor-pointer items-center justify-center gap-2 font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         sizes[size],
         className,

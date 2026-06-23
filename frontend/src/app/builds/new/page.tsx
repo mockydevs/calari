@@ -32,7 +32,7 @@ export default async function NewBuildPage() {
           Back to builds
         </Link>
         <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Intake</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Intake</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">New build</h1>
         </div>
       </section>
@@ -44,9 +44,9 @@ export default async function NewBuildPage() {
         </div>
       ) : (
         <section className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
-          <div className="border-b border-cyan-100 bg-cyan-50/55 px-5 py-4">
+          <div className="border-b border-pink-100 bg-pink-50/55 px-5 py-4">
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white text-cyan-700 ring-1 ring-cyan-100">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white text-pink-700 ring-1 ring-pink-100">
                 <ClipboardList className="h-4 w-4" />
               </span>
               <h2 className="text-sm font-semibold text-slate-950">Build details</h2>

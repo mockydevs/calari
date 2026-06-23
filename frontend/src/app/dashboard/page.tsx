@@ -11,11 +11,11 @@ export const dynamic = "force-dynamic";
 const STATUS_STYLE: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   on_hold: "bg-amber-50 text-amber-700 ring-amber-200",
-  completed: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  completed: "bg-pink-50 text-pink-700 ring-pink-200",
   cancelled: "bg-red-50 text-red-700 ring-red-200",
 };
 const STAT_STYLES = [
-  { icon: "bg-cyan-50 text-cyan-700 ring-cyan-100", bar: "bg-cyan-500" },
+  { icon: "bg-pink-50 text-pink-700 ring-pink-100", bar: "bg-pink-500" },
   { icon: "bg-emerald-50 text-emerald-700 ring-emerald-100", bar: "bg-emerald-500" },
   { icon: "bg-amber-50 text-amber-700 ring-amber-100", bar: "bg-amber-500" },
   { icon: "bg-indigo-50 text-indigo-700 ring-indigo-100", bar: "bg-indigo-500" },
@@ -55,7 +55,7 @@ export default async function DashboardPage() {
       <section className="overflow-hidden rounded-lg border border-white/80 bg-white/85 shadow-sm shadow-slate-900/[0.04] backdrop-blur">
         <div className="flex flex-wrap items-start justify-between gap-5 p-6 sm:p-7">
           <div className="max-w-2xl">
-            <div className="mb-3 inline-flex items-center gap-2 rounded-md bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700 ring-1 ring-cyan-100">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-md bg-pink-50 px-2.5 py-1 text-xs font-semibold text-pink-700 ring-1 ring-pink-100">
               <LayoutDashboard className="h-3.5 w-3.5" />
               {isAdmin ? "Admin workspace" : "Member workspace"}
             </div>
@@ -68,7 +68,7 @@ export default async function DashboardPage() {
           </div>
           <Link
             href="/projects"
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white shadow-sm shadow-cyan-900/10 transition-colors hover:bg-cyan-800"
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-pink-700 px-4 text-sm font-semibold text-white shadow-sm shadow-pink-900/10 transition-colors hover:bg-pink-800"
           >
             <Plus className="h-4 w-4" />
             View projects
@@ -103,7 +103,7 @@ export default async function DashboardPage() {
             <h2 className="text-sm font-semibold text-slate-950">Recent projects</h2>
             <p className="mt-0.5 text-xs text-slate-500">Your latest delivery work.</p>
           </div>
-          <Link href="/projects" className="flex items-center gap-1 text-xs font-semibold text-cyan-700 transition-colors hover:text-cyan-900">
+          <Link href="/projects" className="flex items-center gap-1 text-xs font-semibold text-pink-700 transition-colors hover:text-pink-900">
             View all
             <ArrowUpRight className="h-3.5 w-3.5" />
           </Link>
@@ -131,9 +131,9 @@ export default async function DashboardPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {projects.slice(0, 8).map((p) => (
-                  <tr key={p.id} className="group transition-colors hover:bg-cyan-50/30">
+                  <tr key={p.id} className="group transition-colors hover:bg-pink-50/30">
                     <td className="px-5 py-3.5">
-                      <Link href={`/projects/${p.id}`} className="font-semibold text-slate-950 transition-colors group-hover:text-cyan-700">
+                      <Link href={`/projects/${p.id}`} className="font-semibold text-slate-950 transition-colors group-hover:text-pink-700">
                         {p.name}
                       </Link>
                     </td>

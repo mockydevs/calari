@@ -32,7 +32,7 @@ export function ForgotPassword() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-4 w-full text-center text-sm font-medium text-cyan-700 transition-colors hover:text-cyan-800"
+        className="mt-4 w-full text-center text-sm font-medium text-pink-700 transition-colors hover:text-pink-800"
       >
         Forgot your password?
       </button>

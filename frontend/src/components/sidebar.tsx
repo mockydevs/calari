@@ -62,18 +62,18 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
             {user.image ? (
               <span
                 aria-hidden="true"
-                className="h-9 w-9 shrink-0 rounded-full bg-cover bg-center ring-1 ring-cyan-300/20"
+                className="h-9 w-9 shrink-0 rounded-full bg-cover bg-center ring-1 ring-pink-300/20"
                 style={{ backgroundImage: `url(${user.image})` }}
               />
             ) : (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-xs font-semibold text-cyan-100 ring-1 ring-cyan-300/20">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pink-500/15 text-xs font-semibold text-pink-100 ring-1 ring-pink-300/20">
                 {initials}
               </span>
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium leading-tight text-white">{user.name}</p>
               <p className="mt-1 flex items-center gap-1.5 truncate text-xs capitalize leading-tight text-slate-400">
-                <ShieldCheck className="h-3.5 w-3.5 text-cyan-300" />
+                <ShieldCheck className="h-3.5 w-3.5 text-pink-300" />
                 {user.role.toLowerCase()} access
               </p>
             </div>

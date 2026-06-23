@@ -55,7 +55,7 @@ export function NavItem({ href, label, iconName, badge }: NavItemProps) {
         <Icon
           className={cn(
             "h-4 w-4 shrink-0 transition-colors",
-            isActive ? "text-cyan-600" : "text-slate-500 group-hover:text-cyan-200",
+            isActive ? "text-pink-600" : "text-slate-500 group-hover:text-pink-200",
           )}
         />
         <span className="flex-1 truncate">{label}</span>

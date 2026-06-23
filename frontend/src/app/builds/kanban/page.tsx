@@ -12,7 +12,7 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 const COL_DOT: Record<BuildStatus, string> = {
   DRAFT: "bg-slate-400",
   AI_DRAFTED: "bg-violet-500",
-  ASSIGNED: "bg-cyan-500",
+  ASSIGNED: "bg-pink-500",
   IN_PROGRESS: "bg-amber-500",
   READY_FOR_REVIEW: "bg-indigo-500",
   CHANGES_REQUESTED: "bg-orange-500",
@@ -51,7 +51,7 @@ export default function BuildsBoardPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Delivery flow</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Delivery flow</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Status board</h1>
           <p className="mt-1 text-sm text-slate-600">Drag builds between delivery stages.</p>
         </div>
@@ -71,7 +71,7 @@ export default function BuildsBoardPage() {
             return (
               <div
                 key={status}
-                className={`flex flex-col rounded-lg border bg-slate-50/60 ${dragOver === status ? "border-cyan-400 ring-2 ring-cyan-200" : "border-slate-200"}`}
+                className={`flex flex-col rounded-lg border bg-slate-50/60 ${dragOver === status ? "border-pink-400 ring-2 ring-pink-200" : "border-slate-200"}`}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOver(status);
@@ -101,9 +101,9 @@ export default function BuildsBoardPage() {
                           e.dataTransfer.setData("id", String(b.id));
                           e.dataTransfer.setData("from", status);
                         }}
-                        className="cursor-grab rounded-md border border-slate-200 bg-white p-2.5 shadow-sm transition-colors hover:border-cyan-200"
+                        className="cursor-grab rounded-md border border-slate-200 bg-white p-2.5 shadow-sm transition-colors hover:border-pink-200"
                       >
-                        <Link href={`/builds/${b.id}`} className="text-sm font-semibold text-slate-900 hover:text-cyan-700">{b.title}</Link>
+                        <Link href={`/builds/${b.id}`} className="text-sm font-semibold text-slate-900 hover:text-pink-700">{b.title}</Link>
                         <p className="mt-0.5 text-xs text-slate-500">{b.client_name || "—"}</p>
                         {b.assignee_name && <p className="mt-1 text-[11px] text-slate-400">{b.assignee_name}</p>}
                       </div>

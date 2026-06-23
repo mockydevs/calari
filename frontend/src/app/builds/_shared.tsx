@@ -32,7 +32,7 @@ export const BUILD_STATUS_LABEL: Record<BuildStatus, string> = {
 const BUILD_STATUS_STYLE: Record<BuildStatus, string> = {
   DRAFT: "bg-slate-100 text-slate-600 ring-slate-200",
   AI_DRAFTED: "bg-violet-50 text-violet-700 ring-violet-200",
-  ASSIGNED: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  ASSIGNED: "bg-pink-50 text-pink-700 ring-pink-200",
   IN_PROGRESS: "bg-amber-50 text-amber-700 ring-amber-200",
   READY_FOR_REVIEW: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   CHANGES_REQUESTED: "bg-orange-50 text-orange-700 ring-orange-200",
