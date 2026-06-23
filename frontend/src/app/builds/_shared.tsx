@@ -72,11 +72,33 @@ export interface BuildTask {
   due_date: string | null;
 }
 
+export interface ContactSource { id: number; type: string; label: string }
+export interface ManualAction { id: number; description: string; owner: string }
+export interface PipelineStage { id: number; name: string; description: string; order: number; manual_actions: ManualAction[] }
+export interface ChangeRequest { id: number; title: string; description: string; impact: string; status: string; created_by_name?: string; created_at: string }
+export interface Approval { id: number; type: string; note: string; approver_name?: string; created_at: string }
+export interface BuildComment { id: number; body: string; author_name?: string; created_at: string }
+export interface BuildDocument { id: number; filename: string; url: string; uploaded_by_name?: string; created_at: string }
+export interface BuildActivity { id: number; actor: string; message: string; created_at: string }
+export interface MeetingNote { id: number; raw_text: string; source: string; ai_status: string; created_at: string }
+
+export const CHANGE_REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED", "IMPLEMENTED"] as const;
+export const APPROVAL_TYPES = ["BRIEF", "CHANGE_REQUEST", "DELIVERY", "CLIENT"] as const;
+
 export interface BuildDetail extends BuildRow {
   goals: string;
   integrations: string;
   creator_name?: string;
+  client_portal_enabled?: boolean;
+  client_portal_token?: string | null;
   tasks?: BuildTask[];
+  contact_sources?: ContactSource[];
+  stages?: PipelineStage[];
+  documents?: BuildDocument[];
+  comments?: BuildComment[];
+  change_requests?: ChangeRequest[];
+  approvals?: Approval[];
+  activities?: BuildActivity[];
 }
 
 export function BuildStatusBadge({ status }: { status: BuildStatus }) {

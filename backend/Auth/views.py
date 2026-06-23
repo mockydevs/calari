@@ -189,15 +189,21 @@ def token_logout(request):
 
 @extend_schema(
     tags=['Auth — Profile'],
-    summary='Get current user',
-    description="Returns the authenticated user's profile. Requires a valid access_token cookie.",
+    summary='Get / update current user',
+    description="GET returns the authenticated user's profile. PATCH updates the user's own editable fields (full_name, job_title, profile_notes).",
     responses={200: UserSerializer},
 )
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def me(request):
-    """GET /api/auth/me/ — Current user profile"""
-    return Response(UserSerializer(request.user).data)
+    """GET/PATCH /api/auth/me/ — current user profile (self-service update)"""
+    user = request.user
+    if request.method == 'PATCH':
+        for field in ('full_name', 'job_title', 'profile_notes'):
+            if field in request.data:
+                setattr(user, field, request.data[field] or '')
+        user.save()
+    return Response(UserSerializer(user).data)
 
 
 @extend_schema(
