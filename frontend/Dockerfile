@@ -19,10 +19,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PRISMA_HIDE_UPDATE_MESSAGE=1
-
-# Generate Prisma client (uses the Alpine engine baked into node_modules)
-RUN npx prisma generate
 
 # Produce the standalone output (output: "standalone" in next.config.ts)
 RUN npm run build
@@ -35,7 +31,6 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PRISMA_HIDE_UPDATE_MESSAGE=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
@@ -49,15 +44,6 @@ RUN apk add --no-cache openssl ca-certificates curl tini
 COPY --from=builder /app/public                         ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone  ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static      ./.next/static
-
-# ── Prisma schema + migrations ────────────────
-COPY --from=builder --chown=nextjs:nodejs /app/prisma  ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
-
-# ── node_modules (full, with generated Prisma client) ──
-# Use builder's node_modules — it ran prisma generate so @prisma/client is
-# fully initialised. Also needed by docker-start.sh for prisma migrate deploy.
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 # ── Startup script ────────────────────────────
 COPY --chown=nextjs:nodejs scripts/docker-start.sh ./docker-start.sh

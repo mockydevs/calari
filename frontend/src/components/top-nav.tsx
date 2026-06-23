@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { signOut } from "@/auth";
+import { logout } from "@/lib/logout-action";
 import { serverApi } from "@/lib/portal/server";
 import { Bell, BriefcaseBusiness, KanbanSquare, LogOut, Settings, Users } from "lucide-react";
 
@@ -48,7 +48,7 @@ export async function TopNav({ user }: { user: { id: string; name: string; role:
             )}
           </Link>
           <span className="max-w-40 truncate text-sm font-medium text-slate-700">{user.name}</span>
-          <form action={async () => { "use server"; await signOut({ redirectTo: "/login" }); }}>
+          <form action={logout}>
             <button className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950">
               <LogOut className="h-4 w-4" />
               Sign out

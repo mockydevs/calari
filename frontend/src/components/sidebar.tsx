@@ -1,4 +1,4 @@
-import { signOut } from "@/auth";
+import { logout } from "@/lib/logout-action";
 import { serverApi } from "@/lib/portal/server";
 import { NavItem } from "@/components/nav-item";
 import type { NavIconName } from "@/components/nav-item";
@@ -32,14 +32,10 @@ export async function Sidebar({ user }: { user: { id: string; name: string; role
 
   return (
     <aside className="flex h-full w-72 flex-col border-r border-white/[0.08] bg-slate-950 text-white shadow-2xl shadow-slate-950/20">
-      <div className="flex h-20 shrink-0 items-center gap-3 border-b border-white/[0.08] px-5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-emerald-500 text-sm font-black text-white shadow-lg shadow-cyan-950/30">
-          CI
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-white">Calari Internal</p>
-          <p className="text-xs text-slate-400">Client delivery command</p>
-        </div>
+      <div className="flex h-20 shrink-0 flex-col justify-center gap-1.5 border-b border-white/[0.08] px-5">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="Calari" className="h-7 w-auto self-start" />
+        <p className="text-xs text-slate-400">Client delivery command</p>
       </div>
 
       <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 py-5">
@@ -88,12 +84,7 @@ export async function Sidebar({ user }: { user: { id: string; name: string; role
           </div>
         </Link>
 
-        <form
-          action={async () => {
-            "use server";
-            await signOut({ redirectTo: "/login" });
-          }}
-        >
+        <form action={logout}>
           <button className="group mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:bg-red-500/10 hover:text-red-300">
             <LogOut className="h-4 w-4 shrink-0 transition-colors group-hover:text-red-300" />
             Sign out

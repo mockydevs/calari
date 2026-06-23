@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { auth, signIn } from "@/auth";
+import { getAppUser } from "@/lib/auth-helpers";
 import { portalLogin } from "@/lib/portal/server";
-import { AuthError } from "next-auth";
 import { AlertCircle, CheckCircle2, LockKeyhole, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,32 +12,25 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  if (await getAppUser()) redirect("/dashboard");
   const { error } = await searchParams;
 
   async function login(formData: FormData) {
     "use server";
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
-    // Bridge: also set the Django portal cookies so this one sign-in serves /staff too.
-    await portalLogin(email, password).catch(() => null);
-    try {
-      await signIn("credentials", { email, password, redirectTo: "/dashboard" });
-    } catch (err) {
-      if (err instanceof AuthError) redirect("/login?error=1");
-      throw err;
-    }
+    // Single source of truth: Django. Sets the httpOnly JWT cookies.
+    const user = await portalLogin(email, password);
+    if (!user) redirect("/login?error=1");
+    redirect("/dashboard");
   }
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-white">
       <div className="hidden w-[480px] shrink-0 flex-col justify-between border-r border-white/[0.08] bg-slate-950 p-10 lg:flex">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-emerald-500 text-sm font-black text-white shadow-lg shadow-cyan-950/40">
-            CI
-          </span>
-          <span className="text-sm font-semibold text-white">Calari Internal</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="Calari" className="h-8 w-auto" />
         </div>
 
         <div className="space-y-8">
@@ -74,10 +65,10 @@ export default async function LoginPage({
 
       <div className="flex flex-1 flex-col items-center justify-center bg-[linear-gradient(180deg,#ecfeff_0%,#f8fafc_46%,#eef2f7_100%)] px-6 py-12 text-slate-950">
         <div className="mb-8 flex items-center gap-3 lg:hidden">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-emerald-500 text-sm font-black text-white">
-            CI
+          <span className="inline-flex items-center rounded-lg bg-slate-950 px-3 py-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="Calari" className="h-6 w-auto" />
           </span>
-          <span className="text-sm font-semibold text-slate-950">Calari Internal</span>
         </div>
 
         <div className="w-full max-w-md rounded-lg border border-white/80 bg-white/90 p-8 shadow-xl shadow-slate-900/10 backdrop-blur">
@@ -131,12 +122,6 @@ export default async function LoginPage({
 
           <p className="mt-8 text-center text-xs text-slate-400">
             (c) {new Date().getFullYear()} Calari Solutions - All rights reserved
-          </p>
-          <p className="mt-4 text-center text-xs text-slate-500">
-            Need access?{" "}
-            <Link href="/signup" className="font-semibold text-cyan-700 hover:text-cyan-900">
-              Request an account
-            </Link>
           </p>
         </div>
       </div>
