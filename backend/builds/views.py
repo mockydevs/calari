@@ -50,6 +50,7 @@ def _log(build, user, message):
 
 _PREF_MAP = {
     "BUILD_ASSIGNED": "build_assigned",
+    "TASK_ASSIGNED": "build_assigned",
     "TASK_UPDATED": "task_updated",
     "MEETING_NOTE_ADDED": "follow_up_notes",
     "CHANGE_REQUEST": "change_requests",
@@ -60,6 +61,7 @@ _PREF_MAP = {
 # Map builds notification types onto the email template's event_type styles.
 _EMAIL_EVENT_MAP = {
     "BUILD_ASSIGNED": "project_assigned",
+    "TASK_ASSIGNED": "project_assigned",
     "TASK_UPDATED": "task_status_changed",
     "READY_FOR_REVIEW": "project_status_changed",
     "CHANGES_REQUESTED": "project_status_changed",
@@ -274,6 +276,23 @@ class TaskViewSet(viewsets.ModelViewSet):
             task.assignee = task.build.assignee
             task.save(update_fields=["assignee"])
         _log(task.build, self.request.user, f'Task "{task.title}" added.')
+        if task.assignee and task.assignee != self.request.user:
+            _notify(
+                task.assignee, "TASK_ASSIGNED",
+                f'You were assigned the task "{task.title}".',
+                f"/builds/{task.build_id}", actor=self.request.user, build_name=task.build.title,
+            )
+
+    def perform_update(self, serializer):
+        prev_assignee_id = serializer.instance.assignee_id
+        task = serializer.save()
+        # Notify only when the assignee actually changes to a new person.
+        if task.assignee_id and task.assignee_id != prev_assignee_id and task.assignee != self.request.user:
+            _notify(
+                task.assignee, "TASK_ASSIGNED",
+                f'You were assigned the task "{task.title}".',
+                f"/builds/{task.build_id}", actor=self.request.user, build_name=task.build.title,
+            )
 
     @action(detail=True, methods=["post"], url_path="status")
     def set_status(self, request, pk=None):
@@ -283,7 +302,14 @@ class TaskViewSet(viewsets.ModelViewSet):
             task.progress_note = request.data["progress_note"]
         task.save()
         _log(task.build, request.user, f'Task "{task.title}" → {task.status}.')
-        _notify(task.build.creator, "TASK_UPDATED", f'Task "{task.title}" updated to {task.status}.', f"/builds/{task.build_id}")
+        actor_name = request.user.get_full_name() or request.user.username
+        msg = f'{actor_name} updated task "{task.title}" to {task.status}.'
+        if task.progress_note:
+            msg += f" Note: {task.progress_note}"
+        _notify(
+            task.build.creator, "TASK_UPDATED", msg,
+            f"/builds/{task.build_id}", actor=request.user, build_name=task.build.title,
+        )
         return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=["post"], url_path="generate-sop")

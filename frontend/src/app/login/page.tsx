@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
+import { ForgotPassword } from "./forgot-password";
 
 export default async function LoginPage({
   searchParams,
@@ -119,6 +120,8 @@ export default async function LoginPage({
               Sign in to Calari Internal
             </Button>
           </form>
+
+          <ForgotPassword />
 
           <p className="mt-8 text-center text-xs text-slate-400">
             (c) {new Date().getFullYear()} Calari Solutions - All rights reserved

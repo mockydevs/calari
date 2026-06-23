@@ -1,3 +1,6 @@
+import secrets
+import string
+
 from django.conf import settings
 from django.contrib.auth import get_user_model, authenticate
 from django.db.models import Q
@@ -481,51 +484,61 @@ def delete_user(request, user_id):
 
 # ─── Forgot / Reset Password (self-service API) ───
 
+def _generate_temp_password(length: int = 10) -> str:
+    """A strong, readable temporary password (no ambiguous 0/O/1/l/I chars)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
 @extend_schema(
     tags=['Auth — Password Reset'],
-    summary='Request password reset',
-    description='Sends a one-time password reset link to the given email if an active account exists. Always returns 200 to avoid email enumeration.',
+    summary='Email a temporary password',
+    description=(
+        'If an active account exists for the given email, generates a temporary '
+        'password, sets it on the account, and emails it to the user. Always '
+        'returns 200 to avoid email enumeration.'
+    ),
     request=ForgotPasswordSerializer,
-    responses={200: OpenApiResponse(description='Reset link sent (if email exists)')},
+    responses={200: OpenApiResponse(description='Temporary password sent (if email exists)')},
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def forgot_password(request):
-    """POST /api/auth/forgot-password/ — Request a password reset link via email."""
+    """POST /api/auth/forgot-password/ — Email a temporary password to the user."""
     serializer = ForgotPasswordSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     email = serializer.validated_data['email']
 
     try:
         user = User.objects.get(email=email, is_active=True)
-        # Invalidate any existing unused tokens for this user
+        temp_password = _generate_temp_password()
+        user.set_password(temp_password)
+        user.save(update_fields=['password'])
+        # Retire any pending link-based reset tokens for this user.
         PasswordResetToken.objects.filter(user=user, used=False).update(used=True)
 
-        reset_token = PasswordResetToken.objects.create(user=user)
-
-        # The frontend hosts the reset page; FRONTEND_URL points at the Next.js app.
         frontend = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
-        reset_url = f"{frontend}/staff/reset-password/{reset_token.token}"
-
         send_mail(
-            subject="Reset your Calari Staff Portal password",
+            subject="Your temporary Calari password",
             message=(
                 f"Hi {user.full_name or user.username},\n\n"
-                f"You requested a password reset. Click the link below to set a new password:\n\n"
-                f"{reset_url}\n\n"
-                f"This link expires in 1 hour. If you did not request this, ignore this email.\n\n"
-                f"— Calari Staff Portal"
+                f"A password reset was requested for your account. Use this temporary "
+                f"password to sign in:\n\n"
+                f"    {temp_password}\n\n"
+                f"Sign in at {frontend}/login, then change it from your profile right away.\n\n"
+                f"If you did not request this, contact your administrator.\n\n"
+                f"— Calari"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
             fail_silently=False,
         )
     except User.DoesNotExist:
-        pass  # Silent — don't reveal whether email exists
+        pass  # Silent — don't reveal whether the email exists.
 
     return Response({
         'success': True,
-        'message': 'If an account with that email exists, a reset link has been sent.',
+        'message': 'If an account with that email exists, a temporary password has been sent to it.',
     })
 
 
