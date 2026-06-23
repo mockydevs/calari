@@ -7,8 +7,12 @@ import {
   PROJECT_STATUS_LABELS,
   type Project,
 } from "@/lib/portal/types";
+import { ProjectFormButton, type Option } from "./project-form";
 
 export const dynamic = "force-dynamic";
+
+type ClientRow = { id: number; name: string };
+type UserRow = { id: number; full_name?: string; username?: string };
 
 const STATUS_STYLE: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -28,11 +32,21 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 }
 
 export default async function ProjectsPage() {
-  await requireUser();
-  const projects = await serverApi
-    .get<Project[] | { results: Project[] }>("projects/my-projects")
-    .then(asList)
-    .catch(() => [] as Project[]);
+  const user = await requireUser();
+  const isAdmin = user.role === "ADMIN";
+
+  const [projects, clients, users] = await Promise.all([
+    serverApi.get<Project[] | { results: Project[] }>("projects/my-projects").then(asList).catch(() => [] as Project[]),
+    isAdmin
+      ? serverApi.get<ClientRow[] | { results: ClientRow[] }>("projects/clients").then(asList).catch(() => [] as ClientRow[])
+      : Promise.resolve([] as ClientRow[]),
+    isAdmin
+      ? serverApi.get<UserRow[] | { results: UserRow[] }>("auth/users").then(asList).catch(() => [] as UserRow[])
+      : Promise.resolve([] as UserRow[]),
+  ]);
+
+  const clientOptions: Option[] = clients.map((c) => ({ id: c.id, name: c.name }));
+  const userOptions: Option[] = users.map((u) => ({ id: u.id, name: u.full_name || u.username || `User #${u.id}` }));
 
   return (
     <div className="space-y-5">
@@ -44,6 +58,7 @@ export default async function ProjectsPage() {
             Client projects tracked in the Calari portal backend.
           </p>
         </div>
+        {isAdmin && <ProjectFormButton clients={clientOptions} users={userOptions} />}
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
