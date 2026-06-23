@@ -88,32 +88,33 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
-MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME")
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
-MINIO_FILE_OVERWRITE = str2bool(os.getenv("MINIO_FILE_OVERWRITE", "False"))
-MINIO_DEFAULT_ACL = str2none(os.getenv("MINIO_DEFAULT_ACL", None))
-MINIO_QUERYSTRING_AUTH = str2bool(os.getenv("MINIO_QUERYSTRING_AUTH", "False"))
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_ENDPOINT = os.getenv("S3_ENDPOINT")  # blank for AWS; set for S3-compatible
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
+S3_FILE_OVERWRITE = str2bool(os.getenv("S3_FILE_OVERWRITE", "False"))
+S3_DEFAULT_ACL = str2none(os.getenv("S3_DEFAULT_ACL", None))
+S3_QUERYSTRING_AUTH = str2bool(os.getenv("S3_QUERYSTRING_AUTH", "False"))
 
 
-AWS_ACCESS_KEY_ID = MINIO_ACCESS_KEY
-AWS_SECRET_ACCESS_KEY = MINIO_SECRET_KEY
-AWS_STORAGE_BUCKET_NAME = MINIO_BUCKET_NAME
-AWS_S3_ENDPOINT_URL = MINIO_ENDPOINT
-AWS_S3_FILE_OVERWRITE = MINIO_FILE_OVERWRITE
-AWS_DEFAULT_ACL = MINIO_DEFAULT_ACL
-AWS_QUERYSTRING_AUTH = MINIO_QUERYSTRING_AUTH
-AWS_S3_REGION_NAME = 'us-east-1'
+AWS_ACCESS_KEY_ID = S3_ACCESS_KEY
+AWS_SECRET_ACCESS_KEY = S3_SECRET_KEY
+AWS_STORAGE_BUCKET_NAME = S3_BUCKET_NAME
+AWS_S3_ENDPOINT_URL = S3_ENDPOINT
+AWS_S3_FILE_OVERWRITE = S3_FILE_OVERWRITE
+AWS_DEFAULT_ACL = S3_DEFAULT_ACL
+AWS_QUERYSTRING_AUTH = S3_QUERYSTRING_AUTH
+AWS_S3_REGION_NAME = S3_REGION
 AWS_S3_SIGNATURE_VERSION = 's3v4'
 AWS_S3_VERIFY = False
 
 STORAGES = {
     "default": {
-        "BACKEND": "config.storage.MinIOMediaStorage",
+        "BACKEND": "config.storage.S3MediaStorage",
     },
     "staticfiles": {
-        "BACKEND": "config.storage.MinIOStaticStorage",
+        "BACKEND": "config.storage.S3StaticFilesStorage",
     },
 }
 
@@ -220,7 +221,12 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = f"{MINIO_ENDPOINT}/{MINIO_BUCKET_NAME}/static/"
+if S3_ENDPOINT and S3_BUCKET_NAME:
+    STATIC_URL = f"{S3_ENDPOINT}/{S3_BUCKET_NAME}/static/"
+elif S3_BUCKET_NAME:
+    STATIC_URL = f"https://{S3_BUCKET_NAME}.s3.{S3_REGION}.amazonaws.com/static/"
+else:
+    STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 

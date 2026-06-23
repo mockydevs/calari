@@ -22,6 +22,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('Auth.urls', namespace='auth_app')),
     path('api/projects/', include('projects.urls', namespace='projects')),
+    path('api/builds/', include('builds.urls', namespace='builds')),
 
     # API Docs
     path('swagger.json',  SpectacularAPIView.as_view(),                         name='schema'),

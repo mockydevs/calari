@@ -2,18 +2,18 @@ from botocore.exceptions import ClientError
 from storages.backends.s3boto3 import S3Boto3Storage, S3StaticStorage
 
 
-class MinIOMediaStorage(S3Boto3Storage):
-    """Media-file storage backed by MinIO (S3-compatible)."""
+class S3MediaStorage(S3Boto3Storage):
+    """Media-file storage backed by S3."""
     location = "media"
     default_acl = None        # ACLs disabled on bucket-owner-enforced buckets
     file_overwrite = False
 
 
-class MinIOStaticStorage(S3StaticStorage):
-    """Static-file storage backed by MinIO (S3-compatible).
+class S3StaticFilesStorage(S3StaticStorage):
+    """Static-file storage backed by S3.
 
-    Overrides ``exists()`` to handle the 403 that MinIO returns when the
-    service-account lacks ``s3:ListBucket`` on the bucket.  Without this,
+    Overrides ``exists()`` to handle the 403 some S3 backends return when the
+    service-account lacks ``s3:ListBucket`` on the bucket. Without this,
     ``collectstatic`` aborts on the first HeadObject call even though the
     credentials have full PutObject / GetObject access.
     """
