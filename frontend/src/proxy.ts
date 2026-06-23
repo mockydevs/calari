@@ -7,8 +7,6 @@ const PUBLIC_PATHS = [
   "/portal",
   "/api/auth",
   "/api/health",
-  // Calari Staff Portal — has its own Django cookie auth; not gated by NextAuth.
-  "/staff",
   "/api/portal",
 ];
 

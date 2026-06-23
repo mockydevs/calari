@@ -73,11 +73,11 @@ async function request<T>(path: string, init: RequestInit, params?: Record<strin
   }
   const data = await parse(res);
   if (!res.ok) {
-    // Session expired/invalid → bounce to the portal login (avoid loops on auth pages).
+    // Session expired/invalid → bounce to login (avoid loops on auth pages).
     if (res.status === 401 && typeof window !== "undefined") {
       const path = window.location.pathname;
-      if (path.startsWith("/staff") && !path.includes("/login") && !path.includes("password")) {
-        window.location.href = `/staff/login?next=${encodeURIComponent(path)}`;
+      if (!path.includes("/login") && !path.includes("password")) {
+        window.location.href = `/login?next=${encodeURIComponent(path)}`;
       }
     }
     throw new ApiError(extractApiError(data, `Request failed (${res.status}).`), res.status, data);
