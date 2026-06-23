@@ -4,14 +4,13 @@ One repository, two clean halves:
 
 ```
 .
-├── backend/    # Django REST API (the backend of record) — DRF + Channels + Celery on MySQL
+├── backend/    # Django REST API (the backend of record) — DRF + Channels + Celery on PostgreSQL
 └── frontend/   # Next.js app — Builds delivery system + Staff Portal, consumes the API via a BFF
 ```
 
-The frontend never talks to the database directly for portal features: it calls the Django API
-through a server-side **BFF proxy** (`frontend/src/app/api/portal/*`) that holds the Django JWT in
-httpOnly cookies. (During the migration, the legacy "Builds" module still uses Prisma; this is
-being moved into Django — see the migration plan.)
+The frontend never talks to a database directly: every feature calls the Django API through a
+server-side **BFF proxy** (`frontend/src/app/api/portal/*`) that holds the Django JWT in httpOnly
+cookies. There is one auth (Django JWT) and one backend of record — no Prisma, no NextAuth.
 
 ## Run it locally (Docker)
 
@@ -21,12 +20,13 @@ docker compose up --build
 # frontend → http://localhost:3000  (Staff Portal at /staff)
 ```
 
-`docker compose` starts MySQL, Redis, the Django backend (migrates on boot, runs Daphne + Celery),
-and the Next.js frontend.
+A single root `docker-compose.yml` builds and runs both services: the Django backend (migrates on
+boot, runs Daphne + Celery) and the Next.js frontend. PostgreSQL and Redis are external/managed —
+point at them via env (`DATABASE_URL` / `REDIS_URL`).
 
 ## Run it locally (without Docker)
 
-**Backend** (needs Python 3.13+, MySQL, Redis):
+**Backend** (needs Python 3.13+, plus an external PostgreSQL + Redis):
 ```bash
 cd backend
 cp .env.example .env.dev            # adjust DB/Redis as needed
@@ -46,5 +46,6 @@ npm run dev                         # http://localhost:3000
 ```
 
 ## Deployment
-Each half deploys independently on Coolify via its own compose:
-`backend/Dockerfile.prod` and `frontend/docker-compose.yml`.
+One stack, one file. Deploy the root `docker-compose.yml` on Coolify (New resource → Docker
+Compose → connect this repo). It builds both services from `backend/Dockerfile` and
+`frontend/Dockerfile`; set all secrets/connection vars in the Coolify dashboard.

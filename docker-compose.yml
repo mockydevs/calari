@@ -1,26 +1,36 @@
-# Calari monorepo — local dev stack.
-#   backend  : Django REST API (Daphne/ASGI + Celery) on :8000
+# Calari — the single Docker stack for both local dev and production deploy.
+#
+#   backend  : Django REST API (Daphne/ASGI + Celery worker & beat) on :8000
 #   frontend : Next.js app (Builds + Staff Portal) on :3000
-# PostgreSQL + Redis are external (managed); set via DATABASE_URL / REDIS_URL.
+#
+# PostgreSQL + Redis are EXTERNAL/managed — there are no db/redis services here.
+# Configure connection + secrets via environment:
+#   - Local : drop values into ./backend/.env (or .env.dev) and ./frontend/.env
+#   - Coolify/prod : set every variable in the service dashboard. The env_file
+#                    entries below are optional (required: false), so a missing
+#                    file is fine when the platform injects the env directly.
 name: calari
 
 services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: calari_backend
     restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
-      - ./backend/.env.dev
+      - path: ./backend/.env
+        required: false
+      - path: ./backend/.env.dev
+        required: false
     environment:
-      CLOUD_ENV: "True" # use env vars (below + env_file) instead of re-loading .env.dev
-      DEBUG: "True"
-      SECRET_KEY: "dev-only-change-me"
-      FRONTEND_URL: "http://localhost:3000"
-      AUTH_COOKIE_SECURE: "False"
+      CLOUD_ENV: "True" # read config from the environment, not a re-loaded .env
+      DEBUG: ${DEBUG:-False}
+      SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-False}
 
   frontend:
     build:
@@ -29,11 +39,20 @@ services:
     container_name: calari_frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
     env_file:
-      - ./frontend/.env
+      - path: ./frontend/.env
+        required: false
     environment:
-      # The BFF runs server-side inside this container; reach the backend by service name.
-      DJANGO_API_URL: "http://backend:8000"
+      NODE_ENV: production
+      # The BFF runs server-side in this container; reach the backend by service
+      # name locally, or set DJANGO_API_URL to the public API URL in production.
+      DJANGO_API_URL: ${DJANGO_API_URL:-http://backend:8000}
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
