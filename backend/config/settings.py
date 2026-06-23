@@ -74,6 +74,7 @@ INSTALLED_APPS = [
 
     'Auth',
     'projects',
+    'builds',
 
 ]
 
