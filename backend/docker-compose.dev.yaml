@@ -1,0 +1,105 @@
+services:
+  # erp:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.dev
+  #   container_name: erp_container
+  #   restart: always
+  #   ports:
+  #     - "8001:80"  # Expose port 80 of the container to port 8000 on the host
+  #   volumes:
+  #     - .:/var/www/html  # Mount the current directory to /var/www/html in the container
+  #   depends_on:
+  #     - db
+  #     - minio
+  #     - phpmyadmin
+
+  db:
+    image: mysql:latest
+    container_name: calari_mysql_db
+    restart: always
+    ports:
+      - 3305:3306
+    volumes:
+      - db-data:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=0000
+      - MYSQL_DATABASE=calari_db
+      - MYSQL_USER=calari_user
+      - MYSQL_PASSWORD=calari_password
+
+  
+
+  # minio:
+  #   image: minio/minio:latest
+  #   container_name: calari_minio
+  #   restart: always
+  #   environment:
+  #     - MINIO_ROOT_USER=calariAdmin
+  #     - MINIO_ROOT_PASSWORD=Xk7mP2qRvN9wL5tJ
+  #   command: server /data --console-address ":9001"
+  #   ports:
+  #     - "9000:9000"    # MinIO API port
+  #     - "9001:9001"    # MinIO web console port
+  #   volumes:
+  #     - minio-data:/data
+  #   networks:
+  #     - my_network
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 10s
+
+  # minio_client:
+  #   image: minio/mc:latest
+  #   container_name: calari_minio_client
+  #   depends_on:
+  #     minio:
+  #       condition: service_healthy
+  #   entrypoint: >
+  #     /bin/sh -c "
+  #     mc alias set local http://minio:9000 calariAdmin Xk7mP2qRvN9wL5tJ;
+  #     mc mb --ignore-existing local/calari-media;
+  #     mc anonymous set none local/calari-media;
+  #     exit 0;
+  #     "
+  #   networks:
+  #     - my_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: calari_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass "rX9mK2pQwZ7vNsT4" --user calari_redis on ">rX9mK2pQwZ7vNsT4" "~*" "+@all"
+    volumes:
+      - redis-data:/data
+    networks:
+      - my_network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: calari_phpmyadmin
+    restart: always
+    ports:
+      - "8892:80"
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_USER: calari_user
+      PMA_PASSWORD: calari_password
+    depends_on:
+      - db
+
+networks:
+  my_network:
+    driver: bridge
+
+volumes:
+  db-data:
+  redis-data:
+  minio-data:
+  

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Calari Staff Portal</title>
+</head>
+<body style="margin:0;padding:0;background-color:#06090F;font-family:Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#06090F;padding:32px 16px;">
+<tr><td align="center">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background:#0C1220;border-radius:10px;border:1px solid rgba(255,255,255,0.07);overflow:hidden;">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:#3B82F6;padding:16px 24px;">
+      <span style="color:#ffffff;font-size:15px;font-weight:700;letter-spacing:-0.02em;">Calari Staff Portal</span>
+    </td>
+  </tr>
+
+  <!-- Body -->
+  <tr>
+    <td style="padding:24px 24px 20px;">
+
+      <p style="color:#94A3B8;font-size:13px;margin:0 0 14px 0;">Hi {{ recipient_name }},</p>
+
+      {% if event_type == "task_assigned" %}
+        <h2 style="color:#60A5FA;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">You've been assigned a task</h2>
+      {% elif event_type == "task_status_changed" %}
+        <h2 style="color:#22D3EE;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Task status updated</h2>
+      {% elif event_type == "task_completed" %}
+        <h2 style="color:#10B981;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Task marked as done</h2>
+      {% elif event_type == "project_assigned" %}
+        <h2 style="color:#60A5FA;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">You've been assigned a project</h2>
+      {% elif event_type == "project_status_changed" %}
+        <h2 style="color:#22D3EE;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Project status updated</h2>
+      {% elif event_type == "co_assignment_added" %}
+        <h2 style="color:#818CF8;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">You've been added to a project team</h2>
+      {% elif event_type == "comment_added" %}
+        <h2 style="color:#94A3B8;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">New comment on your task</h2>
+      {% elif event_type == "blocker_added" %}
+        <h2 style="color:#F87171;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Blocker reported</h2>
+      {% elif event_type == "blocker_resolved" %}
+        <h2 style="color:#10B981;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Blocker resolved</h2>
+      {% elif event_type == "milestone_added" %}
+        <h2 style="color:#818CF8;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">New milestone added</h2>
+      {% elif event_type == "milestone_completed" %}
+        <h2 style="color:#10B981;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Milestone completed</h2>
+      {% else %}
+        <h2 style="color:#E2E8F0;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Portal notification</h2>
+      {% endif %}
+
+      <!-- Event title card -->
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#111927;border:1px solid rgba(255,255,255,0.06);border-radius:7px;margin-bottom:14px;">
+        <tr>
+          <td style="padding:12px 14px;">
+            <p style="color:#E2E8F0;font-size:14px;font-weight:600;margin:0 0 3px 0;">{{ event_title }}</p>
+            {% if project_name %}<p style="color:#475569;font-size:11px;margin:0;">{{ project_name }}</p>{% endif %}
+          </td>
+        </tr>
+      </table>
+
+      {% if event_detail %}
+      <p style="color:#94A3B8;font-size:12.5px;line-height:1.6;margin:0 0 14px 0;">{{ event_detail }}</p>
+      {% endif %}
+
+      <p style="color:#475569;font-size:11.5px;margin:0 0 20px 0;">Action performed by <strong style="color:#8E9DB8;">{{ actor_name }}</strong></p>
+
+      {% if portal_url %}
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="background:#3B82F6;border-radius:7px;">
+            <a href="{{ portal_url }}" style="display:inline-block;padding:10px 20px;color:#ffffff;font-size:12.5px;font-weight:600;text-decoration:none;letter-spacing:-0.01em;">View in Portal &#8594;</a>
+          </td>
+        </tr>
+      </table>
+      {% endif %}
+
+    </td>
+  </tr>
+
+  <!-- Footer -->
+  <tr>
+    <td style="border-top:1px solid rgba(255,255,255,0.05);padding:14px 24px;background:#080C14;">
+      <p style="color:#374151;font-size:10.5px;margin:0;line-height:1.5;">
+        You received this because you are a Calari Staff Portal member. Do not reply to this email.<br>
+        &copy; {{ year }} Calari Solutions.
+      </p>
+    </td>
+  </tr>
+
+</table>
+
+</td></tr>
+</table>
+</body>
+</html>

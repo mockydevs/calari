@@ -1,60 +1,39 @@
-# Coolify production deployment
-# ─────────────────────────────────────────────────────────────────────────────
-# The database is managed externally (e.g. Supabase, Neon, or a Coolify-
-# attached Postgres service). Connect it via DATABASE_URL below.
-#
-# All env vars are set in the Coolify service dashboard — values here serve
-# as documentation and fallback defaults only.
-# ─────────────────────────────────────────────────────────────────────────────
-
-name: calari-internal
+# Calari monorepo — local dev stack.
+#   backend  : Django REST API (Daphne/ASGI + Celery) on :8000
+#   frontend : Next.js app (Builds + Staff Portal) on :3000
+# PostgreSQL + Redis are external (managed); set via DATABASE_URL / REDIS_URL.
+name: calari
 
 services:
-  app:
+  backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: calari_backend
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
-    networks:
-      - coolify
+      - "8000:8000"
+    env_file:
+      - ./backend/.env.dev
     environment:
-      NODE_ENV: production
+      CLOUD_ENV: "True" # use env vars (below + env_file) instead of re-loading .env.dev
+      DEBUG: "True"
+      SECRET_KEY: "dev-only-change-me"
+      FRONTEND_URL: "http://localhost:3000"
+      AUTH_COOKIE_SECURE: "False"
 
-      # ── Database (external, managed outside this compose) ──────────────────
-      DATABASE_URL: ${DATABASE_URL}
-
-      # ── Auth ───────────────────────────────────────────────────────────────
-      AUTH_SECRET: ${AUTH_SECRET}
-      AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
-      AUTH_URL: ${AUTH_URL:-https://work.calari.tech}
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://work.calari.tech}
-      APP_URL: ${PUBLIC_APP_URL:-https://work.calari.tech}
-      NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://work.calari.tech}
-
-      # ── AI (OpenAI) ────────────────────────────────────────────────────────
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-
-      # ── Email (Resend) ─────────────────────────────────────────────────────
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-}
-
-      # ── File storage (AWS S3 / S3-compatible) ─────────────────────────────
-      AWS_REGION: ${AWS_REGION:-eu-central-1}
-      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT:-}
-
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-networks:
-  coolify:
-    external: true
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: calari_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./frontend/.env
+    environment:
+      # The BFF runs server-side inside this container; reach the backend by service name.
+      DJANGO_API_URL: "http://backend:8000"
+    depends_on:
+      - backend

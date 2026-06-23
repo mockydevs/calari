@@ -1,0 +1,42 @@
+FROM python:3.13-slim-bullseye
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    curl \
+    pkg-config \
+    default-libmysqlclient-dev \
+    build-essential \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf2.0-0 \
+    libffi-dev \
+    libcairo2 \
+    libjpeg-dev \
+    libpng-dev \
+    fonts-liberation \
+    fonts-freefont-ttf \
+    libxml2 \
+    libxslt1.1 \
+    libfontconfig1 \
+    shared-mime-info \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+ 
+
+COPY requirements.txt ./
+
+RUN pip install -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+# Run migrations, then Celery worker + beat in the background and Daphne (ASGI,
+# needed for Channels websockets) in the foreground.
+CMD bash -c "python manage.py migrate --noinput && (celery -A config worker --loglevel=info &) && (celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler &) && daphne -b 0.0.0.0 -p 8000 config.asgi:application"

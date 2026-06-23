@@ -1,0 +1,4550 @@
+openapi: 3.0.3
+info:
+  title: Calari Staff Portal API
+  version: v1
+  description: REST API documentation for the Calari Staff Portal
+  contact:
+    email: support@calari.com
+  license:
+    name: Proprietary
+paths:
+  /api/token/:
+    post:
+      operationId: token_create
+      description: Authenticate with username/email and password. JWT tokens are set
+        as httpOnly cookies on success.
+      summary: Login
+      tags:
+      - Auth — Token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: Login successful — tokens set in cookies
+        '401':
+          description: Invalid credentials
+  /api/token/refresh/:
+    post:
+      operationId: token_refresh_create
+      description: Issues a new access token using the refresh_token cookie. No request
+        body needed.
+      summary: Refresh access token
+      tags:
+      - Auth — Token
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: Access token refreshed
+        '401':
+          description: Missing or invalid refresh token
+  /api/token/logout/:
+    post:
+      operationId: token_logout_create
+      description: Blacklists the refresh token and clears both JWT cookies.
+      summary: Logout
+      tags:
+      - Auth — Token
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: Logged out successfully
+  /api/auth/me/:
+    get:
+      operationId: auth_me_retrieve
+      description: Returns the authenticated user's profile. Requires a valid access_token
+        cookie.
+      summary: Get current user
+      tags:
+      - Auth — Profile
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+  /api/auth/change-password/:
+    post:
+      operationId: auth_change_password_create
+      description: Allows the authenticated user to change their own password. Re-issues
+        JWT cookies on success.
+      summary: Change own password
+      tags:
+      - Auth — Profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Password changed — new tokens set in cookies
+        '400':
+          description: Current password is incorrect
+  /api/auth/reset-password/:
+    post:
+      operationId: auth_reset_password_create
+      description: Manager (admin/superuser) resets another user's password. Admins
+        cannot reset superuser passwords.
+      summary: Admin reset password
+      tags:
+      - Auth — User Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Password reset successfully
+        '403':
+          description: Permission denied
+  /api/auth/register/:
+    post:
+      operationId: auth_register_create
+      description: Manager (admin/superuser) creates a new portal user. Admins cannot
+        create superuser accounts.
+      summary: Create user
+      tags:
+      - Auth — User Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '403':
+          description: Permission denied
+  /api/auth/users/:
+    get:
+      operationId: auth_users_list
+      description: Returns all portal users ordered by most recent join date. Requires
+        admin or superuser role.
+      summary: List all users
+      tags:
+      - Auth — User Management
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+          description: ''
+  /api/auth/users/{user_id}/:
+    patch:
+      operationId: auth_users_partial_update
+      description: Manager partially updates a user's profile fields. Role escalation
+        to superuser requires superuser caller.
+      summary: Update user
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Auth — User Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateUserRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateUserRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateUserRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '403':
+          description: Permission denied
+        '404':
+          description: User not found
+  /api/auth/users/{user_id}/deactivate/:
+    post:
+      operationId: auth_users_deactivate_create
+      description: Prevents the user from logging in. Cannot deactivate yourself or
+        the last superuser.
+      summary: Deactivate user
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Auth — User Management
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: User deactivated
+        '400':
+          description: Cannot deactivate own account or last superuser
+        '403':
+          description: Permission denied
+        '404':
+          description: User not found
+  /api/auth/users/{user_id}/activate/:
+    post:
+      operationId: auth_users_activate_create
+      description: Re-enables a previously deactivated user account.
+      summary: Activate user
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Auth — User Management
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: User activated
+        '403':
+          description: Permission denied
+        '404':
+          description: User not found
+  /api/auth/users/{user_id}/delete/:
+    delete:
+      operationId: auth_users_delete_destroy
+      description: Soft-deletes a user by deactivating their account. Cannot remove
+        yourself or the last superuser.
+      summary: Remove user
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Auth — User Management
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: User removed (deactivated)
+        '400':
+          description: Cannot delete own account or last superuser
+        '403':
+          description: Permission denied
+        '404':
+          description: User not found
+  /api/auth/forgot-password/:
+    post:
+      operationId: auth_forgot_password_create
+      description: Sends a one-time password reset link to the given email if an active
+        account exists. Always returns 200 to avoid email enumeration.
+      summary: Request password reset
+      tags:
+      - Auth — Password Reset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: Reset link sent (if email exists)
+  /api/auth/reset-password-confirm/:
+    post:
+      operationId: auth_reset_password_confirm_create
+      description: Validates the UUID reset token and sets the new password. Single-use,
+        expires after 1 hour.
+      summary: Confirm password reset
+      tags:
+      - Auth — Password Reset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordConfirmRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: Password reset successfully
+        '400':
+          description: Invalid, expired or already-used token
+  /api/projects/dashboard-stats/:
+    get:
+      operationId: projects_dashboard_stats_retrieve
+      summary: Dashboard stats
+      tags:
+      - Projects
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/projects/my-dashboard/:
+    get:
+      operationId: projects_my_dashboard_retrieve
+      description: Returns stat counts, almost-due tasks, high-priority tasks, overdue
+        tasks, upcoming milestones, active project blockers, and recent project activity
+        — all scoped to the current user.
+      summary: Personalized dashboard data for the current user
+      tags:
+      - Projects
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Dashboard payload
+  /api/projects/my-projects/:
+    get:
+      operationId: projects_my_projects_list
+      description: Returns projects visible to the current user. Admins and superusers
+        see all projects. Other users see only projects where they are the primary
+        assignee or a co-assignee.
+      summary: My projects
+      parameters:
+      - in: query
+        name: priority
+        schema:
+          type: string
+        description: Filter by priority
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Search in name/description
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by status
+      tags:
+      - Projects
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectList'
+          description: ''
+  /api/projects/projects/{id}/progress/:
+    get:
+      operationId: projects_projects_progress_retrieve
+      summary: Project task progress
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Projects
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: '{"total": int, "done": int, "percent": int}'
+  /api/projects/clients/:
+    post:
+      operationId: projects_clients_create
+      summary: Create a client
+      tags:
+      - Clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientsRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clients'
+          description: ''
+    get:
+      operationId: projects_clients_list
+      summary: List all clients
+      parameters:
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - Clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Clients'
+          description: ''
+  /api/projects/clients/{id}/:
+    put:
+      operationId: projects_clients_update
+      summary: Update a client
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this clients.
+        required: true
+      tags:
+      - Clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientsRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clients'
+          description: ''
+    get:
+      operationId: projects_clients_retrieve
+      summary: Retrieve a client
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this clients.
+        required: true
+      tags:
+      - Clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clients'
+          description: ''
+    delete:
+      operationId: projects_clients_destroy
+      summary: Delete a client
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this clients.
+        required: true
+      tags:
+      - Clients
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_clients_partial_update
+      summary: Partially update a client
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this clients.
+        required: true
+      tags:
+      - Clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedClientsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedClientsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedClientsRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clients'
+          description: ''
+  /api/projects/projects/:
+    post:
+      operationId: projects_projects_create
+      summary: Create a project
+      tags:
+      - Projects
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectsRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Projects'
+          description: ''
+    get:
+      operationId: projects_projects_list
+      summary: List all projects
+      parameters:
+      - in: query
+        name: assigned_to
+        schema:
+          type: integer
+      - in: query
+        name: client
+        schema:
+          type: integer
+      - in: query
+        name: end_date
+        schema:
+          type: string
+          format: date
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: priority
+        schema:
+          type: string
+          enum:
+          - critical
+          - high
+          - low
+          - medium
+        description: |-
+          * `low` - Low
+          * `medium` - Medium
+          * `high` - High
+          * `critical` - Critical
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: start_date
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - active
+          - cancelled
+          - completed
+          - on_hold
+        description: |-
+          * `active` - Active
+          * `on_hold` - On Hold
+          * `completed` - Completed
+          * `cancelled` - Cancelled
+      tags:
+      - Projects
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Projects'
+          description: ''
+  /api/projects/projects/{id}/:
+    delete:
+      operationId: projects_projects_destroy
+      summary: Delete a project
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this projects.
+        required: true
+      tags:
+      - Projects
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    put:
+      operationId: projects_projects_update
+      summary: Update a project
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this projects.
+        required: true
+      tags:
+      - Projects
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectsRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Projects'
+          description: ''
+    get:
+      operationId: projects_projects_retrieve
+      summary: Retrieve a project
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this projects.
+        required: true
+      tags:
+      - Projects
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Projects'
+          description: ''
+    patch:
+      operationId: projects_projects_partial_update
+      summary: Partially update a project
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this projects.
+        required: true
+      tags:
+      - Projects
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectsRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Projects'
+          description: ''
+  /api/projects/project-files/:
+    post:
+      operationId: projects_project_files_create
+      summary: Upload a project file
+      tags:
+      - Project Files
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectFilesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectFilesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectFilesRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectFiles'
+          description: ''
+    get:
+      operationId: projects_project_files_list
+      summary: List project files
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: project
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: uploaded_by
+        schema:
+          type: integer
+      tags:
+      - Project Files
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectFiles'
+          description: ''
+  /api/projects/project-files/{id}/:
+    put:
+      operationId: projects_project_files_update
+      summary: Update a project file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project files.
+        required: true
+      tags:
+      - Project Files
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectFilesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectFilesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectFilesRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectFiles'
+          description: ''
+    get:
+      operationId: projects_project_files_retrieve
+      summary: Retrieve a project file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project files.
+        required: true
+      tags:
+      - Project Files
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectFiles'
+          description: ''
+    delete:
+      operationId: projects_project_files_destroy
+      summary: Delete a project file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project files.
+        required: true
+      tags:
+      - Project Files
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_project_files_partial_update
+      summary: Partially update a project file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project files.
+        required: true
+      tags:
+      - Project Files
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectFilesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectFilesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectFilesRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectFiles'
+          description: ''
+  /api/projects/project-contacts/:
+    post:
+      operationId: projects_project_contacts_create
+      summary: Create a project contact person
+      tags:
+      - Project Contacts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectContactPersonRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectContactPersonRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectContactPersonRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectContactPerson'
+          description: ''
+    get:
+      operationId: projects_project_contacts_list
+      summary: List project contact persons
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: project
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - Project Contacts
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectContactPerson'
+          description: ''
+  /api/projects/project-contacts/{id}/:
+    put:
+      operationId: projects_project_contacts_update
+      summary: Update a project contact person
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project contact person.
+        required: true
+      tags:
+      - Project Contacts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectContactPersonRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectContactPersonRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectContactPersonRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectContactPerson'
+          description: ''
+    get:
+      operationId: projects_project_contacts_retrieve
+      summary: Retrieve a project contact person
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project contact person.
+        required: true
+      tags:
+      - Project Contacts
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectContactPerson'
+          description: ''
+    delete:
+      operationId: projects_project_contacts_destroy
+      summary: Delete a project contact person
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project contact person.
+        required: true
+      tags:
+      - Project Contacts
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_project_contacts_partial_update
+      summary: Partially update a project contact person
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project contact person.
+        required: true
+      tags:
+      - Project Contacts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectContactPersonRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectContactPersonRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectContactPersonRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectContactPerson'
+          description: ''
+  /api/projects/project-blockers/:
+    post:
+      operationId: projects_project_blockers_create
+      summary: Create a project blocker
+      tags:
+      - Project Blockers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectBlockersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectBlockersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectBlockersRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectBlockers'
+          description: ''
+    get:
+      operationId: projects_project_blockers_list
+      summary: List project blockers
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: project
+        schema:
+          type: integer
+      - in: query
+        name: reported_by
+        schema:
+          type: integer
+      - in: query
+        name: resolved
+        schema:
+          type: boolean
+      - in: query
+        name: resolved_by
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - Project Blockers
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectBlockers'
+          description: ''
+  /api/projects/project-blockers/{id}/:
+    put:
+      operationId: projects_project_blockers_update
+      summary: Update a project blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project blockers.
+        required: true
+      tags:
+      - Project Blockers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectBlockersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectBlockersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectBlockersRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectBlockers'
+          description: ''
+    get:
+      operationId: projects_project_blockers_retrieve
+      summary: Retrieve a project blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project blockers.
+        required: true
+      tags:
+      - Project Blockers
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectBlockers'
+          description: ''
+    delete:
+      operationId: projects_project_blockers_destroy
+      summary: Delete a project blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project blockers.
+        required: true
+      tags:
+      - Project Blockers
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_project_blockers_partial_update
+      summary: Partially update a project blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project blockers.
+        required: true
+      tags:
+      - Project Blockers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectBlockersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectBlockersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectBlockersRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectBlockers'
+          description: ''
+  /api/projects/project-co-assign/:
+    post:
+      operationId: projects_project_co_assign_create
+      summary: Co-assign a user to a project
+      tags:
+      - Project Co-Assignments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCoAssignmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectCoAssignmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectCoAssignmentRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCoAssignment'
+          description: ''
+    get:
+      operationId: projects_project_co_assign_list
+      summary: List project co-assignments
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: project
+        schema:
+          type: integer
+      - in: query
+        name: role
+        schema:
+          type: string
+          enum:
+          - designer
+          - developer
+          - lead
+          - observer
+          - reviewer
+          - tester
+        description: |-
+          * `lead` - Lead
+          * `developer` - Developer
+          * `designer` - Designer
+          * `tester` - Tester
+          * `reviewer` - Reviewer
+          * `observer` - Observer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: user
+        schema:
+          type: integer
+      tags:
+      - Project Co-Assignments
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectCoAssignment'
+          description: ''
+  /api/projects/project-co-assign/{id}/:
+    put:
+      operationId: projects_project_co_assign_update
+      summary: Update a co-assignment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project co assignment.
+        required: true
+      tags:
+      - Project Co-Assignments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCoAssignmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectCoAssignmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectCoAssignmentRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCoAssignment'
+          description: ''
+    get:
+      operationId: projects_project_co_assign_retrieve
+      summary: Retrieve a co-assignment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project co assignment.
+        required: true
+      tags:
+      - Project Co-Assignments
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCoAssignment'
+          description: ''
+    delete:
+      operationId: projects_project_co_assign_destroy
+      summary: Remove a co-assignment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project co assignment.
+        required: true
+      tags:
+      - Project Co-Assignments
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_project_co_assign_partial_update
+      summary: Partially update a co-assignment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project co assignment.
+        required: true
+      tags:
+      - Project Co-Assignments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectCoAssignmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectCoAssignmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectCoAssignmentRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCoAssignment'
+          description: ''
+  /api/projects/project-milestones/:
+    post:
+      operationId: projects_project_milestones_create
+      summary: Create a milestone
+      tags:
+      - Project Milestones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectMilestoneRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectMilestoneRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectMilestoneRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMilestone'
+          description: ''
+    get:
+      operationId: projects_project_milestones_list
+      summary: List project milestones
+      parameters:
+      - in: query
+        name: completed
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: project
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - Project Milestones
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectMilestone'
+          description: ''
+  /api/projects/project-milestones/{id}/:
+    put:
+      operationId: projects_project_milestones_update
+      summary: Update a milestone
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project milestone.
+        required: true
+      tags:
+      - Project Milestones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectMilestoneRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProjectMilestoneRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProjectMilestoneRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMilestone'
+          description: ''
+    get:
+      operationId: projects_project_milestones_retrieve
+      summary: Retrieve a milestone
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project milestone.
+        required: true
+      tags:
+      - Project Milestones
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMilestone'
+          description: ''
+    delete:
+      operationId: projects_project_milestones_destroy
+      summary: Delete a milestone
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project milestone.
+        required: true
+      tags:
+      - Project Milestones
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_project_milestones_partial_update
+      summary: Partially update a milestone
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project milestone.
+        required: true
+      tags:
+      - Project Milestones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectMilestoneRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectMilestoneRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectMilestoneRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMilestone'
+          description: ''
+  /api/projects/project-activity/:
+    get:
+      operationId: projects_project_activity_list
+      summary: List project activity log
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: project
+        schema:
+          type: integer
+      - in: query
+        name: user
+        schema:
+          type: integer
+      tags:
+      - Project Activity
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectActivity'
+          description: ''
+  /api/projects/project-activity/{id}/:
+    get:
+      operationId: projects_project_activity_retrieve
+      summary: Retrieve a project activity entry
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project activity.
+        required: true
+      tags:
+      - Project Activity
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectActivity'
+          description: ''
+  /api/projects/tasks/:
+    post:
+      operationId: projects_tasks_create
+      summary: Create a task
+      tags:
+      - Tasks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TasksRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TasksRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TasksRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tasks'
+          description: ''
+    get:
+      operationId: projects_tasks_list
+      summary: List all tasks
+      parameters:
+      - in: query
+        name: assigned_to
+        schema:
+          type: integer
+      - in: query
+        name: created_by
+        schema:
+          type: integer
+      - in: query
+        name: due_date
+        schema:
+          type: string
+          format: date
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: priority
+        schema:
+          type: string
+          enum:
+          - critical
+          - high
+          - low
+          - medium
+        description: |-
+          * `low` - Low
+          * `medium` - Medium
+          * `high` - High
+          * `critical` - Critical
+      - in: query
+        name: project
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - done
+          - in_progress
+          - in_review
+          - todo
+        description: |-
+          * `todo` - To Do
+          * `in_progress` - In Progress
+          * `in_review` - In Review
+          * `done` - Done
+      tags:
+      - Tasks
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tasks'
+          description: ''
+  /api/projects/tasks/board/{project_id}/:
+    get:
+      operationId: projects_tasks_board_retrieve
+      description: GET /api/projects/tasks/board/<project_id>/ — Kanban grouped by
+        status
+      summary: Get Kanban board tasks for a project
+      parameters:
+      - in: path
+        name: project_id
+        schema:
+          type: string
+          pattern: ^[0-9]+$
+        required: true
+      tags:
+      - Tasks
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tasks'
+          description: ''
+  /api/projects/tasks/{id}/:
+    delete:
+      operationId: projects_tasks_destroy
+      summary: Delete a task
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tasks.
+        required: true
+      tags:
+      - Tasks
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    put:
+      operationId: projects_tasks_update
+      summary: Update a task
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tasks.
+        required: true
+      tags:
+      - Tasks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TasksRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TasksRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TasksRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tasks'
+          description: ''
+    get:
+      operationId: projects_tasks_retrieve
+      summary: Retrieve a task
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tasks.
+        required: true
+      tags:
+      - Tasks
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tasks'
+          description: ''
+    patch:
+      operationId: projects_tasks_partial_update
+      summary: Partially update a task
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tasks.
+        required: true
+      tags:
+      - Tasks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTasksRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTasksRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTasksRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tasks'
+          description: ''
+  /api/projects/task-files/:
+    post:
+      operationId: projects_task_files_create
+      summary: Upload a task file
+      tags:
+      - Task Files
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskFilesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskFilesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskFilesRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskFiles'
+          description: ''
+    get:
+      operationId: projects_task_files_list
+      summary: List task files
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: task
+        schema:
+          type: integer
+      - in: query
+        name: uploaded_by
+        schema:
+          type: integer
+      tags:
+      - Task Files
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskFiles'
+          description: ''
+  /api/projects/task-files/{id}/:
+    put:
+      operationId: projects_task_files_update
+      summary: Update a task file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task files.
+        required: true
+      tags:
+      - Task Files
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskFilesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskFilesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskFilesRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskFiles'
+          description: ''
+    get:
+      operationId: projects_task_files_retrieve
+      summary: Retrieve a task file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task files.
+        required: true
+      tags:
+      - Task Files
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskFiles'
+          description: ''
+    delete:
+      operationId: projects_task_files_destroy
+      summary: Delete a task file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task files.
+        required: true
+      tags:
+      - Task Files
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_task_files_partial_update
+      summary: Partially update a task file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task files.
+        required: true
+      tags:
+      - Task Files
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskFilesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskFilesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskFilesRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskFiles'
+          description: ''
+  /api/projects/task-blockers/:
+    post:
+      operationId: projects_task_blockers_create
+      summary: Create a task blocker
+      tags:
+      - Task Blockers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskBlockersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskBlockersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskBlockersRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskBlockers'
+          description: ''
+    get:
+      operationId: projects_task_blockers_list
+      summary: List task blockers
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: reported_by
+        schema:
+          type: integer
+      - in: query
+        name: resolved
+        schema:
+          type: boolean
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: task
+        schema:
+          type: integer
+      tags:
+      - Task Blockers
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskBlockers'
+          description: ''
+  /api/projects/task-blockers/{id}/:
+    put:
+      operationId: projects_task_blockers_update
+      summary: Update a task blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task blockers.
+        required: true
+      tags:
+      - Task Blockers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskBlockersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskBlockersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskBlockersRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskBlockers'
+          description: ''
+    get:
+      operationId: projects_task_blockers_retrieve
+      summary: Retrieve a task blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task blockers.
+        required: true
+      tags:
+      - Task Blockers
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskBlockers'
+          description: ''
+    delete:
+      operationId: projects_task_blockers_destroy
+      summary: Delete a task blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task blockers.
+        required: true
+      tags:
+      - Task Blockers
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_task_blockers_partial_update
+      summary: Partially update a task blocker
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task blockers.
+        required: true
+      tags:
+      - Task Blockers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskBlockersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskBlockersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskBlockersRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskBlockers'
+          description: ''
+  /api/projects/task-labels/:
+    post:
+      operationId: projects_task_labels_create
+      summary: Create a task label
+      tags:
+      - Task Labels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskLabelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskLabelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskLabelRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskLabel'
+          description: ''
+    get:
+      operationId: projects_task_labels_list
+      summary: List task labels
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - Task Labels
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskLabel'
+          description: ''
+  /api/projects/task-labels/{id}/:
+    put:
+      operationId: projects_task_labels_update
+      summary: Update a task label
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task label.
+        required: true
+      tags:
+      - Task Labels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskLabelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskLabelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskLabelRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskLabel'
+          description: ''
+    get:
+      operationId: projects_task_labels_retrieve
+      summary: Retrieve a task label
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task label.
+        required: true
+      tags:
+      - Task Labels
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskLabel'
+          description: ''
+    delete:
+      operationId: projects_task_labels_destroy
+      summary: Delete a task label
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task label.
+        required: true
+      tags:
+      - Task Labels
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_task_labels_partial_update
+      summary: Partially update a task label
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task label.
+        required: true
+      tags:
+      - Task Labels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskLabelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskLabelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskLabelRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskLabel'
+          description: ''
+  /api/projects/task-comments/:
+    post:
+      operationId: projects_task_comments_create
+      summary: Add a comment to a task
+      tags:
+      - Task Comments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskComment'
+          description: ''
+    get:
+      operationId: projects_task_comments_list
+      summary: List task comments
+      parameters:
+      - in: query
+        name: author
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: task
+        schema:
+          type: integer
+      tags:
+      - Task Comments
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskComment'
+          description: ''
+  /api/projects/task-comments/{id}/:
+    put:
+      operationId: projects_task_comments_update
+      summary: Update a comment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task comment.
+        required: true
+      tags:
+      - Task Comments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskComment'
+          description: ''
+    get:
+      operationId: projects_task_comments_retrieve
+      summary: Retrieve a comment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task comment.
+        required: true
+      tags:
+      - Task Comments
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskComment'
+          description: ''
+    delete:
+      operationId: projects_task_comments_destroy
+      summary: Delete a comment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task comment.
+        required: true
+      tags:
+      - Task Comments
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_task_comments_partial_update
+      summary: Partially update a comment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task comment.
+        required: true
+      tags:
+      - Task Comments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskCommentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskCommentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskCommentRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskComment'
+          description: ''
+  /api/projects/task-checklist/:
+    post:
+      operationId: projects_task_checklist_create
+      summary: Add a checklist item
+      tags:
+      - Task Checklists
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskChecklistRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskChecklistRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskChecklistRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskChecklist'
+          description: ''
+    get:
+      operationId: projects_task_checklist_list
+      summary: List checklist items for a task
+      parameters:
+      - in: query
+        name: completed
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: task
+        schema:
+          type: integer
+      tags:
+      - Task Checklists
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskChecklist'
+          description: ''
+  /api/projects/task-checklist/{id}/:
+    put:
+      operationId: projects_task_checklist_update
+      summary: Update a checklist item
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task checklist.
+        required: true
+      tags:
+      - Task Checklists
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskChecklistRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskChecklistRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskChecklistRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskChecklist'
+          description: ''
+    get:
+      operationId: projects_task_checklist_retrieve
+      summary: Retrieve a checklist item
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task checklist.
+        required: true
+      tags:
+      - Task Checklists
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskChecklist'
+          description: ''
+    delete:
+      operationId: projects_task_checklist_destroy
+      summary: Delete a checklist item
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task checklist.
+        required: true
+      tags:
+      - Task Checklists
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+    patch:
+      operationId: projects_task_checklist_partial_update
+      summary: Partially update a checklist item
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task checklist.
+        required: true
+      tags:
+      - Task Checklists
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskChecklistRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskChecklistRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskChecklistRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskChecklist'
+          description: ''
+  /api/projects/task-activity/:
+    get:
+      operationId: projects_task_activity_list
+      summary: List task activity log
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: task
+        schema:
+          type: integer
+      - in: query
+        name: user
+        schema:
+          type: integer
+      tags:
+      - Task Activity
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskActivity'
+          description: ''
+  /api/projects/task-activity/{id}/:
+    get:
+      operationId: projects_task_activity_retrieve
+      summary: Retrieve a task activity entry
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this task activity.
+        required: true
+      tags:
+      - Task Activity
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskActivity'
+          description: ''
+components:
+  schemas:
+    ChangePasswordRequest:
+      type: object
+      properties:
+        current_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 8
+        confirm_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - confirm_password
+      - current_password
+      - new_password
+    Clients:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        phone_number:
+          type: string
+          maxLength: 20
+        company_name:
+          type: string
+          maxLength: 255
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        is_active:
+          type: boolean
+      required:
+      - created_at
+      - email
+      - id
+      - name
+    ClientsRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        phone_number:
+          type: string
+          maxLength: 20
+        company_name:
+          type: string
+          maxLength: 255
+        is_active:
+          type: boolean
+      required:
+      - email
+      - name
+    EffectiveRoleEnum:
+      enum:
+      - superuser
+      - admin
+      - viewer
+      type: string
+      description: |-
+        * `superuser` - superuser
+        * `admin` - admin
+        * `viewer` - viewer
+    ForgotPasswordRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
+    LoginRequest:
+      type: object
+      properties:
+        username_or_email:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - password
+      - username_or_email
+    PatchedClientsRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        phone_number:
+          type: string
+          maxLength: 20
+        company_name:
+          type: string
+          maxLength: 255
+        is_active:
+          type: boolean
+    PatchedProjectBlockersRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          minLength: 1
+        attachment:
+          type: string
+          format: binary
+          nullable: true
+        resolved:
+          type: boolean
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        reported_by:
+          type: integer
+          nullable: true
+        resolved_by:
+          type: integer
+          nullable: true
+    PatchedProjectCoAssignmentRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/ProjectCoAssignmentRoleEnum'
+        project:
+          type: integer
+        user:
+          type: integer
+        assigned_by:
+          type: integer
+          nullable: true
+    PatchedProjectContactPersonRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        phone_number:
+          type: string
+          maxLength: 20
+        role:
+          type: string
+          maxLength: 255
+        project:
+          type: integer
+    PatchedProjectFilesRequest:
+      type: object
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        file:
+          type: string
+          format: binary
+        project:
+          type: integer
+        uploaded_by:
+          type: integer
+          nullable: true
+    PatchedProjectMilestoneRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        due_date:
+          type: string
+          format: date
+        completed:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        created_by:
+          type: integer
+          nullable: true
+    PatchedProjectsRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/Status0d1Enum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        budget:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        client:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+    PatchedTaskBlockersRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          minLength: 1
+        attachment:
+          type: string
+          format: binary
+          nullable: true
+        resolved:
+          type: boolean
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        task:
+          type: integer
+        reported_by:
+          type: integer
+          nullable: true
+        resolved_by:
+          type: integer
+          nullable: true
+    PatchedTaskChecklistRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        completed:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        order:
+          type: integer
+          maximum: 4294967295
+          minimum: 0
+          format: int64
+        task:
+          type: integer
+        completed_by:
+          type: integer
+          nullable: true
+    PatchedTaskCommentRequest:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+        task:
+          type: integer
+    PatchedTaskFilesRequest:
+      type: object
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        file:
+          type: string
+          format: binary
+        task:
+          type: integer
+        uploaded_by:
+          type: integer
+          nullable: true
+    PatchedTaskLabelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        color:
+          type: string
+          minLength: 1
+          maxLength: 7
+        created_by:
+          type: integer
+          nullable: true
+    PatchedTasksRequest:
+      type: object
+      properties:
+        label_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusA9bEnum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        estimated_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        actual_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+        created_by:
+          type: integer
+          nullable: true
+        completed_by:
+          type: integer
+          nullable: true
+    PatchedUpdateUserRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          minLength: 1
+        role:
+          $ref: '#/components/schemas/RoleD26Enum'
+        job_title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        is_active:
+          type: boolean
+        profile_notes:
+          type: string
+    PriorityEnum:
+      enum:
+      - low
+      - medium
+      - high
+      - critical
+      type: string
+      description: |-
+        * `low` - Low
+        * `medium` - Medium
+        * `high` - High
+        * `critical` - Critical
+    ProjectActivity:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_name:
+          type: string
+          nullable: true
+          readOnly: true
+        user_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        action:
+          type: string
+          maxLength: 100
+        detail:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        project:
+          type: integer
+        user:
+          type: integer
+          nullable: true
+      required:
+      - action
+      - created_at
+      - id
+      - project
+      - user_initials
+      - user_name
+    ProjectBlockers:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reported_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        resolved_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        project_name:
+          type: string
+          nullable: true
+          readOnly: true
+        description:
+          type: string
+        attachment:
+          type: string
+          format: uri
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        resolved:
+          type: boolean
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        reported_by:
+          type: integer
+          nullable: true
+        resolved_by:
+          type: integer
+          nullable: true
+      required:
+      - created_at
+      - description
+      - id
+      - project
+      - project_name
+      - reported_by_name
+      - resolved_by_name
+    ProjectBlockersRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          minLength: 1
+        attachment:
+          type: string
+          format: binary
+          nullable: true
+        resolved:
+          type: boolean
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        reported_by:
+          type: integer
+          nullable: true
+        resolved_by:
+          type: integer
+          nullable: true
+      required:
+      - description
+      - project
+    ProjectCoAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_name:
+          type: string
+          nullable: true
+          readOnly: true
+        user_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        assigned_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        role:
+          $ref: '#/components/schemas/ProjectCoAssignmentRoleEnum'
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+        project:
+          type: integer
+        user:
+          type: integer
+        assigned_by:
+          type: integer
+          nullable: true
+      required:
+      - assigned_at
+      - assigned_by_name
+      - id
+      - project
+      - user
+      - user_initials
+      - user_name
+    ProjectCoAssignmentRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/ProjectCoAssignmentRoleEnum'
+        project:
+          type: integer
+        user:
+          type: integer
+        assigned_by:
+          type: integer
+          nullable: true
+      required:
+      - project
+      - user
+    ProjectCoAssignmentRoleEnum:
+      enum:
+      - lead
+      - developer
+      - designer
+      - tester
+      - reviewer
+      - observer
+      type: string
+      description: |-
+        * `lead` - Lead
+        * `developer` - Developer
+        * `designer` - Designer
+        * `tester` - Tester
+        * `reviewer` - Reviewer
+        * `observer` - Observer
+    ProjectContactPerson:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        phone_number:
+          type: string
+          maxLength: 20
+        role:
+          type: string
+          maxLength: 255
+        project:
+          type: integer
+      required:
+      - email
+      - id
+      - name
+      - project
+    ProjectContactPersonRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        phone_number:
+          type: string
+          maxLength: 20
+        role:
+          type: string
+          maxLength: 255
+        project:
+          type: integer
+      required:
+      - email
+      - name
+      - project
+    ProjectFiles:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        uploaded_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        file_name:
+          type: string
+          maxLength: 255
+        file:
+          type: string
+          format: uri
+        uploaded_at:
+          type: string
+          format: date-time
+          readOnly: true
+        project:
+          type: integer
+        uploaded_by:
+          type: integer
+          nullable: true
+      required:
+      - file
+      - file_name
+      - id
+      - project
+      - uploaded_at
+      - uploaded_by_name
+    ProjectFilesRequest:
+      type: object
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        file:
+          type: string
+          format: binary
+        project:
+          type: integer
+        uploaded_by:
+          type: integer
+          nullable: true
+      required:
+      - file
+      - file_name
+      - project
+    ProjectList:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        client:
+          type: integer
+        client_name:
+          type: string
+          nullable: true
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/Status0d1Enum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        budget:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_to:
+          type: integer
+          nullable: true
+        assigned_to_name:
+          type: string
+          nullable: true
+          readOnly: true
+        assigned_to_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        co_assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectCoAssignment'
+          readOnly: true
+        progress_percent:
+          type: integer
+          readOnly: true
+        task_total:
+          type: integer
+          readOnly: true
+        task_done:
+          type: integer
+          readOnly: true
+        open_blockers:
+          type: integer
+          readOnly: true
+      required:
+      - assigned_to_initials
+      - assigned_to_name
+      - client
+      - client_name
+      - co_assignments
+      - created_at
+      - end_date
+      - id
+      - name
+      - open_blockers
+      - progress_percent
+      - start_date
+      - task_done
+      - task_total
+    ProjectMilestone:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        created_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        due_date:
+          type: string
+          format: date
+        completed:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        project:
+          type: integer
+        created_by:
+          type: integer
+          nullable: true
+      required:
+      - created_at
+      - created_by_name
+      - due_date
+      - id
+      - name
+      - project
+    ProjectMilestoneRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        due_date:
+          type: string
+          format: date
+        completed:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        created_by:
+          type: integer
+          nullable: true
+      required:
+      - due_date
+      - name
+      - project
+    Projects:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        assigned_to_name:
+          type: string
+          nullable: true
+          readOnly: true
+        assigned_to_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        client_name:
+          type: string
+          nullable: true
+          readOnly: true
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectFiles'
+          readOnly: true
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectContactPerson'
+          readOnly: true
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectBlockers'
+          readOnly: true
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskCard'
+          readOnly: true
+        co_assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectCoAssignment'
+          readOnly: true
+        milestones:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectMilestone'
+          readOnly: true
+        progress_percent:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/Status0d1Enum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        budget:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        client:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+      required:
+      - assigned_to_initials
+      - assigned_to_name
+      - blockers
+      - client
+      - client_name
+      - co_assignments
+      - contacts
+      - created_at
+      - end_date
+      - files
+      - id
+      - milestones
+      - name
+      - progress_percent
+      - start_date
+      - tasks
+    ProjectsRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/Status0d1Enum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        budget:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        client:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+      required:
+      - client
+      - end_date
+      - name
+      - start_date
+    RegisterRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          minLength: 1
+        full_name:
+          type: string
+          minLength: 1
+          default: ''
+          maxLength: 255
+        password:
+          type: string
+          writeOnly: true
+          minLength: 8
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleD26Enum'
+          default: viewer
+        job_title:
+          type: string
+          minLength: 1
+          default: ''
+          maxLength: 255
+      required:
+      - email
+      - password
+      - username
+    ResetPasswordConfirmRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          format: uuid
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 8
+        confirm_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - confirm_password
+      - new_password
+      - token
+    ResetPasswordRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 8
+        confirm_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - confirm_password
+      - new_password
+      - user_id
+    RoleD26Enum:
+      enum:
+      - superuser
+      - admin
+      - employee
+      - finance
+      type: string
+      description: |-
+        * `superuser` - Superuser
+        * `admin` - Admin
+        * `employee` - Employee
+        * `finance` - Finance
+    Status0d1Enum:
+      enum:
+      - active
+      - on_hold
+      - completed
+      - cancelled
+      type: string
+      description: |-
+        * `active` - Active
+        * `on_hold` - On Hold
+        * `completed` - Completed
+        * `cancelled` - Cancelled
+    StatusA9bEnum:
+      enum:
+      - todo
+      - in_progress
+      - in_review
+      - done
+      type: string
+      description: |-
+        * `todo` - To Do
+        * `in_progress` - In Progress
+        * `in_review` - In Review
+        * `done` - Done
+    TaskActivity:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_name:
+          type: string
+          nullable: true
+          readOnly: true
+        user_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        action:
+          type: string
+          maxLength: 100
+        detail:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        task:
+          type: integer
+        user:
+          type: integer
+          nullable: true
+      required:
+      - action
+      - created_at
+      - id
+      - task
+      - user_initials
+      - user_name
+    TaskBlockers:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reported_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        resolved_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        task_name:
+          type: string
+          nullable: true
+          readOnly: true
+        project_name:
+          type: string
+          nullable: true
+          readOnly: true
+        description:
+          type: string
+        attachment:
+          type: string
+          format: uri
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        resolved:
+          type: boolean
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        task:
+          type: integer
+        reported_by:
+          type: integer
+          nullable: true
+        resolved_by:
+          type: integer
+          nullable: true
+      required:
+      - created_at
+      - description
+      - id
+      - project_name
+      - reported_by_name
+      - resolved_by_name
+      - task
+      - task_name
+    TaskBlockersRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          minLength: 1
+        attachment:
+          type: string
+          format: binary
+          nullable: true
+        resolved:
+          type: boolean
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        task:
+          type: integer
+        reported_by:
+          type: integer
+          nullable: true
+        resolved_by:
+          type: integer
+          nullable: true
+      required:
+      - description
+      - task
+    TaskCard:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        status:
+          $ref: '#/components/schemas/StatusA9bEnum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        assigned_to:
+          type: integer
+          nullable: true
+        assigned_to_name:
+          type: string
+          nullable: true
+          readOnly: true
+        assigned_to_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        labels:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskLabel'
+          readOnly: true
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        estimated_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        actual_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        checklist_total:
+          type: integer
+          readOnly: true
+        checklist_done:
+          type: integer
+          readOnly: true
+        comment_count:
+          type: integer
+          readOnly: true
+        completed:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - assigned_to_initials
+      - assigned_to_name
+      - checklist_done
+      - checklist_total
+      - comment_count
+      - completed
+      - created_at
+      - id
+      - labels
+      - name
+    TaskCardRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        status:
+          $ref: '#/components/schemas/StatusA9bEnum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        assigned_to:
+          type: integer
+          nullable: true
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        estimated_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        actual_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+      required:
+      - name
+    TaskChecklist:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        completed_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        completed:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        order:
+          type: integer
+          maximum: 4294967295
+          minimum: 0
+          format: int64
+        task:
+          type: integer
+        completed_by:
+          type: integer
+          nullable: true
+      required:
+      - completed_by_name
+      - id
+      - task
+      - title
+    TaskChecklistRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        completed:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        order:
+          type: integer
+          maximum: 4294967295
+          minimum: 0
+          format: int64
+        task:
+          type: integer
+        completed_by:
+          type: integer
+          nullable: true
+      required:
+      - task
+      - title
+    TaskComment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        author_name:
+          type: string
+          nullable: true
+          readOnly: true
+        author_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        task:
+          type: integer
+        author:
+          type: integer
+          readOnly: true
+          nullable: true
+      required:
+      - author
+      - author_initials
+      - author_name
+      - content
+      - created_at
+      - id
+      - task
+      - updated_at
+    TaskCommentRequest:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+        task:
+          type: integer
+      required:
+      - content
+      - task
+    TaskFiles:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        uploaded_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        file_name:
+          type: string
+          maxLength: 255
+        file:
+          type: string
+          format: uri
+        uploaded_at:
+          type: string
+          format: date-time
+          readOnly: true
+        task:
+          type: integer
+        uploaded_by:
+          type: integer
+          nullable: true
+      required:
+      - file
+      - file_name
+      - id
+      - task
+      - uploaded_at
+      - uploaded_by_name
+    TaskFilesRequest:
+      type: object
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        file:
+          type: string
+          format: binary
+        task:
+          type: integer
+        uploaded_by:
+          type: integer
+          nullable: true
+      required:
+      - file
+      - file_name
+      - task
+    TaskLabel:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 50
+        color:
+          type: string
+          maxLength: 7
+        created_by:
+          type: integer
+          nullable: true
+      required:
+      - id
+      - name
+    TaskLabelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        color:
+          type: string
+          minLength: 1
+          maxLength: 7
+        created_by:
+          type: integer
+          nullable: true
+      required:
+      - name
+    Tasks:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        assigned_to_name:
+          type: string
+          nullable: true
+          readOnly: true
+        assigned_to_initials:
+          type: string
+          nullable: true
+          readOnly: true
+        created_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        completed:
+          type: boolean
+          readOnly: true
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskFiles'
+          readOnly: true
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskBlockers'
+          readOnly: true
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskComment'
+          readOnly: true
+        checklist:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskChecklist'
+          readOnly: true
+        labels:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskLabel'
+          readOnly: true
+        checklist_total:
+          type: integer
+          readOnly: true
+        checklist_done:
+          type: integer
+          readOnly: true
+        comment_count:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusA9bEnum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        estimated_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        actual_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+        created_by:
+          type: integer
+          nullable: true
+        completed_by:
+          type: integer
+          nullable: true
+      required:
+      - assigned_to_initials
+      - assigned_to_name
+      - blockers
+      - checklist
+      - checklist_done
+      - checklist_total
+      - comment_count
+      - comments
+      - completed
+      - created_at
+      - created_by_name
+      - files
+      - id
+      - labels
+      - name
+      - project
+    TasksRequest:
+      type: object
+      properties:
+        label_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusA9bEnum'
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        estimated_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        actual_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        project:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+        created_by:
+          type: integer
+          nullable: true
+        completed_by:
+          type: integer
+          nullable: true
+      required:
+      - name
+      - project
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        full_name:
+          type: string
+          maxLength: 255
+        role:
+          $ref: '#/components/schemas/RoleD26Enum'
+        effective_role:
+          allOf:
+          - $ref: '#/components/schemas/EffectiveRoleEnum'
+          readOnly: true
+        is_active:
+          type: boolean
+        is_superuser:
+          type: boolean
+          title: Superuser status
+          description: Designates that this user has all permissions without explicitly
+            assigning them.
+        job_title:
+          type: string
+          maxLength: 255
+        date_joined:
+          type: string
+          format: date-time
+          readOnly: true
+        last_login:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_login_ip:
+          type: string
+          readOnly: true
+          nullable: true
+        profile_notes:
+          type: string
+      required:
+      - date_joined
+      - effective_role
+      - id
+      - last_login
+      - last_login_ip
+      - username
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: JWT access token stored in an httpOnly cookie (set automatically
+        on login)
+tags:
+- name: Auth — Token
+  description: Login, logout and token refresh
+- name: Auth — Profile
+  description: Current user profile and password change
+- name: Auth — User Management
+  description: CRUD operations on portal users (managers only)
+- name: Auth — Password Reset
+  description: Self-service forgot / reset password flow

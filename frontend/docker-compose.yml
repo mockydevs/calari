@@ -1,0 +1,61 @@
+# Coolify production deployment — FRONTEND (Next.js)
+# ─────────────────────────────────────────────────────────────────────────────
+# The Django backend is deployed separately (see ../backend). The database is
+# managed externally. All env vars are set in the Coolify service dashboard —
+# values here serve as documentation and fallback defaults only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: calari-frontend
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    networks:
+      - coolify
+    environment:
+      NODE_ENV: production
+
+      # ── Django backend (consumed by the BFF) ───────────────────────────────
+      DJANGO_API_URL: ${DJANGO_API_URL:-https://portal.calarisolutions.com}
+
+      # ── Database (external, managed outside this compose) ──────────────────
+      DATABASE_URL: ${DATABASE_URL}
+
+      # ── Auth ───────────────────────────────────────────────────────────────
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
+      AUTH_URL: ${AUTH_URL:-https://work.calari.tech}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://work.calari.tech}
+      APP_URL: ${PUBLIC_APP_URL:-https://work.calari.tech}
+      NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://work.calari.tech}
+
+      # ── AI (OpenAI) ────────────────────────────────────────────────────────
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+
+      # ── Email (Resend) ─────────────────────────────────────────────────────
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+
+      # ── File storage (AWS S3 / S3-compatible) ─────────────────────────────
+      AWS_REGION: ${AWS_REGION:-eu-central-1}
+      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT:-}
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  coolify:
+    external: true
