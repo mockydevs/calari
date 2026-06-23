@@ -186,6 +186,11 @@ else:
         }
     }
 
+# Reuse DB connections across requests — critical when the Postgres is remote,
+# otherwise every request pays a fresh connect/TLS round-trip.
+DATABASES['default']['CONN_MAX_AGE'] = 60
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
