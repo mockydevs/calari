@@ -11,6 +11,7 @@ export async function Sidebar({ user }: { user: { id: string; name: string; role
 
   const navItems: { href: string; label: string; iconName: NavIconName; show: boolean }[] = [
     { href: "/dashboard", label: "Dashboard", iconName: "LayoutDashboard", show: true },
+    { href: "/projects", label: "Projects", iconName: "FolderKanban", show: true },
     { href: "/builds", label: "Builds", iconName: "BriefcaseBusiness", show: true },
     { href: "/builds/kanban", label: "Board", iconName: "KanbanSquare", show: true },
     { href: "/clients", label: "Clients", iconName: "Users", show: isAdmin },

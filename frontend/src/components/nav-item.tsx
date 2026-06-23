@@ -5,6 +5,7 @@ import {
   Bell,
   BriefcaseBusiness,
   CircleUserRound,
+  FolderKanban,
   KanbanSquare,
   KeyRound,
   LayoutDashboard,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 const ICON_MAP = {
   LayoutDashboard,
   BriefcaseBusiness,
+  FolderKanban,
   KanbanSquare,
   KeyRound,
   Users,
