@@ -1,12 +1,15 @@
 import { signOut } from "@/auth";
-import { prisma } from "@/lib/db";
+import { serverApi } from "@/lib/portal/server";
 import { NavItem } from "@/components/nav-item";
 import type { NavIconName } from "@/components/nav-item";
 import { LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 export async function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null } }) {
-  const unread = await prisma.notification.count({ where: { userId: user.id, read: false } });
+  const unread = await serverApi
+    .get<{ id: number }[]>("builds/notifications?read=false")
+    .then((a) => (Array.isArray(a) ? a.length : 0))
+    .catch(() => 0);
   const isAdmin = user.role === "ADMIN";
 
   const navItems: { href: string; label: string; iconName: NavIconName; show: boolean }[] = [

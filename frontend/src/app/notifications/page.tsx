@@ -1,30 +1,45 @@
 import Link from "next/link";
 import { Bell, CheckCheck } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
-import { prisma } from "@/lib/db";
+import { serverApi } from "@/lib/portal/server";
 import { markAllRead, updateNotificationPreferences } from "./actions";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+type Notif = { id: number; message: string; link: string; read: boolean; created_at: string };
+type Prefs = {
+  build_assigned: boolean;
+  task_updated: boolean;
+  follow_up_notes: boolean;
+  change_requests: boolean;
+  ready_for_review: boolean;
+  document_uploaded: boolean;
+};
+
+const DEFAULT_PREFS: Prefs = {
+  build_assigned: true,
+  task_updated: true,
+  follow_up_notes: true,
+  change_requests: true,
+  ready_for_review: true,
+  document_uploaded: true,
+};
+
+function asList<T>(d: T[] | { results: T[] }): T[] {
+  return Array.isArray(d) ? d : d.results ?? [];
+}
+
 export default async function NotificationsPage() {
-  const user = await requireUser();
-  const items = await prisma.notification.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
-  const preferences =
-    (await prisma.notificationPreference.findUnique({ where: { userId: user.id } })) ??
-    {
-      buildAssigned: true,
-      taskUpdated: true,
-      followUpNotes: true,
-      changeRequests: true,
-      readyForReview: true,
-      documentUploaded: true,
-    };
+  await requireUser();
+  const items = await serverApi
+    .get<Notif[] | { results: Notif[] }>("builds/notifications")
+    .then(asList)
+    .catch(() => [] as Notif[]);
+  const preferences = await serverApi
+    .get<Prefs>("builds/notification-preferences")
+    .catch(() => DEFAULT_PREFS);
 
   const unreadCount = items.filter((n) => !n.read).length;
 
@@ -32,9 +47,7 @@ export default async function NotificationsPage() {
     <div className="mx-auto w-full max-w-3xl space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">
-            Inbox
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Inbox</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Notifications</h1>
           <p className="mt-1 text-sm text-slate-600">
             {unreadCount > 0
@@ -55,19 +68,19 @@ export default async function NotificationsPage() {
       <form action={updateNotificationPreferences} className="rounded-lg border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-900/[0.03]">
         <h2 className="text-sm font-semibold text-slate-950">Notification preferences</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {[
-            ["buildAssigned", "Build assigned"],
-            ["taskUpdated", "Task updates"],
-            ["followUpNotes", "Follow-up notes"],
-            ["changeRequests", "Change requests"],
-            ["readyForReview", "Review status"],
-            ["documentUploaded", "Document uploads"],
-          ].map(([name, label]) => (
+          {([
+            ["build_assigned", "Build assigned"],
+            ["task_updated", "Task updates"],
+            ["follow_up_notes", "Follow-up notes"],
+            ["change_requests", "Change requests"],
+            ["ready_for_review", "Review status"],
+            ["document_uploaded", "Document uploads"],
+          ] as const).map(([name, label]) => (
             <label key={name} className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
               <input
                 type="checkbox"
                 name={name}
-                defaultChecked={preferences[name as keyof typeof preferences] as boolean}
+                defaultChecked={preferences[name]}
                 className="h-4 w-4 rounded border-slate-300 text-cyan-700"
               />
               {label}
@@ -96,17 +109,12 @@ export default async function NotificationsPage() {
                 className={`flex items-start justify-between gap-4 px-5 py-4 transition-colors hover:bg-cyan-50/30 ${!n.read ? "bg-cyan-50/40" : ""}`}
               >
                 <div className="flex min-w-0 items-start gap-3">
-                  <span
-                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${!n.read ? "bg-cyan-600" : "bg-transparent"}`}
-                  />
-                  <Link
-                    href={n.link}
-                    className="text-sm font-medium text-slate-800 transition-colors hover:text-cyan-700"
-                  >
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${!n.read ? "bg-cyan-600" : "bg-transparent"}`} />
+                  <Link href={n.link || "#"} className="text-sm font-medium text-slate-800 transition-colors hover:text-cyan-700">
                     {n.message}
                   </Link>
                 </div>
-                <span className="shrink-0 text-xs text-slate-400">{formatDate(n.createdAt)}</span>
+                <span className="shrink-0 text-xs text-slate-400">{formatDate(n.created_at)}</span>
               </li>
             ))}
           </ul>

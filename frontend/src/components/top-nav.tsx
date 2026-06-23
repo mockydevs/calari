@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { signOut } from "@/auth";
-import { prisma } from "@/lib/db";
+import { serverApi } from "@/lib/portal/server";
 import { Bell, BriefcaseBusiness, KanbanSquare, LogOut, Settings, Users } from "lucide-react";
 
 export async function TopNav({ user }: { user: { id: string; name: string; role: string } }) {
-  const unread = await prisma.notification.count({ where: { userId: user.id, read: false } });
+  const unread = await serverApi
+    .get<{ id: number }[]>("builds/notifications?read=false")
+    .then((a) => (Array.isArray(a) ? a.length : 0))
+    .catch(() => 0);
   const isAdmin = user.role === "ADMIN";
   const navItems = [
     { href: "/builds", label: "Builds", icon: BriefcaseBusiness, show: true },
