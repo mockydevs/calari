@@ -1,8 +1,13 @@
 import secrets
+from datetime import date
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
+
+from projects.tasks import send_notification_email
 from rest_framework import viewsets, status as http
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -43,23 +48,56 @@ def _log(build, user, message):
     )
 
 
-def _notify(user, type_, message, link):
-    """Create an in-app notification, honoring the user's preferences."""
+_PREF_MAP = {
+    "BUILD_ASSIGNED": "build_assigned",
+    "TASK_UPDATED": "task_updated",
+    "MEETING_NOTE_ADDED": "follow_up_notes",
+    "CHANGE_REQUEST": "change_requests",
+    "READY_FOR_REVIEW": "ready_for_review",
+    "CHANGES_REQUESTED": "ready_for_review",
+    "DOCUMENT_UPLOADED": "document_uploaded",
+}
+# Map builds notification types onto the email template's event_type styles.
+_EMAIL_EVENT_MAP = {
+    "BUILD_ASSIGNED": "project_assigned",
+    "TASK_UPDATED": "task_status_changed",
+    "READY_FOR_REVIEW": "project_status_changed",
+    "CHANGES_REQUESTED": "project_status_changed",
+    "CHANGE_REQUEST": "blocker_added",
+    "NEW_COMMENT": "comment_added",
+    "DOCUMENT_UPLOADED": "comment_added",
+}
+
+
+def _notify(user, type_, message, link, actor=None, build_name=""):
+    """Create an in-app notification AND send a templated email, honoring prefs."""
     if not user:
         return
     pref = getattr(user, "notification_preference", None)
-    pref_map = {
-        "BUILD_ASSIGNED": "build_assigned",
-        "TASK_UPDATED": "task_updated",
-        "MEETING_NOTE_ADDED": "follow_up_notes",
-        "CHANGE_REQUEST": "change_requests",
-        "READY_FOR_REVIEW": "ready_for_review",
-        "CHANGES_REQUESTED": "ready_for_review",
-        "DOCUMENT_UPLOADED": "document_uploaded",
-    }
-    if pref and not getattr(pref, pref_map.get(type_, ""), True):
+    if pref and not getattr(pref, _PREF_MAP.get(type_, ""), True):
         return
     Notification.objects.create(user=user, type=type_, message=message, link=link)
+
+    if not getattr(user, "email", None):
+        return
+    frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    try:
+        send_notification_email.delay(
+            recipient_email=user.email,
+            subject=message,
+            context={
+                "recipient_name": user.get_full_name() or user.username,
+                "event_type": _EMAIL_EVENT_MAP.get(type_, ""),
+                "event_title": message,
+                "event_detail": "",
+                "actor_name": (actor.get_full_name() or actor.username) if actor else "Calari Staff Portal",
+                "project_name": build_name,
+                "portal_url": f"{frontend}{link}",
+                "year": date.today().year,
+            },
+        )
+    except Exception:
+        pass  # never let email failures break the request
 
 
 def _501(exc):
@@ -434,12 +472,28 @@ class TeamInviteViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         import hashlib
         token = secrets.token_urlsafe(24)
-        serializer.save(
+        invite = serializer.save(
             invited_by=self.request.user,
             token_hash=hashlib.sha256(token.encode()).hexdigest(),
             expires_at=timezone.now() + timezone.timedelta(days=7),
         )
-        # NOTE: emailing the raw token link is wired in Phase 2d.
+        frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
+        signup_url = f"{frontend}/signup/{token}"
+        try:
+            send_mail(
+                subject="You've been invited to the Calari Staff Portal",
+                message=(
+                    f"Hi {invite.name},\n\n"
+                    f"{self.request.user.get_full_name() or self.request.user.username} invited you to the "
+                    f"Calari Staff Portal. Set up your account here (link expires in 7 days):\n\n{signup_url}\n\n"
+                    f"— Calari Staff Portal"
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[invite.email],
+                fail_silently=True,
+            )
+        except Exception:
+            pass
 
 
 # ─── Public client portal (token-based, no auth) ──────────────────────────────

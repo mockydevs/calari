@@ -112,6 +112,56 @@ export async function portalLogin(
 }
 
 /**
+ * Authenticated server-side call to the Django API (for Builds server
+ * components/actions that have moved off Prisma). Refresh-on-auth-challenge
+ * works in server actions/route handlers; in read-only server components a
+ * failed refresh surfaces as an error the caller can treat as logged-out.
+ */
+export async function djangoServerFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const { access, refresh } = await getTokens();
+  const url = `${DJANGO_API}/${path.replace(/^\/+/, "")}`;
+  const doFetch = (token?: string) =>
+    fetch(url, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init.headers || {}), Cookie: djangoCookieHeader(token, refresh) },
+      cache: "no-store",
+      redirect: "manual",
+    });
+  const isAuthChallenge = (r: Response) =>
+    r.status === 401 || (r.status >= 300 && r.status < 400 && (r.headers.get("location") || "").includes("/login"));
+
+  let res = await doFetch(access);
+  if (isAuthChallenge(res) && refresh) {
+    const newAccess = await refreshAccess(refresh);
+    if (newAccess) res = await doFetch(newAccess);
+  }
+  return res;
+}
+
+async function serverJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await djangoServerFetch(path, init);
+  if (res.status === 204) return null as T;
+  if (res.status >= 300) {
+    let detail = `Django request failed (${res.status})`;
+    try {
+      const d = await res.json();
+      detail = d.detail || d.error || JSON.stringify(d);
+    } catch {
+      /* keep default */
+    }
+    throw new Error(detail);
+  }
+  return (await res.json()) as T;
+}
+
+export const serverApi = {
+  get: <T>(path: string) => serverJson<T>(path),
+  post: <T>(path: string, body?: unknown) => serverJson<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
+  patch: <T>(path: string, body?: unknown) => serverJson<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
+  del: (path: string) => serverJson<void>(path, { method: "DELETE" }),
+};
+
+/**
  * Server-side fetch of the current portal user. Read-only (no refresh) — intended
  * for layout gating; the client shell loads/refreshes the user via the proxy.
  */

@@ -330,6 +330,12 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
 
 CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
+# When no Celery worker is running (typical in dev), run tasks in-process so
+# emails (notifications, etc.) are still sent. Set CELERY_ALWAYS_EAGER=False in
+# production where a dedicated worker consumes the queue.
+CELERY_TASK_ALWAYS_EAGER = str2bool(os.getenv('CELERY_ALWAYS_EAGER', 'True' if DEBUG else 'False'))
+CELERY_TASK_EAGER_PROPAGATES = False
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_BROKER_CONNECTION_RETRY = True
