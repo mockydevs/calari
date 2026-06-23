@@ -25,6 +25,8 @@ router.register(r"team-invites", views.TeamInviteViewSet, basename="team-invites
 urlpatterns = [
     path("my-builds/", views.my_builds, name="my-builds"),
     path("notification-preferences/", views.notification_preferences, name="notification-preferences"),
+    path("upload/presign/", views.upload_presign, name="upload-presign"),
+    path("upload/finalize/", views.upload_finalize, name="upload-finalize"),
     path("portal/<str:token>/build/", views.portal_build, name="portal-build"),
     path("portal/<str:token>/feedback/", views.portal_feedback, name="portal-feedback"),
 ] + router.urls

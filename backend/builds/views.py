@@ -1,6 +1,7 @@
 import secrets
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import viewsets, status as http
 from rest_framework.decorators import action, api_view, permission_classes
@@ -133,19 +134,57 @@ class BuildViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="generate-brief")
     def generate_brief(self, request, pk=None):
         build = self.get_object()
-        notes = "\n\n".join(build.meeting_notes.values_list("raw_text", flat=True))
+        notes = "\n\n".join(build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True))
         try:
             draft = services.generate_brief_draft(notes)
-        except NotImplementedError as e:
-            return _501(e)
-        return Response(draft)  # persistence wired in Phase 2d
+        except Exception as e:  # noqa: BLE001 — surface AI/key errors to the client
+            return Response({"error": str(e)}, status=http.HTTP_502_BAD_GATEWAY)
+
+        with transaction.atomic():
+            # Replace prior AI-generated structure.
+            build.contact_sources.all().delete()
+            build.stages.all().delete()
+            build.tasks.filter(ai_generated=True).delete()
+
+            build.goals = draft.get("goals", "")
+            build.integrations = ", ".join(draft.get("integrations", []))
+            build.status = BuildStatus.AI_DRAFTED
+            build.save(update_fields=["goals", "integrations", "status", "updated_at"])
+
+            for cs in draft.get("contactSources", []):
+                ContactSource.objects.create(build=build, type=cs.get("type", "OTHER"), label=cs.get("label", ""))
+            for st in draft.get("pipelineStages", []):
+                stage = PipelineStage.objects.create(
+                    build=build, name=st.get("name", ""), description=st.get("description", ""),
+                    order=st.get("order", 0), needs_manual=bool(st.get("manualActions")),
+                )
+                for ma in st.get("manualActions", []):
+                    ManualAction.objects.create(stage=stage, description=ma.get("description", ""), owner=ma.get("owner", ""))
+            for tk in draft.get("tasks", []):
+                Task.objects.create(
+                    build=build, title=tk.get("title", ""), type=tk.get("type", "OTHER"),
+                    description=tk.get("description", ""), ai_generated=True,
+                )
+
+            latest_note = build.meeting_notes.order_by("-created_at").first()
+            if latest_note:
+                latest_note.ai_output = draft
+                latest_note.ai_status = "done"
+                latest_note.save(update_fields=["ai_output", "ai_status"])
+            BuildMemorySnapshot.objects.create(
+                build=build, created_by=request.user, created_by_ai=True,
+                summary="AI brief generated.", scope_changes="",
+            )
+            _log(build, request.user, "AI brief generated.")
+
+        return Response(BuildSerializer(self.get_queryset().get(pk=build.pk)).data)
 
     @action(detail=True, methods=["post"], url_path="brief-qa-check")
     def brief_qa(self, request, pk=None):
         try:
             return Response(services.run_brief_qa(self.get_object()))
-        except NotImplementedError as e:
-            return _501(e)
+        except Exception as e:  # noqa: BLE001
+            return Response({"error": str(e)}, status=http.HTTP_502_BAD_GATEWAY)
 
 
 @api_view(["GET"])
@@ -193,10 +232,15 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="generate-sop")
     def generate_sop(self, request, pk=None):
+        task = self.get_object()
         try:
-            return Response({"sop": services.generate_task_sop(self.get_object())})
-        except NotImplementedError as e:
-            return _501(e)
+            sop = services.generate_task_sop(task)
+        except Exception as e:  # noqa: BLE001
+            return Response({"error": str(e)}, status=http.HTTP_502_BAD_GATEWAY)
+        if not task.description:
+            task.description = sop
+            task.save(update_fields=["description", "updated_at"])
+        return Response({"sop": sop})
 
 
 # ─── Simple sub-resource viewsets ─────────────────────────────────────────────
@@ -426,3 +470,40 @@ def portal_feedback(request, token):
     )
     _notify(build.creator, "NEW_COMMENT", f'Client feedback on "{build.title}".', f"/builds/{build.id}")
     return Response(ClientPortalFeedbackSerializer(fb).data, status=http.HTTP_201_CREATED)
+
+
+# ─── S3 uploads (presign + finalize) ──────────────────────────────────────────
+@api_view(["POST"])
+@permission_classes(PERMS)
+def upload_presign(request):
+    filename = request.data.get("filename")
+    content_type = request.data.get("content_type", "application/octet-stream")
+    if not filename:
+        return Response({"error": "filename required"}, status=http.HTTP_400_BAD_REQUEST)
+    try:
+        return Response(services.presign_upload(filename, content_type))
+    except Exception as e:  # noqa: BLE001
+        return Response({"error": str(e)}, status=http.HTTP_502_BAD_GATEWAY)
+
+
+@api_view(["POST"])
+@permission_classes(PERMS)
+def upload_finalize(request):
+    """Create a Document row after the browser PUTs the file to S3."""
+    data = request.data
+    filename = data.get("filename", "")
+    doc = Document.objects.create(
+        filename=filename,
+        url=data.get("public_url", ""),
+        mime_type=data.get("content_type", ""),
+        size_bytes=data.get("size_bytes"),
+        ai_readable=services.is_ai_readable(filename, data.get("content_type", "")),
+        build_id=data.get("build") or None,
+        task_id=data.get("task") or None,
+        uploader=request.user,
+    )
+    if doc.build:
+        _log(doc.build, request.user, f'File "{doc.filename}" uploaded.')
+        _notify(doc.build.creator if request.user != doc.build.creator else doc.build.assignee,
+                "DOCUMENT_UPLOADED", f'File uploaded to "{doc.build.title}".', f"/builds/{doc.build_id}")
+    return Response(DocumentSerializer(doc).data, status=http.HTTP_201_CREATED)
