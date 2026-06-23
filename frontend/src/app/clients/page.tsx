@@ -2,6 +2,7 @@ import { Building2, Plus, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { createClient } from "./actions";
+import { ClientRow } from "./client-row";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,30 +53,15 @@ export default async function ClientsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
-                <thead className="border-b border-slate-100 bg-slate-50/80">
-                  <tr>
-                    {["Name", "Company", "Email"].map((h) => (
-                      <th
-                        key={h}
-                        className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {clients.map((client) => (
-                    <tr key={client.id} className="transition-colors hover:bg-cyan-50/30">
-                      <td className="px-5 py-3.5 font-semibold text-slate-950">{client.name}</td>
-                      <td className="px-5 py-3.5 text-slate-600">{client.company_name || "-"}</td>
-                      <td className="px-5 py-3.5 text-slate-600">{client.email || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="text-sm">
+              <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <span>Name</span><span>Company</span><span>Email</span><span className="text-right">Actions</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {clients.map((client) => (
+                  <ClientRow key={client.id} client={client} />
+                ))}
+              </div>
             </div>
           )}
         </div>

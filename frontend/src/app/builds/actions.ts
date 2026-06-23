@@ -26,6 +26,15 @@ export async function createBuild(formData: FormData) {
   redirect(`/builds/${build.id}`);
 }
 
+export async function deleteBuild(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) throw new Error("Build id is required");
+  await serverApi.del(`builds/builds/${id}`);
+  revalidatePath("/builds");
+  redirect("/builds");
+}
+
 export async function assignBuild(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");

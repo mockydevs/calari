@@ -6,6 +6,7 @@ import { createBuild } from "../actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +65,17 @@ export default async function NewBuildPage() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="notes">Client meeting notes</Label>
+              <Textarea
+                id="notes"
+                name="notes"
+                rows={10}
+                className="min-h-[200px] resize-y font-mono text-xs leading-5"
+                placeholder="Paste the client call notes here — the AI brief is generated from these on the build page."
+              />
+              <p className="text-xs text-slate-500">Optional now — you can also add notes later, then generate the brief from the build.</p>
             </div>
             <Button type="submit" className="h-11 w-full">
               <Plus className="h-4 w-4" />

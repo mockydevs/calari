@@ -27,3 +27,26 @@ export async function createClient(formData: FormData) {
   revalidatePath("/clients");
   redirect("/clients");
 }
+
+export async function updateClient(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) throw new Error("Client id is required");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Name is required");
+  await serverApi.patch(`projects/clients/${id}`, {
+    name,
+    company_name: String(formData.get("company") ?? "").trim(),
+    email: String(formData.get("email") ?? "").trim(),
+    phone_number: String(formData.get("phone") ?? "").trim(),
+  });
+  revalidatePath("/clients");
+}
+
+export async function deleteClient(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) throw new Error("Client id is required");
+  await serverApi.del(`projects/clients/${id}`);
+  revalidatePath("/clients");
+}
