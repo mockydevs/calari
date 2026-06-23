@@ -111,7 +111,9 @@ class ClientsViewSet(viewsets.ModelViewSet):
 )
 class ProjectsViewSet(viewsets.ModelViewSet):
     queryset = Projects.objects.select_related('client', 'assigned_to').prefetch_related(
-        'files', 'contacts', 'blockers', 'tasks', 'co_assignments__user', 'milestones',
+        'files__uploaded_by', 'contacts',
+        'blockers__reported_by', 'blockers__resolved_by',
+        'tasks__assigned_to', 'co_assignments__user', 'milestones__created_by',
     ).all()
     serializer_class = ProjectsSerializer
     permission_classes = _PERMISSIONS
@@ -515,7 +517,10 @@ class TaskLabelViewSet(viewsets.ModelViewSet):
 class TasksViewSet(viewsets.ModelViewSet):
     queryset = Tasks.objects.select_related(
         'project', 'assigned_to', 'created_by', 'completed_by',
-    ).prefetch_related('files', 'blockers', 'comments', 'checklist', 'labels', 'activities').all()
+    ).prefetch_related(
+        'files__uploaded_by', 'blockers__reported_by', 'blockers__resolved_by',
+        'comments__author', 'checklist__completed_by', 'labels', 'activities__user',
+    ).all()
     serializer_class = TasksSerializer
     permission_classes = _PERMISSIONS
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]

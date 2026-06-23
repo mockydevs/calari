@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import {
   ACCESS_COOKIE,
@@ -170,7 +171,7 @@ export const serverApi = {
  * Server-side fetch of the current portal user. Read-only (no refresh) — intended
  * for layout gating; the client shell loads/refreshes the user via the proxy.
  */
-export async function getPortalUser() {
+export const getPortalUser = cache(async () => {
   const { access } = await getTokens();
   if (!access) return null;
   try {
@@ -184,4 +185,4 @@ export async function getPortalUser() {
   } catch {
     return null;
   }
-}
+});

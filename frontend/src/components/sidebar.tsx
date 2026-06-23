@@ -1,15 +1,11 @@
 import { logout } from "@/lib/logout-action";
-import { serverApi } from "@/lib/portal/server";
 import { NavItem } from "@/components/nav-item";
+import { NotificationsNav } from "@/components/notifications-nav";
 import type { NavIconName } from "@/components/nav-item";
 import { LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
-export async function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null } }) {
-  const unread = await serverApi
-    .get<{ id: number }[]>("builds/notifications?read=false")
-    .then((a) => (Array.isArray(a) ? a.length : 0))
-    .catch(() => 0);
+export function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null } }) {
   const isAdmin = user.role === "ADMIN";
 
   const navItems: { href: string; label: string; iconName: NavIconName; show: boolean }[] = [
@@ -58,7 +54,7 @@ export async function Sidebar({ user }: { user: { id: string; name: string; role
 
       <div className="shrink-0 border-t border-white/[0.08] px-3 pb-4 pt-3">
         <ul className="space-y-0.5">
-          <NavItem href="/notifications" label="Notifications" iconName="Bell" badge={unread} />
+          <NotificationsNav />
         </ul>
 
         <Link href="/settings/profile" className="mt-3 block rounded-lg border border-white/[0.08] bg-white/[0.04] p-3 transition-colors hover:bg-white/[0.07]">

@@ -42,13 +42,13 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   const user = await requireUser();
   const isAdmin = user.role === "ADMIN";
 
-  const build = await serverApi.get<BuildDetail>(`builds/builds/${id}`).catch(() => null);
-  if (!build) notFound();
-
-  const [users, notes] = await Promise.all([
+  // Fetch build + users + notes in parallel (one round-trip wave).
+  const [build, users, notes] = await Promise.all([
+    serverApi.get<BuildDetail>(`builds/builds/${id}`).catch(() => null),
     isAdmin ? serverApi.get<DjangoUser[] | { results: DjangoUser[] }>("auth/users").then(asList).catch(() => []) : Promise.resolve([] as DjangoUser[]),
     serverApi.get<MeetingNote[] | { results: MeetingNote[] }>(`builds/meeting-notes?build=${id}`).then(asList).catch(() => [] as MeetingNote[]),
   ]);
+  if (!build) notFound();
 
   const tasks = build.tasks ?? [];
   const stages = build.stages ?? [];

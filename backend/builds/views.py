@@ -107,8 +107,10 @@ def _501(exc):
 # ─── Builds ───────────────────────────────────────────────────────────────────
 class BuildViewSet(viewsets.ModelViewSet):
     queryset = Build.objects.select_related("client", "creator", "assignee").prefetch_related(
-        "contact_sources", "stages__manual_actions", "tasks", "documents", "comments",
-        "change_requests", "approvals", "memory_snapshots", "activities",
+        "contact_sources", "stages__manual_actions", "tasks__assignee",
+        "documents__uploader", "comments__author",
+        "change_requests__owner", "change_requests__created_by",
+        "approvals__approver", "memory_snapshots__created_by", "activities",
     ).all()
     permission_classes = PERMS
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -239,7 +241,7 @@ def my_builds(request):
 
 # ─── Tasks ────────────────────────────────────────────────────────────────────
 class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.select_related("assignee", "build").prefetch_related("documents", "comments").all()
+    queryset = Task.objects.select_related("assignee", "build").prefetch_related("documents__uploader", "comments__author").all()
     permission_classes = PERMS
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["build", "status", "type", "assignee"]
