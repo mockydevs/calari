@@ -134,3 +134,84 @@ export async function deleteContact(formData: FormData) {
   await serverApi.del(`projects/project-contacts/${id}`);
   revalidatePath(`/projects/${projectId}`);
 }
+
+// ─── Tasks (detail) ──────────────────────────────────────────────────────────
+function taskPath(formData: FormData) {
+  return `/projects/${str(formData.get("projectId"))}/tasks/${str(formData.get("taskId"))}`;
+}
+
+export async function updateTask(formData: FormData) {
+  await requireUser();
+  const id = str(formData.get("taskId"));
+  if (!id) throw new Error("Task id is required");
+  const labels = formData.getAll("labels").map((v) => Number(v)).filter(Boolean);
+  await serverApi.patch(`projects/tasks/${id}`, {
+    name: str(formData.get("name")),
+    description: str(formData.get("description")),
+    status: str(formData.get("status")) || "todo",
+    priority: str(formData.get("priority")) || "medium",
+    assigned_to: num(formData.get("assigned_to")),
+    due_date: str(formData.get("due_date")) || null,
+    ...(labels.length ? { label_ids: labels } : {}),
+  });
+  revalidatePath(taskPath(formData));
+}
+
+export async function deleteTask(formData: FormData) {
+  await requireAdmin();
+  const id = str(formData.get("taskId"));
+  const projectId = str(formData.get("projectId"));
+  if (!id) throw new Error("Task id is required");
+  await serverApi.del(`projects/tasks/${id}`);
+  revalidatePath(`/projects/${projectId}`);
+  redirect(`/projects/${projectId}/board`);
+}
+
+export async function addChecklistItem(formData: FormData) {
+  await requireUser();
+  const taskId = str(formData.get("taskId"));
+  const title = str(formData.get("title"));
+  if (!taskId || !title) throw new Error("Checklist item is required");
+  await serverApi.post("projects/task-checklist", { task: Number(taskId), title });
+  revalidatePath(taskPath(formData));
+}
+
+export async function toggleChecklistItem(formData: FormData) {
+  await requireUser();
+  const id = str(formData.get("id"));
+  const completed = str(formData.get("completed")) === "true";
+  await serverApi.patch(`projects/task-checklist/${id}`, { completed: !completed });
+  revalidatePath(taskPath(formData));
+}
+
+export async function deleteChecklistItem(formData: FormData) {
+  await requireUser();
+  const id = str(formData.get("id"));
+  await serverApi.del(`projects/task-checklist/${id}`);
+  revalidatePath(taskPath(formData));
+}
+
+export async function addTaskComment(formData: FormData) {
+  await requireUser();
+  const taskId = str(formData.get("taskId"));
+  const content = str(formData.get("content"));
+  if (!taskId || !content) throw new Error("Comment is required");
+  await serverApi.post("projects/task-comments", { task: Number(taskId), content });
+  revalidatePath(taskPath(formData));
+}
+
+export async function addTaskBlocker(formData: FormData) {
+  await requireUser();
+  const taskId = str(formData.get("taskId"));
+  const description = str(formData.get("description"));
+  if (!taskId || !description) throw new Error("Blocker description is required");
+  await serverApi.post("projects/task-blockers", { task: Number(taskId), description });
+  revalidatePath(taskPath(formData));
+}
+
+export async function resolveTaskBlocker(formData: FormData) {
+  await requireUser();
+  const id = str(formData.get("id"));
+  await serverApi.patch(`projects/task-blockers/${id}`, { resolved: true });
+  revalidatePath(taskPath(formData));
+}

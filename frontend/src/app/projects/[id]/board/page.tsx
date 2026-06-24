@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Plus, X } from "lucide-react";
 import { api } from "@/lib/portal/api";
 import { useToast } from "@/components/toast";
@@ -33,6 +33,7 @@ const PRIORITY_BORDER: Record<string, string> = {
 
 export default function ProjectBoardPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const toast = useToast();
   const [board, setBoard] = React.useState<TaskBoard | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -210,7 +211,8 @@ export default function ProjectBoardPage() {
                           e.dataTransfer.setData("taskId", String(t.id));
                           e.dataTransfer.setData("from", status);
                         }}
-                        className={`cursor-grab rounded-md border border-l-[3px] border-slate-200 bg-white p-2.5 shadow-sm ${PRIORITY_BORDER[t.priority] ?? "border-l-slate-300"}`}
+                        onClick={() => router.push(`/projects/${id}/tasks/${t.id}`)}
+                        className={`cursor-pointer rounded-md border border-l-[3px] border-slate-200 bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md ${PRIORITY_BORDER[t.priority] ?? "border-l-slate-300"}`}
                       >
                         <p className="text-sm font-medium text-slate-800">{t.name}</p>
                         <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
