@@ -9,6 +9,7 @@ import {
 } from "../actions";
 import { BuildDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
+import { RunQaButton, GenerateSopButton } from "../ai-buttons";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
   TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES, type BuildDetail, type MeetingNote,
@@ -60,6 +61,8 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   const comments = build.comments ?? [];
   const documents = build.documents ?? [];
   const activities = build.activities ?? [];
+  const qaSnapshots = (build.memory_snapshots ?? []).filter((s) => (s.summary || "").startsWith("AI QA:"));
+  const latestQa = [...qaSnapshots].sort((a, b) => b.id - a.id)[0];
   const integrations = build.integrations ? build.integrations.split(",").map((s) => s.trim()).filter(Boolean) : [];
 
   return (
@@ -117,7 +120,12 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       <Panel
         title="Brief"
         icon={<Sparkles className="h-4 w-4 text-pink-700" />}
-        action={isAdmin && <GenerateBriefButton buildId={id} hasBrief={Boolean(build.goals)} />}
+        action={isAdmin && (
+          <div className="flex items-center gap-2">
+            <GenerateBriefButton buildId={id} hasBrief={Boolean(build.goals)} />
+            {build.goals && <RunQaButton buildId={id} />}
+          </div>
+        )}
       >
         {build.goals ? (
           <div className="space-y-4 text-sm">
@@ -166,18 +174,37 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
         </div>
       </Panel>
 
+      {/* AI QA review */}
+      {latestQa && (
+        <Panel title="AI QA review" icon={<ShieldCheck className="h-4 w-4 text-pink-700" />}>
+          <p className="text-sm text-slate-700">{latestQa.summary.replace(/^AI QA:\s*/, "")}</p>
+          {latestQa.scope_changes && (
+            <pre className="mt-3 whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">{latestQa.scope_changes}</pre>
+          )}
+          <p className="mt-2 text-xs text-slate-400">{formatDate(latestQa.created_at)}</p>
+        </Panel>
+      )}
+
       {/* Tasks */}
       <Panel title="Tasks" icon={<FileText className="h-4 w-4 text-pink-700" />}>
         {tasks.length === 0 ? <p className="text-sm text-slate-500">No tasks yet.</p> : (
           <ul className="divide-y divide-slate-100">
             {tasks.map((t) => (
-              <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0"><p className="text-sm font-medium text-slate-900">{t.title}</p><p className="text-xs text-slate-400">{t.type}</p></div>
-                <form action={updateTaskStatus} className="flex items-center gap-2">
-                  <input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="buildId" value={id} />
-                  <Select name="status" defaultValue={t.status} className="h-8 text-xs">{TASK_STATUSES.map((s) => <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>)}</Select>
-                  <Button type="submit" size="sm" variant="outline">Set</Button>
-                </form>
+              <li key={t.id} className="py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0"><p className="text-sm font-medium text-slate-900">{t.title}</p><p className="text-xs text-slate-400">{t.type}</p></div>
+                  <div className="flex items-center gap-2">
+                    {isAdmin && <GenerateSopButton buildId={id} taskId={t.id} hasDescription={Boolean(t.description)} />}
+                    <form action={updateTaskStatus} className="flex items-center gap-2">
+                      <input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="buildId" value={id} />
+                      <Select name="status" defaultValue={t.status} className="h-8 text-xs">{TASK_STATUSES.map((s) => <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>)}</Select>
+                      <Button type="submit" size="sm" variant="outline">Set</Button>
+                    </form>
+                  </div>
+                </div>
+                {t.description && (
+                  <div className="mt-2 rounded-md bg-slate-50 p-3 text-xs leading-relaxed whitespace-pre-wrap text-slate-700">{t.description}</div>
+                )}
               </li>
             ))}
           </ul>

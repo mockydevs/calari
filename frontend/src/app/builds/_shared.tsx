@@ -81,6 +81,7 @@ export interface BuildComment { id: number; body: string; author_name?: string; 
 export interface BuildDocument { id: number; filename: string; url: string; uploaded_by_name?: string; created_at: string }
 export interface BuildActivity { id: number; actor: string; message: string; created_at: string }
 export interface MeetingNote { id: number; raw_text: string; source: string; ai_status: string; created_at: string }
+export interface MemorySnapshot { id: number; summary: string; scope_changes: string; created_by_name?: string; created_by_ai: boolean; created_at: string }
 
 export const CHANGE_REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED", "IMPLEMENTED"] as const;
 export const APPROVAL_TYPES = ["BRIEF", "CHANGE_REQUEST", "DELIVERY", "CLIENT"] as const;
@@ -99,6 +100,7 @@ export interface BuildDetail extends BuildRow {
   change_requests?: ChangeRequest[];
   approvals?: Approval[];
   activities?: BuildActivity[];
+  memory_snapshots?: MemorySnapshot[];
 }
 
 export function BuildStatusBadge({ status }: { status: BuildStatus }) {

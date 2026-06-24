@@ -206,10 +206,12 @@ class BuildViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="brief-qa-check")
     def brief_qa(self, request, pk=None):
-        try:
-            return Response(services.run_brief_qa(self.get_object()))
-        except Exception as e:  # noqa: BLE001
-            return Response({"error": str(e)}, status=http.HTTP_502_BAD_GATEWAY)
+        build = self.get_object()
+        if not build.goals:
+            return Response({"error": "Generate the brief before running a QA check."}, status=http.HTTP_400_BAD_REQUEST)
+        from .tasks import run_build_qa
+        run_build_qa.delay(build.id, request.user.id)
+        return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
 
 
 @api_view(["GET"])
@@ -282,14 +284,9 @@ class TaskViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="generate-sop")
     def generate_sop(self, request, pk=None):
         task = self.get_object()
-        try:
-            sop = services.generate_task_sop(task)
-        except Exception as e:  # noqa: BLE001
-            return Response({"error": str(e)}, status=http.HTTP_502_BAD_GATEWAY)
-        if not task.description:
-            task.description = sop
-            task.save(update_fields=["description", "updated_at"])
-        return Response({"sop": sop})
+        from .tasks import generate_task_sop
+        generate_task_sop.delay(task.id)
+        return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
 
 
 # ─── Simple sub-resource viewsets ─────────────────────────────────────────────

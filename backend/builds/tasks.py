@@ -13,6 +13,47 @@ User = get_user_model()
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=15)
+def run_build_qa(self, build_id, user_id):
+    """AI QA review of a build's brief vs its task list; persists a snapshot."""
+    build = Build.objects.filter(pk=build_id).first()
+    if not build:
+        return
+    try:
+        result = services.run_brief_qa(build)
+    except Exception:  # noqa: BLE001
+        return
+    issues = result.get("issues", [])
+    lines = "\n".join(
+        f"[{(i.get('severity') or '').upper()}] {i.get('area', '')}: {i.get('issue', '')}" for i in issues
+    ) or "No gaps found — the task list covers the brief."
+    user = User.objects.filter(pk=user_id).first()
+    BuildMemorySnapshot.objects.create(
+        build=build, created_by=user, created_by_ai=True,
+        summary=f"AI QA: {result.get('summary', '')}".strip(),
+        scope_changes=lines,
+    )
+    Activity.objects.create(
+        build=build,
+        actor=(user.get_full_name() or user.username) if user else "system",
+        message="AI QA review completed.",
+    )
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=15)
+def generate_task_sop(self, task_id):
+    """Generate a step-by-step SOP for a build task and save it as the description."""
+    task = Task.objects.filter(pk=task_id).select_related("build").first()
+    if not task:
+        return
+    try:
+        sop = services.generate_task_sop(task)
+    except Exception:  # noqa: BLE001
+        return
+    task.description = sop
+    task.save(update_fields=["description", "updated_at"])
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=15)
 def generate_build_brief(self, build_id, user_id):
     """Generate the AI brief for a build off the request path.
 
