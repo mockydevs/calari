@@ -9,6 +9,12 @@
 #   - Coolify/prod : set every variable in the service dashboard. The env_file
 #                    entries below are optional (required: false), so a missing
 #                    file is fine when the platform injects the env directly.
+#
+# Ports are EXPOSEd (internal to the Docker network), NOT published to the host —
+# Coolify's proxy routes the domain to the frontend, and the frontend's BFF
+# reaches the backend by service name (http://backend:8000). Publishing host
+# ports collides with other apps on a shared server ("port is already allocated").
+# For local work, run the dev servers directly (npm run dev / daphne) per the README.
 name: calari
 
 services:
@@ -18,8 +24,8 @@ services:
       dockerfile: Dockerfile
     container_name: calari_backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     env_file:
       - path: ./backend/.env
         required: false
@@ -38,8 +44,8 @@ services:
       dockerfile: Dockerfile
     container_name: calari_frontend
     restart: unless-stopped
-    ports:
-      - "${PORT:-3000}:3000"
+    expose:
+      - "3000"
     env_file:
       - path: ./frontend/.env
         required: false
