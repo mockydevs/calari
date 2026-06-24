@@ -124,7 +124,7 @@ export default async function LoginPage({
           <ForgotPassword />
 
           <a
-            href="https://www.calarisolutions.com"
+            href="https://calarisolutions.com"
             className="mt-4 flex items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-pink-700"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Back to calarisolutions.com

@@ -5,7 +5,7 @@ import type { NavIconName } from "@/components/nav-item";
 import { ExternalLink, Globe, LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
-const MAIN_SITE_URL = "https://www.calarisolutions.com";
+const MAIN_SITE_URL = "https://calarisolutions.com";
 
 export function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null } }) {
   const isAdmin = user.role === "ADMIN";
