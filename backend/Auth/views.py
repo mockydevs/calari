@@ -19,6 +19,7 @@ from .serializers import (
     ForgotPasswordSerializer, ResetPasswordConfirmSerializer,
 )
 from .models import PasswordResetToken
+from projects.tasks import send_notification_email
 
 User = get_user_model()
 
@@ -518,20 +519,24 @@ def forgot_password(request):
         PasswordResetToken.objects.filter(user=user, used=False).update(used=True)
 
         frontend = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
-        send_mail(
+        # Dispatch via Celery so the request doesn't block on SMTP.
+        send_notification_email.delay(
+            recipient_email=user.email,
             subject="Your temporary Calari password",
-            message=(
-                f"Hi {user.full_name or user.username},\n\n"
-                f"A password reset was requested for your account. Use this temporary "
-                f"password to sign in:\n\n"
-                f"    {temp_password}\n\n"
-                f"Sign in at {frontend}/login, then change it from your profile right away.\n\n"
-                f"If you did not request this, contact your administrator.\n\n"
-                f"— Calari"
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
+            context={
+                "recipient_name": user.full_name or user.username,
+                "event_type": "",
+                "event_title": "Your temporary password",
+                "event_detail": (
+                    f"Use this temporary password to sign in: {temp_password} — "
+                    f"then change it from your profile right away. "
+                    f"If you did not request this, contact your administrator."
+                ),
+                "actor_name": "Calari",
+                "project_name": "",
+                "portal_url": f"{frontend}/login",
+                "year": timezone.now().year,
+            },
         )
     except User.DoesNotExist:
         pass  # Silent — don't reveal whether the email exists.
