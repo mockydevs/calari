@@ -192,50 +192,17 @@ class BuildViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="generate-brief")
     def generate_brief(self, request, pk=None):
         build = self.get_object()
-        notes = "\n\n".join(build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True))
-        try:
-            draft = services.generate_brief_draft(notes)
-        except Exception as e:  # noqa: BLE001 — surface AI/key errors to the client
-            return Response({"error": str(e)}, status=http.HTTP_502_BAD_GATEWAY)
-
-        with transaction.atomic():
-            # Replace prior AI-generated structure.
-            build.contact_sources.all().delete()
-            build.stages.all().delete()
-            build.tasks.filter(ai_generated=True).delete()
-
-            build.goals = draft.get("goals", "")
-            build.integrations = ", ".join(draft.get("integrations", []))
-            build.status = BuildStatus.AI_DRAFTED
-            build.save(update_fields=["goals", "integrations", "status", "updated_at"])
-
-            for cs in draft.get("contactSources", []):
-                ContactSource.objects.create(build=build, type=cs.get("type", "OTHER"), label=cs.get("label", ""))
-            for st in draft.get("pipelineStages", []):
-                stage = PipelineStage.objects.create(
-                    build=build, name=st.get("name", ""), description=st.get("description", ""),
-                    order=st.get("order", 0), needs_manual=bool(st.get("manualActions")),
-                )
-                for ma in st.get("manualActions", []):
-                    ManualAction.objects.create(stage=stage, description=ma.get("description", ""), owner=ma.get("owner", ""))
-            for tk in draft.get("tasks", []):
-                Task.objects.create(
-                    build=build, title=tk.get("title", ""), type=tk.get("type", "OTHER"),
-                    description=tk.get("description", ""), ai_generated=True,
-                )
-
-            latest_note = build.meeting_notes.order_by("-created_at").first()
-            if latest_note:
-                latest_note.ai_output = draft
-                latest_note.ai_status = "done"
-                latest_note.save(update_fields=["ai_output", "ai_status"])
-            BuildMemorySnapshot.objects.create(
-                build=build, created_by=request.user, created_by_ai=True,
-                summary="AI brief generated.", scope_changes="",
-            )
-            _log(build, request.user, "AI brief generated.")
-
-        return Response(BuildSerializer(self._detail_queryset().get(pk=build.pk)).data)
+        if not build.meeting_notes.exists():
+            return Response({"error": "Add meeting notes before generating a brief."}, status=http.HTTP_400_BAD_REQUEST)
+        # Mark the latest note processing (the frontend polls ai_status), then run
+        # the slow OpenAI call off the request path via Celery.
+        latest_note = build.meeting_notes.order_by("-created_at").first()
+        if latest_note:
+            latest_note.ai_status = "processing"
+            latest_note.save(update_fields=["ai_status"])
+        from .tasks import generate_build_brief
+        generate_build_brief.delay(build.id, request.user.id)
+        return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["post"], url_path="brief-qa-check")
     def brief_qa(self, request, pk=None):

@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Bot, FileText, Link2, MessageSquare, Plus, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, FileText, Link2, MessageSquare, Plus, ShieldCheck, Sparkles } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
   addComment, addMeetingNote, assignBuild, createChangeRequest, createTask, enablePortal,
-  generateBrief, recordApproval, setBuildStatus, setChangeRequestStatus, updateTaskStatus, uploadDocument,
+  recordApproval, setBuildStatus, setChangeRequestStatus, updateTaskStatus, uploadDocument,
 } from "../actions";
 import { BuildDeleteButton } from "../build-row-actions";
+import { GenerateBriefButton } from "../generate-brief-button";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
   TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES, type BuildDetail, type MeetingNote,
@@ -116,12 +117,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       <Panel
         title="Brief"
         icon={<Sparkles className="h-4 w-4 text-pink-700" />}
-        action={isAdmin && (
-          <form action={generateBrief}>
-            <input type="hidden" name="buildId" value={id} />
-            <Button type="submit" size="sm"><Bot className="h-3.5 w-3.5" /> {build.goals ? "Regenerate" : "Generate brief"}</Button>
-          </form>
-        )}
+        action={isAdmin && <GenerateBriefButton buildId={id} hasBrief={Boolean(build.goals)} />}
       >
         {build.goals ? (
           <div className="space-y-4 text-sm">
