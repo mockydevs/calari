@@ -135,6 +135,28 @@ export async function deleteContact(formData: FormData) {
   revalidatePath(`/projects/${projectId}`);
 }
 
+// ─── Co-assignments (project team) ─────────────────────────────────────────────
+export async function addCoAssignment(formData: FormData) {
+  await requireAdmin();
+  const projectId = str(formData.get("projectId"));
+  const user = num(formData.get("user"));
+  if (!projectId || !user) throw new Error("Select a team member");
+  await serverApi.post("projects/project-co-assign", {
+    project: Number(projectId),
+    user,
+    role: str(formData.get("role")) || "developer",
+  });
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function removeCoAssignment(formData: FormData) {
+  await requireAdmin();
+  const id = str(formData.get("id"));
+  const projectId = str(formData.get("projectId"));
+  await serverApi.del(`projects/project-co-assign/${id}`);
+  revalidatePath(`/projects/${projectId}`);
+}
+
 // ─── Tasks (detail) ──────────────────────────────────────────────────────────
 function taskPath(formData: FormData) {
   return `/projects/${str(formData.get("projectId"))}/tasks/${str(formData.get("taskId"))}`;
@@ -213,5 +235,13 @@ export async function resolveTaskBlocker(formData: FormData) {
   await requireUser();
   const id = str(formData.get("id"));
   await serverApi.patch(`projects/task-blockers/${id}`, { resolved: true });
+  revalidatePath(taskPath(formData));
+}
+
+export async function createTaskLabel(formData: FormData) {
+  await requireUser();
+  const name = str(formData.get("name"));
+  if (!name) throw new Error("Label name is required");
+  await serverApi.post("projects/task-labels", { name, color: str(formData.get("color")) || "#db2777" });
   revalidatePath(taskPath(formData));
 }

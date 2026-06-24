@@ -8,7 +8,7 @@ import {
   PRIORITIES, PRIORITY_LABELS, TASK_STATUS_LABELS, TASK_STATUSES, type Priority, type TaskStatus,
 } from "@/lib/portal/types";
 import {
-  addChecklistItem, addTaskBlocker, addTaskComment, deleteChecklistItem, deleteTask,
+  addChecklistItem, addTaskBlocker, addTaskComment, createTaskLabel, deleteChecklistItem, deleteTask,
   resolveTaskBlocker, toggleChecklistItem, updateTask,
 } from "../../../actions";
 import { Button } from "@/components/ui/button";
@@ -125,17 +125,23 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
                 </div>
               </div>
             )}
-            <div className="flex items-center justify-between pt-1">
-              <Button type="submit" size="sm">Save changes</Button>
-              {isAdmin && (
-                <form action={deleteTask}>
-                  <input type="hidden" name="taskId" value={taskId} />
-                  <input type="hidden" name="projectId" value={id} />
-                  <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Delete task</button>
-                </form>
-              )}
-            </div>
+            <div className="pt-1"><Button type="submit" size="sm">Save changes</Button></div>
           </form>
+
+          {/* New label — separate form (cannot nest inside the edit form) */}
+          <form action={createTaskLabel} className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
+            <input type="hidden" name="taskId" value={taskId} /><input type="hidden" name="projectId" value={id} />
+            <input name="name" required placeholder="New label name…" className={addInput} />
+            <input name="color" type="color" defaultValue="#db2777" className="h-9 w-10 shrink-0 rounded border border-slate-300" aria-label="Label color" />
+            <button className="inline-flex h-9 items-center gap-1 rounded-md bg-slate-700 px-2.5 text-xs font-semibold text-white hover:bg-slate-800"><Plus className="h-3.5 w-3.5" /> Label</button>
+          </form>
+
+          {isAdmin && (
+            <form action={deleteTask} className="mt-3 flex justify-end border-t border-slate-100 pt-3">
+              <input type="hidden" name="taskId" value={taskId} /><input type="hidden" name="projectId" value={id} />
+              <button className="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Delete task</button>
+            </form>
+          )}
         </Panel>
 
         <div className="space-y-5">

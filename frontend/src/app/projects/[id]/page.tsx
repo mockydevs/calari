@@ -12,7 +12,8 @@ import { ProjectFormButton, type Option } from "../project-form";
 import { ProjectDeleteButton } from "../project-delete-button";
 import { FileUpload } from "../file-upload";
 import {
-  addBlocker, addContact, addMilestone, completeMilestone, deleteContact, deleteMilestone, resolveBlocker,
+  addBlocker, addCoAssignment, addContact, addMilestone, completeMilestone, deleteContact,
+  deleteMilestone, removeCoAssignment, resolveBlocker,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -255,12 +256,34 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             ) : (
               <ul className="divide-y divide-slate-100">
                 {project.co_assignments!.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between py-2 text-sm">
+                  <li key={c.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                     <span className="text-slate-800">{c.user_name}</span>
-                    <span className="text-xs capitalize text-slate-400">{c.role}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs capitalize text-slate-400">{c.role}</span>
+                      {isAdmin && (
+                        <form action={removeCoAssignment}>
+                          <input type="hidden" name="id" value={c.id} />
+                          <input type="hidden" name="projectId" value={id} />
+                          <button className={iconBtn} aria-label="Remove member"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </form>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
+            )}
+            {isAdmin && (
+              <form action={addCoAssignment} className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
+                <input type="hidden" name="projectId" value={id} />
+                <select name="user" required defaultValue="" className={`${addInput} flex-1`}>
+                  <option value="" disabled>Add member…</option>
+                  {userOptions.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <select name="role" defaultValue="developer" className="h-8 rounded-md border border-slate-300 px-2 text-sm">
+                  {["lead", "developer", "designer", "tester", "reviewer", "observer"].map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <button className="inline-flex h-8 items-center gap-1 rounded-md bg-pink-700 px-2.5 text-xs font-semibold text-white hover:bg-pink-800"><Plus className="h-3.5 w-3.5" /></button>
+              </form>
             )}
           </Panel>
           <Panel title="Recent activity" icon={<Calendar className="h-3.5 w-3.5" />}>
