@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Calendar, Check, Flag, KanbanSquare, Plus, ShieldAlert, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Calendar, Check, Flag, KanbanSquare, Paperclip, Plus, ShieldAlert, Trash2, Users } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/lib/portal/types";
 import { ProjectFormButton, type Option } from "../project-form";
 import { ProjectDeleteButton } from "../project-delete-button";
+import { FileUpload } from "../file-upload";
 import {
   addBlocker, addContact, addMilestone, completeMilestone, deleteContact, deleteMilestone, resolveBlocker,
 } from "../actions";
@@ -203,6 +204,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <input name="phone_number" placeholder="Phone" className={addInput} />
               <button className="inline-flex h-8 items-center justify-center gap-1 rounded-md bg-pink-700 px-2.5 text-xs font-semibold text-white hover:bg-pink-800 sm:col-span-2"><Plus className="h-3.5 w-3.5" /> Add contact</button>
             </form>
+          </Panel>
+
+          <Panel title="Files" icon={<Paperclip className="h-3.5 w-3.5" />}>
+            {(project.files ?? []).length === 0 ? (
+              <p className="text-sm text-slate-400">No files uploaded.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {project.files!.map((f) => (
+                  <li key={f.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                    <a href={f.file} target="_blank" rel="noopener noreferrer" className="truncate font-medium text-pink-700 hover:underline">{f.file_name}</a>
+                    <span className="shrink-0 text-xs text-slate-400">{f.uploaded_by_name || ""}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <FileUpload endpoint="projects/project-files" fkField="project" fkValue={id} />
+            </div>
           </Panel>
         </div>
 

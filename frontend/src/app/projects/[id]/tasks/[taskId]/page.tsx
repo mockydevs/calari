@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, ListChecks, MessageSquare, Plus, ShieldAlert, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ListChecks, MessageSquare, Paperclip, Plus, ShieldAlert, Tag, Trash2 } from "lucide-react";
+import { FileUpload } from "../../../file-upload";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
@@ -22,6 +23,7 @@ type TaskDetail = {
   checklist?: { id: number; title: string; completed: boolean }[];
   comments?: { id: number; content: string; author_name?: string; created_at: string }[];
   blockers?: { id: number; description: string; resolved: boolean }[];
+  files?: { id: number; file_name: string; file: string; uploaded_by_name?: string }[];
   labels?: Label[];
 };
 type UserRow = { id: number; full_name?: string; username?: string };
@@ -180,6 +182,23 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
               <input name="description" required placeholder="Report a blocker…" className={addInput} />
               <button className="inline-flex h-9 items-center gap-1 rounded-md bg-red-600 px-2.5 text-xs font-semibold text-white hover:bg-red-700"><Plus className="h-3.5 w-3.5" /></button>
             </form>
+          </Panel>
+
+          {/* Files */}
+          <Panel title="Files" icon={<Paperclip className="h-4 w-4 text-pink-700" />}>
+            {(task.files ?? []).length === 0 ? <p className="text-sm text-slate-400">No files.</p> : (
+              <ul className="divide-y divide-slate-100">
+                {task.files!.map((f) => (
+                  <li key={f.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                    <a href={f.file} target="_blank" rel="noopener noreferrer" className="truncate font-medium text-pink-700 hover:underline">{f.file_name}</a>
+                    <span className="shrink-0 text-xs text-slate-400">{f.uploaded_by_name || ""}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <FileUpload endpoint="projects/task-files" fkField="task" fkValue={taskId} />
+            </div>
           </Panel>
         </div>
       </div>
