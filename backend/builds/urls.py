@@ -29,4 +29,6 @@ urlpatterns = [
     path("upload/finalize/", views.upload_finalize, name="upload-finalize"),
     path("portal/<str:token>/build/", views.portal_build, name="portal-build"),
     path("portal/<str:token>/feedback/", views.portal_feedback, name="portal-feedback"),
+    path("invite/<str:token>/", views.invite_detail, name="invite-detail"),
+    path("invite/<str:token>/accept/", views.invite_accept, name="invite-accept"),
 ] + router.urls

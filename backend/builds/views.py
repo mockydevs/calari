@@ -573,3 +573,50 @@ def upload_finalize(request):
         _notify(doc.build.creator if request.user != doc.build.creator else doc.build.assignee,
                 "DOCUMENT_UPLOADED", f'File uploaded to "{doc.build.title}".', f"/builds/{doc.build_id}")
     return Response(DocumentSerializer(doc).data, status=http.HTTP_201_CREATED)
+
+
+# ─── Team invite acceptance (public, token-based) ─────────────────────────────
+def _lookup_invite(token):
+    import hashlib
+    th = hashlib.sha256(token.encode()).hexdigest()
+    invite = TeamInvite.objects.filter(token_hash=th, accepted_at__isnull=True).first()
+    if not invite or (invite.expires_at and invite.expires_at < timezone.now()):
+        return None
+    return invite
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def invite_detail(request, token):
+    invite = _lookup_invite(token)
+    if not invite:
+        return Response({"valid": False, "error": "This invite link is invalid or has expired."}, status=http.HTTP_404_NOT_FOUND)
+    return Response({"valid": True, "email": invite.email, "name": invite.name, "role": invite.role})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def invite_accept(request, token):
+    invite = _lookup_invite(token)
+    if not invite:
+        return Response({"error": "This invite link is invalid or has expired."}, status=http.HTTP_400_BAD_REQUEST)
+    password = request.data.get("password") or ""
+    if len(password) < 8:
+        return Response({"error": "Password must be at least 8 characters."}, status=http.HTTP_400_BAD_REQUEST)
+    User = get_user_model()
+    if User.objects.filter(email__iexact=invite.email).exists():
+        return Response({"error": "An account with this email already exists — try signing in."}, status=http.HTTP_400_BAD_REQUEST)
+
+    # Derive a unique username from the email local-part.
+    base = (invite.email.split("@")[0] or "user").lower()
+    username, i = base, 1
+    while User.objects.filter(username=username).exists():
+        username, i = f"{base}{i}", i + 1
+
+    User.objects.create_user(
+        username=username, email=invite.email, password=password,
+        full_name=invite.name, role=invite.role or "employee",
+    )
+    invite.accepted_at = timezone.now()
+    invite.save(update_fields=["accepted_at"])
+    return Response({"success": True, "message": "Account created — you can now sign in."}, status=http.HTTP_201_CREATED)

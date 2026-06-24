@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getAppUser } from "@/lib/auth-helpers";
 import { portalLogin } from "@/lib/portal/server";
-import { AlertCircle, CheckCircle2, LockKeyhole, Workflow } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, LockKeyhole, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -123,7 +123,14 @@ export default async function LoginPage({
 
           <ForgotPassword />
 
-          <p className="mt-8 text-center text-xs text-slate-400">
+          <a
+            href="https://www.calarisolutions.com"
+            className="mt-4 flex items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-pink-700"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to calarisolutions.com
+          </a>
+
+          <p className="mt-6 text-center text-xs text-slate-400">
             (c) {new Date().getFullYear()} Calari Solutions - All rights reserved
           </p>
         </div>

@@ -2,8 +2,10 @@ import { logout } from "@/lib/logout-action";
 import { NavItem } from "@/components/nav-item";
 import { NotificationsNav } from "@/components/notifications-nav";
 import type { NavIconName } from "@/components/nav-item";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { ExternalLink, Globe, LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+
+const MAIN_SITE_URL = "https://www.calarisolutions.com";
 
 export function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null } }) {
   const isAdmin = user.role === "ADMIN";
@@ -56,6 +58,17 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
         <ul className="space-y-0.5">
           <NotificationsNav />
         </ul>
+
+        <a
+          href={MAIN_SITE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group mt-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:bg-white/[0.06] hover:text-white"
+        >
+          <Globe className="h-4 w-4 shrink-0" />
+          Main site
+          <ExternalLink className="ml-auto h-3.5 w-3.5 opacity-50" />
+        </a>
 
         <Link href="/settings/profile" className="mt-3 block rounded-lg border border-white/[0.08] bg-white/[0.04] p-3 transition-colors hover:bg-white/[0.07]">
           <div className="flex items-center gap-3">

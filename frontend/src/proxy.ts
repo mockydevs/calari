@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Public paths that don't require a session.
-const PUBLIC_PATHS = ["/login", "/api/portal", "/api/health"];
+const PUBLIC_PATHS = ["/login", "/signup", "/api/portal", "/api/health"];
 
 export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
