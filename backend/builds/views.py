@@ -523,18 +523,22 @@ class TeamInviteViewSet(viewsets.ModelViewSet):
         )
         frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
         signup_url = f"{frontend}/signup/{token}"
+        inviter = self.request.user.get_full_name() or self.request.user.username
+        # Dispatch via Celery so the API response doesn't block on SMTP.
         try:
-            send_mail(
-                subject="You've been invited to the Calari Staff Portal",
-                message=(
-                    f"Hi {invite.name},\n\n"
-                    f"{self.request.user.get_full_name() or self.request.user.username} invited you to the "
-                    f"Calari Staff Portal. Set up your account here (link expires in 7 days):\n\n{signup_url}\n\n"
-                    f"— Calari Staff Portal"
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[invite.email],
-                fail_silently=True,
+            send_notification_email.delay(
+                recipient_email=invite.email,
+                subject="You've been invited to Calari",
+                context={
+                    "recipient_name": invite.name,
+                    "event_type": "project_assigned",
+                    "event_title": f"{inviter} invited you to Calari",
+                    "event_detail": "Set up your account to get started. This invite link expires in 7 days.",
+                    "actor_name": inviter,
+                    "project_name": "",
+                    "portal_url": signup_url,
+                    "year": timezone.now().year,
+                },
             )
         except Exception:
             pass

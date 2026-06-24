@@ -1,11 +1,9 @@
-import { Clock, MailPlus, ShieldCheck, Trash2, UserCheck, Users } from "lucide-react";
+import { Clock, MailPlus, Trash2, UserCheck, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { approveUser, cancelInvite, createInvite, deactivateUser } from "./actions";
+import { approveUser, cancelInvite, deactivateUser } from "./actions";
+import { InviteForm } from "./invite-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -155,19 +153,7 @@ export default async function TeamPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form action={createInvite} className="space-y-4">
-              <div className="space-y-1.5"><Label htmlFor="name">Full name</Label><Input id="name" name="name" required placeholder="Jane Smith" /></div>
-              <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" name="email" type="email" required placeholder="jane@calari.com" /></div>
-              <div className="space-y-1.5">
-                <Label htmlFor="role">Role</Label>
-                <Select id="role" name="role" defaultValue="MEMBER"><option value="MEMBER">Member</option><option value="ADMIN">Admin</option></Select>
-              </div>
-              <div className="rounded-lg bg-pink-50 px-3 py-3 text-xs leading-5 text-pink-800 ring-1 ring-pink-100">
-                <div className="mb-1 flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Invite</div>
-                The invitee receives an emailed signup link to set their password.
-              </div>
-              <Button type="submit" className="w-full"><MailPlus className="h-4 w-4" /> Send invite</Button>
-            </form>
+            <InviteForm />
           </CardContent>
         </Card>
       </div>
