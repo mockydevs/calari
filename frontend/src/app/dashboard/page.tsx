@@ -5,6 +5,7 @@ import { serverApi } from "@/lib/portal/server";
 import { PRIORITY_LABELS, PROJECT_STATUS_LABELS, type Project } from "@/lib/portal/types";
 import { cn } from "@/lib/utils";
 import { AdminDashboard, type AdminStats } from "./admin-view";
+import { MemberDashboard, type MyDashboard } from "./member-view";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,10 @@ export default async function DashboardPage() {
   if (isAdmin) {
     const stats = await serverApi.get<AdminStats>("projects/admin-dashboard").catch(() => null);
     if (stats) return <AdminDashboard stats={stats} />;
+  } else {
+    // Members get a personalized "my work" dashboard.
+    const myDash = await serverApi.get<MyDashboard>("projects/my-dashboard").catch(() => null);
+    if (myDash) return <MemberDashboard data={myDash} name={user.name} />;
   }
 
   const projects = await serverApi
