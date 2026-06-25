@@ -17,10 +17,22 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
+
+def health(_request):
+    """Liveness/readiness probe for Coolify, Docker, and load balancers.
+
+    Plain 200 once the ASGI app is serving — intentionally does not touch the DB
+    so a transient DB blip can't flap the container out of the routing pool.
+    """
+    return JsonResponse({"status": "ok"})
+
+
 urlpatterns = [
+    path('health/', health, name='health'),
     path('admin/', admin.site.urls),
     path('', include('Auth.urls', namespace='auth_app')),
     path('api/projects/', include('projects.urls', namespace='projects')),

@@ -37,6 +37,14 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-False}
+    healthcheck:
+      # Gives Coolify/Docker a readiness signal (fixes the "no health check" warning).
+      # start_period covers the migrate step the container runs on boot.
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   frontend:
     build:
@@ -55,7 +63,8 @@ services:
       # name locally, or set DJANGO_API_URL to the public API URL in production.
       DJANGO_API_URL: ${DJANGO_API_URL:-http://backend:8000}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s
