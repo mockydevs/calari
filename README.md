@@ -26,10 +26,15 @@ point at them via env (`DATABASE_URL` / `REDIS_URL`).
 
 ## Run it locally (without Docker)
 
+Both apps read a **single repo-root `.env`** (the backend loads it in `config/settings.py`;
+the frontend loads it via `@next/env` in `next.config.ts`). Create it once at the repo root:
+```bash
+cp .env.example .env                # fill in DB/Redis/secrets
+```
+
 **Backend** (needs Python 3.13+, plus an external PostgreSQL + Redis):
 ```bash
 cd backend
-cp .env.example .env.dev            # adjust DB/Redis as needed
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py createsuperuser
@@ -41,7 +46,6 @@ daphne -b 0.0.0.0 -p 8000 config.asgi:application
 ```bash
 cd frontend
 npm install
-# .env: set DJANGO_API_URL=http://localhost:8000
 npm run dev                         # http://localhost:3000
 ```
 

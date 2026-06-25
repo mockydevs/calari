@@ -29,9 +29,21 @@ def str2none(value):
 
 CLOUD_ENV = os.getenv("CLOUD_ENV")
 
-# Always load .env.dev for local development
-if CLOUD_ENV != "True":
-    load_dotenv(BASE_DIR / ".env.dev")
+# Load local .env files when present. `override=False` means real environment
+# variables (a Coolify dashboard, docker-compose `environment:`, or an exported
+# shell var) ALWAYS take precedence — the files only fill in what the environment
+# did not already provide. Loading them unconditionally fixes the failure mode
+# where a process started with CLOUD_ENV="True" (e.g. the Docker CMD's celery
+# worker) skipped the file entirely and came up with no REDIS_URL / S3 / DB
+# config: Celery then fell back to redis://localhost and file saves hit S3 with
+# Bucket=None. `.env.dev` is loaded first so it wins for local development.
+# Single source of truth for local dev is the repo-root `.env` (one file shared
+# with the Next.js frontend). Backend-local `.env.dev` / `.env` are still honored
+# if present, for back-compat. `override=False` means real environment variables
+# (Coolify, docker-compose) always win.
+for _env_path in (BASE_DIR / ".env.dev", BASE_DIR / ".env", BASE_DIR.parent / ".env"):
+    if _env_path.exists():
+        load_dotenv(_env_path, override=False)
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
@@ -88,11 +100,22 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
-S3_ENDPOINT = os.getenv("S3_ENDPOINT")  # blank for AWS; set for S3-compatible
-S3_REGION = os.getenv("S3_REGION", "us-east-1")
+# Accept BOTH naming conventions for the same setting: the S3_* names used in
+# local .env.dev, and the AWS_* names set in the Coolify production dashboard.
+# (Production had AWS_S3_BUCKET_NAME / AWS_ACCESS_KEY_ID set, but the code only
+# read S3_*, so the bucket resolved empty and uploads fell back / 500'd.)
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+S3_BUCKET_NAME = (
+    os.getenv("S3_BUCKET_NAME")
+    or os.getenv("AWS_S3_BUCKET_NAME")
+    or os.getenv("AWS_STORAGE_BUCKET_NAME")
+)
+# blank for AWS; set for S3-compatible
+S3_ENDPOINT = os.getenv("S3_ENDPOINT") or os.getenv("AWS_S3_ENDPOINT") or os.getenv("AWS_S3_ENDPOINT_URL")
+S3_REGION = (
+    os.getenv("S3_REGION") or os.getenv("AWS_REGION") or os.getenv("AWS_S3_REGION_NAME") or "us-east-1"
+)
 S3_FILE_OVERWRITE = str2bool(os.getenv("S3_FILE_OVERWRITE", "False"))
 S3_DEFAULT_ACL = str2none(os.getenv("S3_DEFAULT_ACL", None))
 S3_QUERYSTRING_AUTH = str2bool(os.getenv("S3_QUERYSTRING_AUTH", "False"))
@@ -109,14 +132,28 @@ AWS_S3_REGION_NAME = S3_REGION
 AWS_S3_SIGNATURE_VERSION = 's3v4'
 AWS_S3_VERIFY = False
 
-STORAGES = {
-    "default": {
-        "BACKEND": "config.storage.S3MediaStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "config.storage.S3StaticFilesStorage",
-    },
-}
+# Use S3 only when it is FULLY configured (bucket + access key + secret). A
+# partial config (e.g. an empty S3_BUCKET_NAME, or keys without a bucket) must
+# fall back to local storage rather than select the S3 backend with no bucket —
+# that path makes every FileField save crash inside botocore with
+# "expected string or bytes-like object, got 'NoneType'" (Bucket=None). Requiring
+# all three keeps uploads working in dev and any env where S3 is not set up.
+USE_S3 = bool(S3_BUCKET_NAME and S3_ACCESS_KEY and S3_SECRET_KEY)
+
+if USE_S3:
+    STORAGES = {
+        "default": {"BACKEND": "config.storage.S3MediaStorage"},
+        "staticfiles": {"BACKEND": "config.storage.S3StaticFilesStorage"},
+    }
+else:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+
+# Local media (used by the FileSystemStorage fallback above; harmless under S3).
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # The Next.js frontend (its BFF) consumes this API. Allow its origin + credentials.
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")

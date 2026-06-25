@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 from django.conf import settings
@@ -6,13 +7,41 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import viewsets, status as drf_status
 from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiResponse, OpenApiParameter
 
+try:  # botocore ships with boto3; guard so a missing dep never breaks import
+    from botocore.exceptions import BotoCoreError, ClientError
+except Exception:  # noqa: BLE001
+    BotoCoreError = ClientError = ()
+
+logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+class StorageUnavailable(APIException):
+    """Returned when the file-storage backend (S3 or filesystem) fails a write."""
+    status_code = drf_status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = (
+        "File storage is unavailable — the server's S3/media storage is not configured "
+        "correctly. The file was not saved."
+    )
+    default_code = "storage_unavailable"
+
+
+class FileUploadMixin:
+    """Translate raw storage failures into a clean 503 instead of an opaque 500."""
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except (BotoCoreError, ClientError, ValueError, OSError) as exc:
+            logger.exception("File upload failed during storage write: %s", exc)
+            raise StorageUnavailable()
 
 from .models import (
     Clients, Projects, ProjectFiles, ProjectContactPerson, projectBlockers,
@@ -262,7 +291,7 @@ def project_progress(request, pk):
     partial_update=extend_schema(tags=['Project Files'], summary='Partially update a project file'),
     destroy=extend_schema(tags=['Project Files'], summary='Delete a project file'),
 )
-class ProjectFilesViewSet(viewsets.ModelViewSet):
+class ProjectFilesViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = ProjectFiles.objects.select_related('project', 'uploaded_by').all()
     serializer_class = ProjectFilesSerializer
     permission_classes = _PERMISSIONS
@@ -310,7 +339,7 @@ class ProjectContactPersonViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(tags=['Project Blockers'], summary='Partially update a project blocker'),
     destroy=extend_schema(tags=['Project Blockers'], summary='Delete a project blocker'),
 )
-class ProjectBlockersViewSet(viewsets.ModelViewSet):
+class ProjectBlockersViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = projectBlockers.objects.select_related('project', 'reported_by', 'resolved_by').all()
     serializer_class = ProjectBlockersSerializer
     permission_classes = _PERMISSIONS
@@ -633,7 +662,7 @@ class TasksViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(tags=['Task Files'], summary='Partially update a task file'),
     destroy=extend_schema(tags=['Task Files'], summary='Delete a task file'),
 )
-class TaskFilesViewSet(viewsets.ModelViewSet):
+class TaskFilesViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = TaskFiles.objects.select_related('task', 'uploaded_by').all()
     serializer_class = TaskFilesSerializer
     permission_classes = _PERMISSIONS
@@ -659,7 +688,7 @@ class TaskFilesViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(tags=['Task Blockers'], summary='Partially update a task blocker'),
     destroy=extend_schema(tags=['Task Blockers'], summary='Delete a task blocker'),
 )
-class TaskBlockersViewSet(viewsets.ModelViewSet):
+class TaskBlockersViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = TaskBlockers.objects.select_related('task', 'reported_by', 'resolved_by').all()
     serializer_class = TaskBlockersSerializer
     permission_classes = _PERMISSIONS

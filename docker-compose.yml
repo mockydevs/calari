@@ -5,7 +5,7 @@
 #
 # PostgreSQL + Redis are EXTERNAL/managed — there are no db/redis services here.
 # Configure connection + secrets via environment:
-#   - Local : drop values into ./backend/.env (or .env.dev) and ./frontend/.env
+#   - Local : drop values into a single repo-root ./.env (see .env.example)
 #   - Coolify/prod : set every variable in the service dashboard. The env_file
 #                    entries below are optional (required: false), so a missing
 #                    file is fine when the platform injects the env directly.
@@ -27,9 +27,9 @@ services:
     expose:
       - "8000"
     env_file:
-      - path: ./backend/.env
-        required: false
-      - path: ./backend/.env.dev
+      # Single repo-root env file shared by both services (local/dev only;
+      # Coolify injects vars directly in production).
+      - path: ./.env
         required: false
     environment:
       CLOUD_ENV: "True" # read config from the environment, not a re-loaded .env
@@ -47,7 +47,7 @@ services:
     expose:
       - "3000"
     env_file:
-      - path: ./frontend/.env
+      - path: ./.env
         required: false
     environment:
       NODE_ENV: production
