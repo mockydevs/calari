@@ -406,14 +406,16 @@ CELERY_BROKER_CONNECTION_TIMEOUT = 5
 # EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 # DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
 
+# Read the SMTP_* names (one set, shared with the Next.js frontend mailer);
+# fall back to Django's EMAIL_* names for back-compat.
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_HOST = os.getenv("SMTP_HOST") or os.getenv("EMAIL_HOST")
+EMAIL_PORT = int(os.getenv("SMTP_PORT") or os.getenv("EMAIL_PORT") or 587)
 EMAIL_USE_TLS = str_to_bool(os.getenv("EMAIL_USE_TLS", "True"))
 EMAIL_USE_SSL = str_to_bool(os.getenv("EMAIL_USE_SSL", "False"))
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
+EMAIL_HOST_USER = os.getenv("SMTP_USER") or os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("SMTP_PASS") or os.getenv("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = os.getenv("EMAIL_FROM") or os.getenv("DEFAULT_FROM_EMAIL") or EMAIL_HOST_USER
 
 USE_HTTPS = os.getenv("USE_HTTPS", "False").lower() in ("true", "1")
 SCHEME = "https" if USE_HTTPS else "http"
