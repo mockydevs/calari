@@ -10,6 +10,7 @@ from django.utils import timezone
 from projects.tasks import send_notification_email
 from rest_framework import viewsets, status as http
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -107,6 +108,20 @@ def _notify(user, type_, message, link, actor=None, build_name=""):
 
 def _501(exc):
     return Response({"error": str(exc)}, status=http.HTTP_501_NOT_IMPLEMENTED)
+
+
+def _dispatch_async(task_fn, *args):
+    """Queue a Celery task. Returns a clean 503 Response if the broker (Redis) is
+    unreachable, instead of letting the connection error bubble up as a 500."""
+    try:
+        task_fn.delay(*args)
+        return None
+    except Exception:  # noqa: BLE001 — kombu/redis OperationalError, ConnectionError, etc.
+        return Response(
+            {"error": "Background processing is temporarily unavailable (task queue offline). "
+                      "Please try again shortly."},
+            status=http.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
 
 # ─── Builds ───────────────────────────────────────────────────────────────────
@@ -236,7 +251,12 @@ class BuildViewSet(viewsets.ModelViewSet):
             latest_note.ai_status = "processing"
             latest_note.save(update_fields=["ai_status"])
         from .tasks import generate_build_brief
-        generate_build_brief.delay(build.id, request.user.id)
+        err = _dispatch_async(generate_build_brief, build.id, request.user.id)
+        if err:
+            if latest_note:  # don't leave the UI stuck on "processing"
+                latest_note.ai_status = "failed"
+                latest_note.save(update_fields=["ai_status"])
+            return err
         return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["post"], url_path="brief-qa-check")
@@ -245,8 +265,8 @@ class BuildViewSet(viewsets.ModelViewSet):
         if not build.goals:
             return Response({"error": "Generate the brief before running a QA check."}, status=http.HTTP_400_BAD_REQUEST)
         from .tasks import run_build_qa
-        run_build_qa.delay(build.id, request.user.id)
-        return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
+        return _dispatch_async(run_build_qa, build.id, request.user.id) or \
+            Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
 
 
 @api_view(["GET"])
@@ -320,8 +340,8 @@ class TaskViewSet(viewsets.ModelViewSet):
     def generate_sop(self, request, pk=None):
         task = self.get_object()
         from .tasks import generate_task_sop
-        generate_task_sop.delay(task.id)
-        return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
+        return _dispatch_async(generate_task_sop, task.id) or \
+            Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
 
 
 # ─── Simple sub-resource viewsets ─────────────────────────────────────────────
@@ -352,6 +372,48 @@ class MeetingNoteViewSet(_BaseViewSet):
     queryset = MeetingNote.objects.all()
     serializer_class = MeetingNoteSerializer
     filterset_fields = ["build", "ai_status"]
+
+    @action(detail=False, methods=["post"], url_path="upload",
+            parser_classes=[MultiPartParser, FormParser])
+    def upload(self, request):
+        """Create a meeting note from an uploaded document (PDF, DOCX, TXT, …).
+
+        The file's text is extracted server-side and stored as the note body so the
+        AI blueprint step can read it — same as a pasted note, but from a file.
+        """
+        build = Build.objects.filter(pk=request.data.get("build")).first()
+        file = request.FILES.get("file")
+        if not build or not file:
+            return Response({"error": "build and file are required"}, status=http.HTTP_400_BAD_REQUEST)
+        filename = file.name
+        content_type = getattr(file, "content_type", "") or ""
+        if not services.is_ai_readable(filename, content_type):
+            return Response(
+                {"error": "Unsupported file type. Upload a PDF, DOCX, TXT, CSV, MD, or RTF file."},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+        raw = file.read()
+        try:
+            text = services.extract_text(raw, filename, content_type)
+        except Exception as e:  # noqa: BLE001
+            return Response({"error": f"Could not read the document: {e}"}, status=http.HTTP_400_BAD_REQUEST)
+        if not text.strip():
+            return Response(
+                {"error": "No readable text was found in that document."},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+        # Keep the original file too (best-effort — the extracted text is what the AI reads).
+        file_url = ""
+        try:
+            from django.core.files.storage import default_storage
+            from django.core.files.base import ContentFile
+            key = default_storage.save(f"meeting_notes/{secrets.token_urlsafe(8)}_{filename}", ContentFile(raw))
+            file_url = default_storage.url(key)
+        except Exception:  # noqa: BLE001 — storage is optional; never block note creation
+            pass
+        note = MeetingNote.objects.create(build=build, raw_text=text, source="upload", file_url=file_url)
+        _log(build, request.user, f'Meeting notes uploaded from "{filename}".')
+        return Response(MeetingNoteSerializer(note).data, status=http.HTTP_201_CREATED)
 
 
 class DocumentViewSet(_BaseViewSet):

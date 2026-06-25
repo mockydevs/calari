@@ -14,6 +14,7 @@ import {
 import { BuildDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
 import { HandoverButton } from "../handover-button";
+import { MeetingNoteUpload } from "../meeting-note-upload";
 import { RunQaButton, GenerateSopButton } from "../ai-buttons";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
@@ -224,8 +225,13 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
           )}
           <form action={addMeetingNote} className="mt-3 space-y-2">
             <input type="hidden" name="buildId" value={id} />
-            <Textarea name="rawText" rows={3} placeholder="Add follow-up meeting notes…" required />
-            <Button type="submit" size="sm" variant="outline"><Plus className="h-3.5 w-3.5" /> Add note</Button>
+            <Textarea name="rawText" rows={3} placeholder="Paste or type follow-up meeting notes…" required />
+            <div className="flex items-center gap-2">
+              <Button type="submit" size="sm" variant="outline"><Plus className="h-3.5 w-3.5" /> Add note</Button>
+              <span className="text-xs text-slate-400">or</span>
+              <MeetingNoteUpload buildId={id} />
+              <span className="text-xs text-slate-400">PDF, DOCX, TXT, CSV, MD, RTF</span>
+            </div>
           </form>
         </div>
       </Panel>
