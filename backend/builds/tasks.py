@@ -6,7 +6,8 @@ from django.db import transaction
 from . import services
 from .models import (
     Build, BuildStatus, ContactSource, PipelineStage, ManualAction, Task,
-    BuildMemorySnapshot, Activity,
+    BuildMemorySnapshot, Activity, StageTransition, Workflow, CustomField,
+    TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
 )
 
 User = get_user_model()
@@ -55,7 +56,7 @@ def generate_task_sop(self, task_id):
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=15)
 def generate_build_brief(self, build_id, user_id):
-    """Generate the AI brief for a build off the request path.
+    """Generate the full AI vision blueprint (handover anatomy + gaps) for a build.
 
     The OpenAI call can take 10–30s, so the view dispatches this and returns
     immediately; progress is tracked on the latest meeting note's ai_status
@@ -69,49 +70,143 @@ def generate_build_brief(self, build_id, user_id):
     notes = "\n\n".join(build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True))
 
     try:
-        draft = services.generate_brief_draft(notes)
+        draft = services.generate_blueprint_draft(notes)
     except Exception:  # noqa: BLE001 — record failure so the UI can surface it
         if latest_note:
             latest_note.ai_status = "failed"
             latest_note.save(update_fields=["ai_status"])
         return
 
-    with transaction.atomic():
-        # Replace prior AI-generated structure.
-        build.contact_sources.all().delete()
-        build.stages.all().delete()
-        build.tasks.filter(ai_generated=True).delete()
+    _persist_blueprint(build, draft, user)
 
+    if latest_note:
+        latest_note.ai_output = draft
+        latest_note.ai_status = "done"
+        latest_note.save(update_fields=["ai_output", "ai_status"])
+
+
+# Public alias — the new name; `generate_build_brief` kept so existing dispatch works.
+generate_build_blueprint = generate_build_brief
+
+
+def _persist_blueprint(build, draft, user):
+    """Replace the prior AI-generated blueprint structure with a fresh extraction."""
+    with transaction.atomic():
+        # Wipe prior AI structure (idempotent re-generation).
+        build.contact_sources.all().delete()
+        build.calendars.all().delete()
+        build.external_integrations.all().delete()
+        build.stages.all().delete()          # cascades manual actions + transitions on stages
+        build.transitions.all().delete()
+        build.workflows.all().delete()
+        build.custom_fields.all().delete()
+        build.tags.all().delete()
+        build.pre_launch_items.all().delete()
+        build.tasks.filter(ai_generated=True).delete()
+        # Refresh only AI-authored open gaps; keep ones a human has answered/dismissed.
+        build.gaps.filter(created_by_ai=True, status=GapStatus.OPEN).delete()
+
+        build.overview = draft.get("overview", "")
+        build.one_line_summary = draft.get("oneLineSummary", "")
+        build.maintenance_notes = draft.get("maintenanceNotes", "")
         build.goals = draft.get("goals", "")
         build.integrations = ", ".join(draft.get("integrations", []))
         build.status = BuildStatus.AI_DRAFTED
-        build.save(update_fields=["goals", "integrations", "status", "updated_at"])
+        build.save(update_fields=[
+            "overview", "one_line_summary", "maintenance_notes",
+            "goals", "integrations", "status", "updated_at",
+        ])
 
-        for cs in draft.get("contactSources", []):
-            ContactSource.objects.create(build=build, type=cs.get("type", "OTHER"), label=cs.get("label", ""))
+        # Stages first — sources and transitions resolve to them by name.
+        stage_by_name: dict[str, PipelineStage] = {}
         for st in draft.get("pipelineStages", []):
             stage = PipelineStage.objects.create(
                 build=build, name=st.get("name", ""), description=st.get("description", ""),
-                order=st.get("order", 0), needs_manual=bool(st.get("manualActions")),
+                entry_condition=st.get("entryCondition", ""), order=st.get("order", 0),
+                is_automatic=bool(st.get("isAutomatic", True)),
+                needs_manual=bool(st.get("manualActions")),
             )
+            stage_by_name[stage.name.strip().lower()] = stage
             for ma in st.get("manualActions", []):
                 ManualAction.objects.create(stage=stage, description=ma.get("description", ""), owner=ma.get("owner", ""))
+
+        def resolve(name: str):
+            return stage_by_name.get((name or "").strip().lower())
+
+        for i, cs in enumerate(draft.get("leadSources", [])):
+            ContactSource.objects.create(
+                build=build, type=cs.get("type", "OTHER"), label=cs.get("label", ""),
+                entry_mechanism=cs.get("entryMechanism", ""), fires=cs.get("fires", ""),
+                tags_applied=cs.get("tagsApplied", ""), handling_workflow=cs.get("handlingWorkflow", ""),
+                entry_stage=resolve(cs.get("entryStage", "")), notes=cs.get("notes", ""), order=i,
+            )
+
+        for i, cal in enumerate(draft.get("calendars", [])):
+            Calendar.objects.create(
+                build=build, name=cal.get("name", ""), type=cal.get("type", "OTHER"),
+                purpose=cal.get("purpose", ""), assigned_to=cal.get("assignedTo", ""),
+                books_into_stage=resolve(cal.get("booksIntoStage", "")),
+                on_booking=cal.get("onBooking", ""), reminders=cal.get("reminders", ""),
+                notes=cal.get("notes", ""), order=i,
+            )
+
+        for i, ig in enumerate(draft.get("integrations", [])):
+            Integration.objects.create(
+                build=build, name=ig.get("name", ""), direction=ig.get("direction", "INBOUND"),
+                mechanism=ig.get("mechanism", "API"), data_objects=ig.get("dataObjects", ""),
+                purpose=ig.get("purpose", ""), trigger_cadence=ig.get("triggerCadence", ""),
+                notes=ig.get("notes", ""), order=i,
+            )
+
+        for i, tr in enumerate(draft.get("stageTransitions", [])):
+            StageTransition.objects.create(
+                build=build, from_stage=resolve(tr.get("fromStage", "")), to_stage=resolve(tr.get("toStage", "")),
+                from_label=tr.get("fromStage", ""), to_label=tr.get("toStage", ""),
+                trigger=tr.get("trigger", ""), is_automatic=bool(tr.get("isAutomatic", True)),
+                notes=tr.get("notes", ""), order=i,
+            )
+
+        for i, wf in enumerate(draft.get("workflows", [])):
+            Workflow.objects.create(
+                build=build, code=wf.get("code", ""), category=wf.get("category", "OTHER"),
+                name=wf.get("name", ""), trigger=wf.get("trigger", ""),
+                what_it_does=wf.get("whatItDoes", ""), patient_facing=bool(wf.get("patientFacing", False)), order=i,
+            )
+
+        for i, cf in enumerate(draft.get("customFields", [])):
+            CustomField.objects.create(
+                build=build, kind=cf.get("kind", "FIELD"), key=cf.get("key", ""),
+                description=cf.get("description", ""), populated=bool(cf.get("populated", True)), order=i,
+            )
+
+        for i, tg in enumerate(draft.get("tags", [])):
+            TagDefinition.objects.create(build=build, tag=tg.get("tag", ""), meaning=tg.get("meaning", ""), order=i)
+
+        for i, pl in enumerate(draft.get("preLaunchItems", [])):
+            PreLaunchItem.objects.create(
+                build=build, description=pl.get("description", ""), optional=bool(pl.get("optional", False)), order=i,
+            )
+
         for tk in draft.get("tasks", []):
             Task.objects.create(
                 build=build, title=tk.get("title", ""), type=tk.get("type", "OTHER"),
                 description=tk.get("description", ""), ai_generated=True,
             )
 
-        if latest_note:
-            latest_note.ai_output = draft
-            latest_note.ai_status = "done"
-            latest_note.save(update_fields=["ai_output", "ai_status"])
+        for gp in draft.get("gaps", []):
+            VisionGap.objects.create(
+                build=build, category=gp.get("category", "GENERAL"), question=gp.get("question", ""),
+                rationale=gp.get("rationale", ""), severity=gp.get("severity", "medium"), created_by_ai=True,
+            )
+
+        open_gaps = build.gaps.filter(status=GapStatus.OPEN).count()
         BuildMemorySnapshot.objects.create(
             build=build, created_by=user, created_by_ai=True,
-            summary="AI brief generated.", scope_changes="",
+            summary="AI vision blueprint generated.",
+            scope_changes=f"{open_gaps} open gap(s) the AI flagged for follow-up." if open_gaps else "No gaps flagged.",
         )
         Activity.objects.create(
             build=build,
             actor=(user.get_full_name() or user.username) if user else "system",
-            message="AI brief generated.",
+            message=f"AI vision blueprint generated ({open_gaps} open gap(s)).",
         )

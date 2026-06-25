@@ -19,7 +19,8 @@ from .models import (
     Build, ContactSource, PipelineStage, ManualAction, Task, TaskDependency,
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
-    AiApiKey, TeamInvite, BuildStatus,
+    AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
+    TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
 )
 from .serializers import (
     BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
@@ -27,7 +28,9 @@ from .serializers import (
     DocumentSerializer, MeetingNoteSerializer, CommentSerializer, ActivitySerializer,
     ChangeRequestSerializer, ApprovalRecordSerializer, BuildMemorySnapshotSerializer,
     ClientPortalFeedbackSerializer, NotificationSerializer, NotificationPreferenceSerializer,
-    AiApiKeySerializer, TeamInviteSerializer,
+    AiApiKeySerializer, TeamInviteSerializer, StageTransitionSerializer, WorkflowSerializer,
+    CustomFieldSerializer, TagDefinitionSerializer, PreLaunchItemSerializer, VisionGapSerializer,
+    CalendarSerializer, IntegrationSerializer,
 )
 from . import services
 
@@ -111,8 +114,10 @@ def _501(exc):
 # so we only load them for `retrieve` (and the generate-brief response), never
 # for list/mutating actions which otherwise paid the full prefetch cost.
 _DETAIL_PREFETCH = (
-    "contact_sources", "stages__manual_actions", "tasks__assignee",
-    "documents__uploader", "comments__author",
+    "contact_sources__entry_stage", "calendars__books_into_stage", "external_integrations",
+    "stages__manual_actions", "transitions",
+    "workflows", "custom_fields", "tags", "pre_launch_items", "gaps",
+    "tasks__assignee", "documents__uploader", "comments__author",
     "change_requests__owner", "change_requests__created_by",
     "approvals__approver", "memory_snapshots__created_by", "activities",
 )
@@ -188,6 +193,36 @@ class BuildViewSet(viewsets.ModelViewSet):
         total = build.tasks.count()
         done = build.tasks.filter(status="DONE").count()
         return Response({"total": total, "done": done, "percent": round(done * 100 / total) if total else 0})
+
+    @action(detail=True, methods=["get"])
+    def handover(self, request, pk=None):
+        """Render the captured vision blueprint as the client handover document (markdown)."""
+        build = self._detail_queryset().get(pk=self.get_object().pk)
+        return Response({"markdown": services.render_handover_markdown(build)})
+
+    @action(detail=True, methods=["get"], url_path="vision-completeness")
+    def vision_completeness(self, request, pk=None):
+        """Score how fully the client vision is captured, by handover section."""
+        build = self.get_object()
+        sections = {
+            "overview": bool(build.overview),
+            "lead_sources": build.contact_sources.exists(),
+            "calendars": build.calendars.exists(),
+            "integrations": build.external_integrations.exists(),
+            "stages": build.stages.exists(),
+            "transitions": build.transitions.exists(),
+            "workflows": build.workflows.exists(),
+            "custom_fields": build.custom_fields.exists(),
+            "tags": build.tags.exists(),
+        }
+        captured = sum(1 for v in sections.values() if v)
+        return Response({
+            "sections": sections,
+            "captured": captured,
+            "total": len(sections),
+            "percent": round(captured * 100 / len(sections)),
+            "open_gaps": build.gaps.filter(status=GapStatus.OPEN).count(),
+        })
 
     @action(detail=True, methods=["post"], url_path="generate-brief")
     def generate_brief(self, request, pk=None):
@@ -396,6 +431,77 @@ class TaskDependencyViewSet(_BaseViewSet):
     queryset = TaskDependency.objects.all()
     serializer_class = TaskDependencySerializer
     filterset_fields = ["blocker", "blocked"]
+
+
+# ─── Vision blueprint sub-resources ───────────────────────────────────────────
+class CalendarViewSet(_BaseViewSet):
+    queryset = Calendar.objects.all()
+    serializer_class = CalendarSerializer
+    filterset_fields = ["build", "type", "books_into_stage"]
+    ordering = ["order"]
+
+
+class IntegrationViewSet(_BaseViewSet):
+    queryset = Integration.objects.all()
+    serializer_class = IntegrationSerializer
+    filterset_fields = ["build", "direction", "mechanism"]
+    ordering = ["order"]
+
+
+class StageTransitionViewSet(_BaseViewSet):
+    queryset = StageTransition.objects.all()
+    serializer_class = StageTransitionSerializer
+    filterset_fields = ["build", "from_stage", "to_stage"]
+    ordering = ["order"]
+
+
+class WorkflowViewSet(_BaseViewSet):
+    queryset = Workflow.objects.all()
+    serializer_class = WorkflowSerializer
+    filterset_fields = ["build", "category", "patient_facing"]
+    ordering = ["category", "order"]
+
+
+class CustomFieldViewSet(_BaseViewSet):
+    queryset = CustomField.objects.all()
+    serializer_class = CustomFieldSerializer
+    filterset_fields = ["build", "kind", "populated"]
+    ordering = ["kind", "order"]
+
+
+class TagDefinitionViewSet(_BaseViewSet):
+    queryset = TagDefinition.objects.all()
+    serializer_class = TagDefinitionSerializer
+    filterset_fields = ["build"]
+    ordering = ["order"]
+
+
+class PreLaunchItemViewSet(_BaseViewSet):
+    queryset = PreLaunchItem.objects.all()
+    serializer_class = PreLaunchItemSerializer
+    filterset_fields = ["build", "done", "optional"]
+    ordering = ["order"]
+
+
+class VisionGapViewSet(_BaseViewSet):
+    queryset = VisionGap.objects.select_related("resolved_by").all()
+    serializer_class = VisionGapSerializer
+    filterset_fields = ["build", "status", "category", "severity"]
+    ordering = ["status", "created_at"]
+
+    @action(detail=True, methods=["post"])
+    def resolve(self, request, pk=None):
+        """Answer or dismiss a gap the AI flagged, closing the loop on the vision."""
+        gap = self.get_object()
+        new_status = request.data.get("status", GapStatus.ANSWERED)
+        if new_status not in GapStatus.values:
+            return Response({"error": "invalid status"}, status=http.HTTP_400_BAD_REQUEST)
+        gap.status = new_status
+        gap.answer = request.data.get("answer", gap.answer)
+        gap.resolved_by = request.user
+        gap.save(update_fields=["status", "answer", "resolved_by", "updated_at"])
+        _log(gap.build, request.user, f"Vision gap {new_status.lower()}: {gap.question[:80]}")
+        return Response(VisionGapSerializer(gap).data)
 
 
 # ─── Notifications ────────────────────────────────────────────────────────────

@@ -42,6 +42,73 @@ class ContactSourceType(models.TextChoices):
     OTHER = "OTHER", "Other"
 
 
+class WorkflowCategory(models.TextChoices):
+    """Mirrors the handover's name-prefix grouping (A / IN / REC / E,K / G / H,X,Y,Z)."""
+    ACTIVE_CONVERSION = "ACTIVE_CONVERSION", "Active conversion (A)"
+    INTAKE_ROUTING = "INTAKE_ROUTING", "Intake & routing (IN)"
+    RECORD_KEEPING = "RECORD_KEEPING", "Record-keeping (REC)"
+    APPOINTMENT_LIFECYCLE = "APPOINTMENT_LIFECYCLE", "Appointment lifecycle (E, K)"
+    POST_VISIT = "POST_VISIT", "Post-visit & retention (G)"
+    INTERNAL_UTILITY = "INTERNAL_UTILITY", "Internal & utility (H, X, Y, Z)"
+    OTHER = "OTHER", "Other"
+
+
+class CustomFieldKind(models.TextChoices):
+    FIELD = "FIELD", "Custom field"
+    VALUE = "VALUE", "Custom value"
+
+
+class CalendarType(models.TextChoices):
+    """GHL calendar types — the booking object that converts a nurtured lead."""
+    ROUND_ROBIN = "ROUND_ROBIN", "Round robin"
+    COLLECTIVE = "COLLECTIVE", "Collective"
+    CLASS = "CLASS", "Class / group"
+    SERVICE = "SERVICE", "Service"
+    PERSONAL = "PERSONAL", "Personal"
+    OTHER = "OTHER", "Other"
+
+
+class IntegrationDirection(models.TextChoices):
+    INBOUND = "INBOUND", "Inbound (into GHL)"
+    OUTBOUND = "OUTBOUND", "Outbound (out of GHL)"
+    BIDIRECTIONAL = "BIDIRECTIONAL", "Bidirectional"
+
+
+class IntegrationMechanism(models.TextChoices):
+    API = "API", "API"
+    WEBHOOK = "WEBHOOK", "Webhook"
+    NATIVE = "NATIVE", "Native integration"
+    ZAPIER = "ZAPIER", "Zapier / Make"
+    CRON = "CRON", "Scheduled sync (cron)"
+    OTHER = "OTHER", "Other"
+
+
+class GapCategory(models.TextChoices):
+    """Which part of the vision a gap relates to — drives where the AI probes."""
+    OVERVIEW = "OVERVIEW", "Overview / big idea"
+    STAGE = "STAGE", "Pipeline stage"
+    TRANSITION = "TRANSITION", "Stage movement"
+    LEAD_SOURCE = "LEAD_SOURCE", "Lead source"
+    CALENDAR = "CALENDAR", "Calendar / booking"
+    INTEGRATION = "INTEGRATION", "Integration / data flow"
+    WORKFLOW = "WORKFLOW", "Workflow"
+    CUSTOM_FIELD = "CUSTOM_FIELD", "Custom field / value"
+    TAG = "TAG", "Tag"
+    GENERAL = "GENERAL", "General"
+
+
+class GapSeverity(models.TextChoices):
+    HIGH = "high", "High"
+    MEDIUM = "medium", "Medium"
+    LOW = "low", "Low"
+
+
+class GapStatus(models.TextChoices):
+    OPEN = "OPEN", "Open"
+    ANSWERED = "ANSWERED", "Answered"
+    DISMISSED = "DISMISSED", "Dismissed"
+
+
 class AIProvider(models.TextChoices):
     OPENAI = "OPENAI", "OpenAI"
     ANTHROPIC = "ANTHROPIC", "Anthropic"
@@ -72,6 +139,10 @@ class Build(models.Model):
     status = models.CharField(max_length=32, choices=BuildStatus.choices, default=BuildStatus.DRAFT)
     goals = models.TextField(blank=True, default="")
     integrations = models.TextField(blank=True, default="")
+    # ── Vision blueprint narrative (mirrors the client handover anatomy) ──
+    overview = models.TextField(blank=True, default="")          # "The big idea"
+    one_line_summary = models.TextField(blank=True, default="")  # one-line summary for the team
+    maintenance_notes = models.TextField(blank=True, default="")  # env vars, services, cadence
     client = models.ForeignKey("projects.Clients", on_delete=models.CASCADE, related_name="builds")
     creator = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="created_builds")
     assignee = models.ForeignKey(
@@ -90,18 +161,36 @@ class Build(models.Model):
         return self.title
 
 
+class PipelineStage(models.Model):
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")     # "what it means"
+    entry_condition = models.TextField(blank=True, default="")  # "how a lead gets here"
+    order = models.IntegerField(default=0)
+    needs_manual = models.BooleanField(default=False)
+    is_automatic = models.BooleanField(default=True)  # auto-advances on a reliable signal
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="stages")
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.name
+
+
 class ContactSource(models.Model):
     type = models.CharField(max_length=16, choices=ContactSourceType.choices, default=ContactSourceType.OTHER)
     label = models.CharField(max_length=255)
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="contact_sources")
-
-
-class PipelineStage(models.Model):
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, default="")
+    # ── Lead-source mechanics (how it enters the pipeline) ──
+    entry_mechanism = models.TextField(blank=True, default="")    # form trigger, webhook, cron sync, etc.
+    fires = models.TextField(blank=True, default="")             # side effects fired (Meta CAPI, alerts…)
+    tags_applied = models.CharField(max_length=500, blank=True, default="")
+    handling_workflow = models.CharField(max_length=255, blank=True, default="")  # e.g. "IN1"
+    entry_stage = models.ForeignKey(
+        PipelineStage, on_delete=models.SET_NULL, null=True, blank=True, related_name="entry_sources"
+    )
+    notes = models.TextField(blank=True, default="")
     order = models.IntegerField(default=0)
-    needs_manual = models.BooleanField(default=False)
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="stages")
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="contact_sources")
 
     class Meta:
         ordering = ["order"]
@@ -111,6 +200,166 @@ class ManualAction(models.Model):
     description = models.TextField()
     owner = models.CharField(max_length=255, blank=True, default="")
     stage = models.ForeignKey(PipelineStage, on_delete=models.CASCADE, related_name="manual_actions")
+
+
+class Calendar(models.Model):
+    """A GHL calendar — the booking object where a nurtured lead converts.
+
+    Nurture sequences (Workflow category ACTIVE_CONVERSION) push contacts toward
+    booking on one of these; a booking is typically the conversion event that moves
+    the opportunity into an "Appointment Booked"-style stage.
+    """
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="calendars")
+    name = models.CharField(max_length=255)
+    type = models.CharField(max_length=16, choices=CalendarType.choices, default=CalendarType.OTHER)
+    purpose = models.TextField(blank=True, default="")          # what it books: consult, in-person visit, demo…
+    booking_url = models.CharField(max_length=1000, blank=True, default="")
+    assigned_to = models.CharField(max_length=500, blank=True, default="")  # team members / providers
+    # The conversion wiring: where a booking lands and what it fires.
+    books_into_stage = models.ForeignKey(
+        PipelineStage, on_delete=models.SET_NULL, null=True, blank=True, related_name="booking_calendars"
+    )
+    on_booking = models.TextField(blank=True, default="")       # what happens on booking (workflow, tags, reminders)
+    reminders = models.TextField(blank=True, default="")        # reminder/confirmation cadence
+    notes = models.TextField(blank=True, default="")
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.name
+
+
+class Integration(models.Model):
+    """An external system wired to GHL — inbound, outbound, or bidirectional.
+
+    Covers the full data-flow picture beyond lead entry: tools that feed contacts
+    in (Patient Prism, Modento, web apps), and where GHL pushes data out (ERP,
+    external DB, quotes, invoices, accounting).
+    """
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="external_integrations")
+    name = models.CharField(max_length=255)                     # Patient Prism, Modento, QuickBooks, custom ERP…
+    direction = models.CharField(
+        max_length=16, choices=IntegrationDirection.choices, default=IntegrationDirection.INBOUND
+    )
+    mechanism = models.CharField(
+        max_length=16, choices=IntegrationMechanism.choices, default=IntegrationMechanism.API
+    )
+    data_objects = models.CharField(max_length=500, blank=True, default="")  # contacts, appointments, quotes, invoices…
+    purpose = models.TextField(blank=True, default="")
+    trigger_cadence = models.CharField(max_length=255, blank=True, default="")  # real-time, daily cron, on stage change
+    endpoint = models.CharField(max_length=1000, blank=True, default="")        # URL/service (no secrets)
+    notes = models.TextField(blank=True, default="")
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.name
+
+
+class StageTransition(models.Model):
+    """An edge between stages — the movement that keeps the build true to the vision."""
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="transitions")
+    from_stage = models.ForeignKey(
+        PipelineStage, on_delete=models.CASCADE, null=True, blank=True, related_name="transitions_out"
+    )
+    to_stage = models.ForeignKey(
+        PipelineStage, on_delete=models.CASCADE, null=True, blank=True, related_name="transitions_in"
+    )
+    # Free-text labels preserved even if a stage can't be resolved (AI gives names).
+    from_label = models.CharField(max_length=255, blank=True, default="")
+    to_label = models.CharField(max_length=255, blank=True, default="")
+    trigger = models.TextField()  # what causes the move
+    is_automatic = models.BooleanField(default=True)
+    notes = models.TextField(blank=True, default="")
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["order"]
+
+
+class Workflow(models.Model):
+    """An automation/workflow in the delivered system (handover §5)."""
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="workflows")
+    code = models.CharField(max_length=32, blank=True, default="")  # e.g. "A1", "IN3", "K4"
+    category = models.CharField(
+        max_length=32, choices=WorkflowCategory.choices, default=WorkflowCategory.OTHER
+    )
+    name = models.CharField(max_length=255)
+    trigger = models.CharField(max_length=500, blank=True, default="")
+    what_it_does = models.TextField(blank=True, default="")
+    patient_facing = models.BooleanField(default=False)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["category", "order", "code"]
+
+    def __str__(self):
+        return f"{self.code} {self.name}".strip()
+
+
+class CustomField(models.Model):
+    """A custom field or custom value the system relies on (handover §6)."""
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="custom_fields")
+    kind = models.CharField(max_length=8, choices=CustomFieldKind.choices, default=CustomFieldKind.FIELD)
+    key = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    populated = models.BooleanField(default=True)  # False = still needs a value (a gap)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["kind", "order", "key"]
+
+
+class TagDefinition(models.Model):
+    """An entry in the tag glossary (handover §6)."""
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="tags")
+    tag = models.CharField(max_length=255)
+    meaning = models.CharField(max_length=500, blank=True, default="")
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "tag"]
+
+
+class PreLaunchItem(models.Model):
+    """A pre-launch checklist line (handover §8)."""
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="pre_launch_items")
+    description = models.TextField()
+    optional = models.BooleanField(default=False)
+    done = models.BooleanField(default=False)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["order"]
+
+
+class VisionGap(models.Model):
+    """A piece of the vision the AI couldn't pin down — with a targeted follow-up question.
+
+    This is what makes the AI "always seek the structure": after each pass it records
+    what's missing so the team (or the next round of notes) can close it.
+    """
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="gaps")
+    category = models.CharField(max_length=16, choices=GapCategory.choices, default=GapCategory.GENERAL)
+    question = models.TextField()           # the targeted follow-up to ask the client/team
+    rationale = models.TextField(blank=True, default="")  # why this matters to the build
+    severity = models.CharField(max_length=8, choices=GapSeverity.choices, default=GapSeverity.MEDIUM)
+    status = models.CharField(max_length=12, choices=GapStatus.choices, default=GapStatus.OPEN)
+    answer = models.TextField(blank=True, default="")
+    created_by_ai = models.BooleanField(default=True)
+    resolved_by = models.ForeignKey(
+        USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolved_gaps"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["status", "-severity", "created_at"]
+        indexes = [models.Index(fields=["build", "status"])]
 
 
 class Task(models.Model):

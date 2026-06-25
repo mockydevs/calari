@@ -91,6 +91,28 @@ export async function generateBrief(formData: FormData) {
   revalidatePath(`/builds/${buildId}`);
 }
 
+// ─── Vision blueprint: gaps + pre-launch checklist ───────────────────────────
+export async function resolveGap(formData: FormData) {
+  await requireUser();
+  const id = String(formData.get("id") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  const status = String(formData.get("status") ?? "ANSWERED");
+  const answer = String(formData.get("answer") ?? "").trim();
+  if (!id) throw new Error("Gap is required");
+  await serverApi.post(`builds/vision-gaps/${id}/resolve`, { status, answer });
+  revalidatePath(`/builds/${buildId}`);
+}
+
+export async function togglePreLaunchItem(formData: FormData) {
+  await requireUser();
+  const id = String(formData.get("id") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  const done = String(formData.get("done") ?? "") === "true";
+  if (!id) throw new Error("Item is required");
+  await serverApi.patch(`builds/pre-launch-items/${id}`, { done });
+  revalidatePath(`/builds/${buildId}`);
+}
+
 // ─── Change requests + approvals ─────────────────────────────────────────────
 export async function createChangeRequest(formData: FormData) {
   await requireUser();

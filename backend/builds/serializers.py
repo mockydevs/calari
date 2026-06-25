@@ -5,7 +5,8 @@ from .models import (
     Build, ContactSource, PipelineStage, ManualAction, Task, TaskDependency,
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
-    AiApiKey, TeamInvite,
+    AiApiKey, TeamInvite, StageTransition, Workflow, CustomField, TagDefinition,
+    PreLaunchItem, VisionGap, Calendar, Integration,
 )
 
 _NULL_STR = serializers.CharField(allow_null=True)
@@ -44,6 +45,61 @@ class PipelineStageSerializer(serializers.ModelSerializer):
     class Meta:
         model = PipelineStage
         fields = "__all__"
+
+
+class CalendarSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Calendar
+        fields = "__all__"
+
+
+class IntegrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Integration
+        fields = "__all__"
+
+
+class StageTransitionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StageTransition
+        fields = "__all__"
+
+
+class WorkflowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Workflow
+        fields = "__all__"
+
+
+class CustomFieldSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomField
+        fields = "__all__"
+
+
+class TagDefinitionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TagDefinition
+        fields = "__all__"
+
+
+class PreLaunchItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PreLaunchItem
+        fields = "__all__"
+
+
+class VisionGapSerializer(serializers.ModelSerializer):
+    resolved_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VisionGap
+        fields = "__all__"
+        read_only_fields = ["created_by_ai", "resolved_by"]
+
+    @extend_schema_field(_NULL_STR)
+    def get_resolved_by_name(self, obj):
+        return _user_name(obj.resolved_by)
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -204,7 +260,15 @@ class BuildListSerializer(serializers.ModelSerializer):
 
 class BuildSerializer(BuildListSerializer):
     contact_sources = ContactSourceSerializer(many=True, read_only=True)
+    calendars = CalendarSerializer(many=True, read_only=True)
+    external_integrations = IntegrationSerializer(many=True, read_only=True)
     stages = PipelineStageSerializer(many=True, read_only=True)
+    transitions = StageTransitionSerializer(many=True, read_only=True)
+    workflows = WorkflowSerializer(many=True, read_only=True)
+    custom_fields = CustomFieldSerializer(many=True, read_only=True)
+    tags = TagDefinitionSerializer(many=True, read_only=True)
+    pre_launch_items = PreLaunchItemSerializer(many=True, read_only=True)
+    gaps = VisionGapSerializer(many=True, read_only=True)
     tasks = TaskCardSerializer(many=True, read_only=True)
     documents = DocumentSerializer(many=True, read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
@@ -215,8 +279,10 @@ class BuildSerializer(BuildListSerializer):
 
     class Meta(BuildListSerializer.Meta):
         fields = BuildListSerializer.Meta.fields + [
-            "contact_sources", "stages", "tasks", "documents", "comments",
-            "change_requests", "approvals", "memory_snapshots", "activities",
+            "overview", "one_line_summary", "maintenance_notes",
+            "contact_sources", "calendars", "external_integrations", "stages", "transitions",
+            "workflows", "custom_fields", "tags", "pre_launch_items", "gaps", "tasks",
+            "documents", "comments", "change_requests", "approvals", "memory_snapshots", "activities",
         ]
 
 

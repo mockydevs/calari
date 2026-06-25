@@ -16,7 +16,7 @@ export function GenerateBriefButton({ buildId, hasBrief }: { buildId: number | s
     setBusy(true);
     try {
       await api.post(`builds/builds/${buildId}/generate-brief`, {});
-      toast.info("Generating the brief — this can take up to a minute.", "Working…");
+      toast.info("Capturing the full vision blueprint — this can take up to a minute.", "Working…");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not start generation.");
       setBusy(false);
@@ -31,13 +31,13 @@ export function GenerateBriefButton({ buildId, hasBrief }: { buildId: number | s
       const latest = [...list].sort((a, b) => b.id - a.id)[0];
       const status = latest?.ai_status;
       if (status === "done") {
-        toast.success("Brief generated.", "Done");
+        toast.success("Vision blueprint captured.", "Done");
         setBusy(false);
         router.refresh();
         return;
       }
       if (status === "failed") {
-        toast.error("Generation failed — check your AI key under Settings → AI Keys and try again.", "Brief failed");
+        toast.error("Generation failed — check your AI key under Settings → AI Keys and try again.", "Blueprint failed");
         setBusy(false);
         return;
       }
@@ -59,7 +59,7 @@ export function GenerateBriefButton({ buildId, hasBrief }: { buildId: number | s
       disabled={busy}
       className="inline-flex h-8 items-center gap-2 rounded-md bg-gradient-to-r from-pink-600 to-fuchsia-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:from-pink-700 hover:to-fuchsia-700 disabled:opacity-60"
     >
-      {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><Bot className="h-3.5 w-3.5" /> {hasBrief ? "Regenerate" : "Generate brief"}</>}
+      {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><Bot className="h-3.5 w-3.5" /> {hasBrief ? "Regenerate blueprint" : "Generate blueprint"}</>}
     </button>
   );
 }

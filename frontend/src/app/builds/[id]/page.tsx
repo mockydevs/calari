@@ -1,19 +1,28 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Link2, MessageSquare, Plus, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowLeft, ArrowRight, CalendarClock, FileText, GitBranch, Link2, MessageSquare, Plug,
+  Plus, ShieldCheck, Sparkles, Tag, Workflow as WorkflowIcon, ListChecks, HelpCircle,
+} from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
   addComment, addMeetingNote, assignBuild, createChangeRequest, createTask, enablePortal,
-  recordApproval, setBuildStatus, setChangeRequestStatus, updateTaskStatus, uploadDocument,
+  recordApproval, resolveGap, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
+  updateTaskStatus, uploadDocument,
 } from "../actions";
 import { BuildDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
+import { HandoverButton } from "../handover-button";
 import { RunQaButton, GenerateSopButton } from "../ai-buttons";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
-  TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES, type BuildDetail, type MeetingNote,
+  CALENDAR_TYPE_LABEL, GAP_CATEGORY_LABEL, GAP_SEVERITY_STYLE,
+  INTEGRATION_DIRECTION_LABEL, INTEGRATION_DIRECTION_STYLE, INTEGRATION_MECHANISM_LABEL,
+  TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES,
+  WORKFLOW_CATEGORY_LABEL, type BuildDetail, type MeetingNote, type Workflow,
 } from "../_shared";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -55,7 +64,18 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
 
   const tasks = build.tasks ?? [];
   const stages = build.stages ?? [];
+  const stageName = new Map(stages.map((s) => [s.id, s.name]));
   const contactSources = build.contact_sources ?? [];
+  const calendars = build.calendars ?? [];
+  const integrationLinks = build.external_integrations ?? [];
+  const transitions = build.transitions ?? [];
+  const workflows = build.workflows ?? [];
+  const customFields = build.custom_fields ?? [];
+  const tags = build.tags ?? [];
+  const preLaunch = build.pre_launch_items ?? [];
+  const gaps = build.gaps ?? [];
+  const openGaps = gaps.filter((g) => g.status === "OPEN");
+  const resolvedGaps = gaps.filter((g) => g.status !== "OPEN");
   const changeRequests = build.change_requests ?? [];
   const approvals = build.approvals ?? [];
   const comments = build.comments ?? [];
@@ -64,6 +84,26 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   const qaSnapshots = (build.memory_snapshots ?? []).filter((s) => (s.summary || "").startsWith("AI QA:"));
   const latestQa = [...qaSnapshots].sort((a, b) => b.id - a.id)[0];
   const integrations = build.integrations ? build.integrations.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const hasBlueprint = Boolean(build.overview || build.goals || stages.length);
+
+  // Vision-completeness: how many handover sections are captured.
+  const sectionChecks = [
+    Boolean(build.overview), contactSources.length > 0, calendars.length > 0, integrationLinks.length > 0,
+    stages.length > 0, transitions.length > 0, workflows.length > 0, customFields.length > 0, tags.length > 0,
+  ];
+  const captured = sectionChecks.filter(Boolean).length;
+  const completeness = Math.round((captured / sectionChecks.length) * 100);
+
+  // Group workflows by category for the handover-style §5 layout.
+  const workflowsByCategory = workflows.reduce<Record<string, Workflow[]>>((acc, w) => {
+    (acc[w.category] ??= []).push(w);
+    return acc;
+  }, {});
+  const transitionLabel = (t: typeof transitions[number], which: "from" | "to") => {
+    const id = which === "from" ? t.from_stage : t.to_stage;
+    const fallback = which === "from" ? t.from_label : t.to_label;
+    return (id != null ? stageName.get(id) : null) ?? fallback ?? "—";
+  };
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5">
@@ -116,44 +156,60 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
         )}
       </section>
 
-      {/* AI Brief */}
+      {/* Vision blueprint */}
       <Panel
-        title="Brief"
+        title="Vision blueprint"
         icon={<Sparkles className="h-4 w-4 text-pink-700" />}
         action={isAdmin && (
-          <div className="flex items-center gap-2">
-            <GenerateBriefButton buildId={id} hasBrief={Boolean(build.goals)} />
-            {build.goals && <RunQaButton buildId={id} />}
+          <div className="flex flex-wrap items-center gap-2">
+            <GenerateBriefButton buildId={id} hasBrief={hasBlueprint} />
+            {hasBlueprint && <RunQaButton buildId={id} />}
+            {hasBlueprint && <HandoverButton buildId={id} title={build.title} />}
           </div>
         )}
       >
-        {build.goals ? (
+        {hasBlueprint ? (
           <div className="space-y-4 text-sm">
-            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Goals</p><p className="mt-1 text-slate-700">{build.goals}</p></div>
+            {/* Completeness meter */}
+            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
+                <span>Vision captured</span>
+                <span className={completeness === 100 ? "text-emerald-600" : "text-slate-700"}>
+                  {captured}/{sectionChecks.length} sections · {completeness}%
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-full rounded-full ${completeness === 100 ? "bg-emerald-500" : "bg-pink-500"}`}
+                  style={{ width: `${completeness}%` }}
+                />
+              </div>
+              {openGaps.length > 0 && (
+                <p className="mt-2 text-xs text-amber-700">
+                  {openGaps.length} open gap{openGaps.length === 1 ? "" : "s"} the AI flagged — see “Vision gaps” below.
+                </p>
+              )}
+            </div>
+
+            {build.overview && (
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">The big idea</p>
+                <p className="mt-1 whitespace-pre-wrap text-slate-700">{build.overview}</p>
+              </div>
+            )}
+            {build.one_line_summary && (
+              <p className="rounded-md border-l-2 border-pink-300 bg-pink-50/50 px-3 py-2 text-slate-700">{build.one_line_summary}</p>
+            )}
+            {build.goals && (
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Goals</p><p className="mt-1 text-slate-700">{build.goals}</p></div>
+            )}
             {integrations.length > 0 && (
               <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Integrations</p>
                 <div className="mt-1 flex flex-wrap gap-1.5">{integrations.map((i) => <span key={i} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{i}</span>)}</div>
               </div>
             )}
-            {contactSources.length > 0 && (
-              <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contact sources</p>
-                <ul className="mt-1 list-inside list-disc text-slate-700">{contactSources.map((c) => <li key={c.id}>{c.label} <span className="text-slate-400">({c.type})</span></li>)}</ul>
-              </div>
-            )}
-            {stages.length > 0 && (
-              <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pipeline stages</p>
-                <ol className="mt-1 space-y-2">{stages.map((s) => (
-                  <li key={s.id} className="rounded-md border border-slate-200 p-2.5">
-                    <p className="text-sm font-medium text-slate-800">{s.order}. {s.name}</p>
-                    {s.description && <p className="text-xs text-slate-500">{s.description}</p>}
-                    {s.manual_actions?.length > 0 && <ul className="mt-1 list-inside list-disc text-xs text-slate-600">{s.manual_actions.map((m) => <li key={m.id}>{m.description}{m.owner ? ` — ${m.owner}` : ""}</li>)}</ul>}
-                  </li>
-                ))}</ol>
-              </div>
-            )}
           </div>
         ) : (
-          <p className="text-sm text-slate-500">No brief yet. Add meeting notes below, then generate the brief.</p>
+          <p className="text-sm text-slate-500">No blueprint yet. Add meeting notes below, then generate the blueprint.</p>
         )}
 
         <div className="mt-5 border-t border-slate-100 pt-4">
@@ -173,6 +229,226 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
           </form>
         </div>
       </Panel>
+
+      {/* Vision gaps — what the AI couldn't pin down */}
+      {(openGaps.length > 0 || resolvedGaps.length > 0) && (
+        <Panel
+          title={`Vision gaps${openGaps.length ? ` (${openGaps.length} open)` : ""}`}
+          icon={<HelpCircle className="h-4 w-4 text-pink-700" />}
+        >
+          {openGaps.length === 0 ? (
+            <p className="text-sm text-emerald-700">All flagged gaps resolved — the vision is fully pinned down.</p>
+          ) : (
+            <ul className="space-y-3">{openGaps.map((g) => (
+              <li key={g.id} className="rounded-md border border-slate-200 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${GAP_SEVERITY_STYLE[g.severity]}`}>{g.severity}</span>
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">{GAP_CATEGORY_LABEL[g.category] ?? g.category}</span>
+                    </div>
+                    <p className="mt-1.5 text-sm font-medium text-slate-900">{g.question}</p>
+                    {g.rationale && <p className="mt-0.5 text-xs text-slate-500">{g.rationale}</p>}
+                  </div>
+                </div>
+                <form action={resolveGap} className="mt-2.5 space-y-2">
+                  <input type="hidden" name="id" value={g.id} />
+                  <input type="hidden" name="buildId" value={id} />
+                  <Textarea name="answer" rows={2} placeholder="Capture the answer from the client…" />
+                  <div className="flex items-center gap-2">
+                    <Button type="submit" name="status" value="ANSWERED" size="sm">Save answer</Button>
+                    <Button type="submit" name="status" value="DISMISSED" size="sm" variant="outline">Dismiss</Button>
+                  </div>
+                </form>
+              </li>
+            ))}</ul>
+          )}
+          {resolvedGaps.length > 0 && (
+            <details className="mt-3 border-t border-slate-100 pt-3">
+              <summary className="cursor-pointer text-xs font-semibold text-slate-500">Resolved ({resolvedGaps.length})</summary>
+              <ul className="mt-2 space-y-1.5">{resolvedGaps.map((g) => (
+                <li key={g.id} className="text-xs text-slate-600">
+                  <span className={`mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${g.status === "ANSWERED" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{g.status}</span>
+                  {g.question}{g.answer ? ` — ${g.answer}` : ""}
+                </li>
+              ))}</ul>
+            </details>
+          )}
+        </Panel>
+      )}
+
+      {/* Lead sources */}
+      {contactSources.length > 0 && (
+        <Panel title="Lead sources" icon={<Link2 className="h-4 w-4 text-pink-700" />}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead><tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th className="py-2 pr-3">Source</th><th className="py-2 pr-3">How it enters</th><th className="py-2 pr-3">Fires</th><th className="py-2 pr-3">Tags</th><th className="py-2 pr-3">Workflow</th><th className="py-2">Entry stage</th>
+              </tr></thead>
+              <tbody className="divide-y divide-slate-50">{contactSources.map((c) => (
+                <tr key={c.id} className="align-top">
+                  <td className="py-2 pr-3"><span className="font-medium text-slate-800">{c.label}</span> <span className="text-xs text-slate-400">({c.type})</span></td>
+                  <td className="py-2 pr-3 text-slate-600">{c.entry_mechanism || "—"}</td>
+                  <td className="py-2 pr-3 text-slate-600">{c.fires || "—"}</td>
+                  <td className="py-2 pr-3 font-mono text-xs text-slate-500">{c.tags_applied || "—"}</td>
+                  <td className="py-2 pr-3 font-mono text-xs text-slate-500">{c.handling_workflow || "—"}</td>
+                  <td className="py-2 text-slate-600">{c.entry_stage != null ? stageName.get(c.entry_stage) ?? "—" : "—"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      {/* Calendars — conversion points */}
+      {calendars.length > 0 && (
+        <Panel title="Calendars — conversion points" icon={<CalendarClock className="h-4 w-4 text-pink-700" />}>
+          <ul className="space-y-2">{calendars.map((c) => (
+            <li key={c.id} className="rounded-md border border-slate-200 p-2.5 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium text-slate-800">{c.name}</p>
+                <Badge className="bg-slate-100 text-slate-600">{CALENDAR_TYPE_LABEL[c.type] ?? c.type}</Badge>
+                {c.books_into_stage != null && stageName.get(c.books_into_stage) && (
+                  <span className="text-xs text-slate-400">→ books into {stageName.get(c.books_into_stage)}</span>
+                )}
+              </div>
+              {c.purpose && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">Books:</span> {c.purpose}</p>}
+              {c.assigned_to && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">Assigned to:</span> {c.assigned_to}</p>}
+              {c.on_booking && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">On booking:</span> {c.on_booking}</p>}
+              {c.reminders && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">Reminders:</span> {c.reminders}</p>}
+            </li>
+          ))}</ul>
+        </Panel>
+      )}
+
+      {/* Integrations & data flows */}
+      {integrationLinks.length > 0 && (
+        <Panel title="Integrations & data flows" icon={<Plug className="h-4 w-4 text-pink-700" />}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead><tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th className="py-2 pr-3">System</th><th className="py-2 pr-3">Direction</th><th className="py-2 pr-3">Mechanism</th><th className="py-2 pr-3">Data</th><th className="py-2 pr-3">Cadence</th><th className="py-2">Purpose</th>
+              </tr></thead>
+              <tbody className="divide-y divide-slate-50">{integrationLinks.map((ig) => (
+                <tr key={ig.id} className="align-top">
+                  <td className="py-2 pr-3 font-medium text-slate-800">{ig.name}</td>
+                  <td className="py-2 pr-3"><Badge className={INTEGRATION_DIRECTION_STYLE[ig.direction] ?? "bg-slate-100 text-slate-600"}>{INTEGRATION_DIRECTION_LABEL[ig.direction] ?? ig.direction}</Badge></td>
+                  <td className="py-2 pr-3 text-slate-600">{INTEGRATION_MECHANISM_LABEL[ig.mechanism] ?? ig.mechanism}</td>
+                  <td className="py-2 pr-3 text-slate-600">{ig.data_objects || "—"}</td>
+                  <td className="py-2 pr-3 text-slate-500">{ig.trigger_cadence || "—"}</td>
+                  <td className="py-2 text-slate-600">{ig.purpose || "—"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      {/* Pipeline stages */}
+      {stages.length > 0 && (
+        <Panel title="Pipeline" icon={<GitBranch className="h-4 w-4 text-pink-700" />}>
+          <ol className="space-y-2">{stages.map((s) => (
+            <li key={s.id} className="rounded-md border border-slate-200 p-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-slate-800">{s.order}. {s.name}</p>
+                <Badge className={s.is_automatic ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}>{s.is_automatic ? "Auto" : "Manual"}</Badge>
+              </div>
+              {s.description && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">What it means:</span> {s.description}</p>}
+              {s.entry_condition && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">How a lead gets here:</span> {s.entry_condition}</p>}
+              {s.manual_actions?.length > 0 && <ul className="mt-1 list-inside list-disc text-xs text-slate-600">{s.manual_actions.map((m) => <li key={m.id}>{m.description}{m.owner ? ` — ${m.owner}` : ""}</li>)}</ul>}
+            </li>
+          ))}</ol>
+        </Panel>
+      )}
+
+      {/* Stage movement */}
+      {transitions.length > 0 && (
+        <Panel title="Stage movement" icon={<ArrowRight className="h-4 w-4 text-pink-700" />}>
+          <ul className="space-y-1.5">{transitions.map((t) => (
+            <li key={t.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
+                {transitionLabel(t, "from")} <ArrowRight className="h-3 w-3 text-slate-400" /> {transitionLabel(t, "to")}
+              </span>
+              <span className="text-slate-600">{t.trigger}</span>
+              <Badge className={t.is_automatic ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}>{t.is_automatic ? "Auto" : "Manual"}</Badge>
+            </li>
+          ))}</ul>
+        </Panel>
+      )}
+
+      {/* Workflows */}
+      {workflows.length > 0 && (
+        <Panel title="Workflows" icon={<WorkflowIcon className="h-4 w-4 text-pink-700" />}>
+          <div className="space-y-4">{Object.entries(workflowsByCategory).map(([cat, group]) => (
+            <div key={cat}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{WORKFLOW_CATEGORY_LABEL[cat] ?? cat}</p>
+              <ul className="mt-1.5 space-y-1.5">{group.map((w) => (
+                <li key={w.id} className="rounded-md border border-slate-200 p-2.5 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {w.code && <span className="font-mono text-xs font-semibold text-pink-700">{w.code}</span>}
+                    <span className="font-medium text-slate-800">{w.name}</span>
+                    {w.patient_facing && <Badge className="bg-violet-50 text-violet-700">Patient-facing</Badge>}
+                  </div>
+                  {w.trigger && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">Trigger:</span> {w.trigger}</p>}
+                  {w.what_it_does && <p className="mt-0.5 text-xs text-slate-600">{w.what_it_does}</p>}
+                </li>
+              ))}</ul>
+            </div>
+          ))}</div>
+        </Panel>
+      )}
+
+      {/* Custom fields, values & tags */}
+      {(customFields.length > 0 || tags.length > 0) && (
+        <Panel title="Custom fields, values & tags" icon={<Tag className="h-4 w-4 text-pink-700" />}>
+          <div className="space-y-3 text-sm">
+            {(["FIELD", "VALUE"] as const).map((kind) => {
+              const group = customFields.filter((f) => f.kind === kind);
+              if (group.length === 0) return null;
+              return (
+                <div key={kind}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{kind === "FIELD" ? "Custom fields" : "Custom values"}</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">{group.map((f) => (
+                    <span key={f.id} title={f.description} className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs ${f.populated ? "bg-slate-100 text-slate-600" : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"}`}>
+                      {f.key}{!f.populated && <span className="not-italic">· needs value</span>}
+                    </span>
+                  ))}</div>
+                </div>
+              );
+            })}
+            {tags.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tag glossary</p>
+                <ul className="mt-1 space-y-0.5 text-slate-600">{tags.map((t) => (
+                  <li key={t.id}><code className="rounded bg-slate-100 px-1 text-xs">{t.tag}</code>{t.meaning ? ` — ${t.meaning}` : ""}</li>
+                ))}</ul>
+              </div>
+            )}
+          </div>
+        </Panel>
+      )}
+
+      {/* Pre-launch checklist */}
+      {preLaunch.length > 0 && (
+        <Panel title="Pre-launch checklist" icon={<ListChecks className="h-4 w-4 text-pink-700" />}>
+          <ul className="space-y-1.5">{preLaunch.map((item) => (
+            <li key={item.id} className="flex items-start gap-2 text-sm">
+              <form action={togglePreLaunchItem} className="mt-0.5">
+                <input type="hidden" name="id" value={item.id} />
+                <input type="hidden" name="buildId" value={id} />
+                <input type="hidden" name="done" value={(!item.done).toString()} />
+                <button type="submit" aria-label={item.done ? "Mark not done" : "Mark done"}
+                  className={`flex h-4 w-4 items-center justify-center rounded border ${item.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300 bg-white"}`}>
+                  {item.done && <span className="text-[10px] leading-none">✓</span>}
+                </button>
+              </form>
+              <span className={item.done ? "text-slate-400 line-through" : "text-slate-700"}>
+                {item.description}{item.optional && <span className="ml-1 text-xs text-slate-400">(optional)</span>}
+              </span>
+            </li>
+          ))}</ul>
+        </Panel>
+      )}
 
       {/* AI QA review */}
       {latestQa && (
