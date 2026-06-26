@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { formatDate } from "@/lib/utils";
 import { A2PStatusBadge, type A2PSubmission } from "./_shared";
+import { ExportCsvButton } from "./export-button";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,9 @@ export default async function A2PListPage() {
       </div>
 
       <section className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-5 py-3.5">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
           <h2 className="text-sm font-semibold text-slate-950">Submissions ({items.length})</h2>
+          <ExportCsvButton items={items} />
         </div>
         {items.length === 0 ? (
           <p className="p-5 text-sm text-slate-500">No submissions yet.</p>
