@@ -76,11 +76,27 @@ export interface ContactSource {
   id: number; type: string; label: string;
   entry_mechanism?: string; fires?: string; tags_applied?: string;
   handling_workflow?: string; entry_stage?: number | null; notes?: string;
+  inferred?: boolean; confidence?: string;
 }
 export interface ManualAction { id: number; description: string; owner: string }
 export interface PipelineStage {
   id: number; name: string; description: string; order: number;
   entry_condition?: string; is_automatic?: boolean; manual_actions: ManualAction[];
+  inferred?: boolean; confidence?: string;
+}
+
+/** Small "AI inferred this — review it" chip. Renders nothing for items read
+ * straight from the notes (inferred=false), which need no scrutiny flag. */
+export function ProvBadge({ inferred, confidence }: { inferred?: boolean; confidence?: string }) {
+  if (!inferred) return null;
+  return (
+    <span
+      title="The AI inferred this (not stated in the notes) — review it"
+      className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-200"
+    >
+      Inferred{confidence ? ` · ${confidence}` : ""}
+    </span>
+  );
 }
 
 export const CALENDAR_TYPE_LABEL: Record<string, string> = {
@@ -90,6 +106,7 @@ export const CALENDAR_TYPE_LABEL: Record<string, string> = {
 export interface Calendar {
   id: number; name: string; type: string; purpose: string; assigned_to: string;
   books_into_stage: number | null; on_booking: string; reminders: string; notes: string;
+  inferred?: boolean; confidence?: string;
 }
 
 export const INTEGRATION_DIRECTION_LABEL: Record<string, string> = {
@@ -106,6 +123,7 @@ export const INTEGRATION_MECHANISM_LABEL: Record<string, string> = {
 export interface Integration {
   id: number; name: string; direction: string; mechanism: string;
   data_objects: string; purpose: string; trigger_cadence: string; notes: string;
+  inferred?: boolean; confidence?: string;
 }
 
 export interface StageTransition {
@@ -124,6 +142,7 @@ export const WORKFLOW_CATEGORY_LABEL: Record<string, string> = {
 export interface Workflow {
   id: number; code: string; category: string; name: string;
   trigger: string; what_it_does: string; patient_facing: boolean;
+  inferred?: boolean; confidence?: string;
 }
 export interface CustomField { id: number; kind: "FIELD" | "VALUE"; key: string; description: string; populated: boolean }
 export interface TagDefinition { id: number; tag: string; meaning: string }

@@ -7,7 +7,7 @@ import { useToast, Spinner } from "@/components/toast";
 
 type Note = { id: number; ai_status?: string };
 
-export function GenerateBriefButton({ buildId, hasBrief }: { buildId: number | string; hasBrief: boolean }) {
+export function GenerateBriefButton({ buildId, hasBrief, label }: { buildId: number | string; hasBrief: boolean; label?: string }) {
   const router = useRouter();
   const toast = useToast();
   const [busy, setBusy] = React.useState(false);
@@ -59,7 +59,7 @@ export function GenerateBriefButton({ buildId, hasBrief }: { buildId: number | s
       disabled={busy}
       className="inline-flex h-8 items-center gap-2 rounded-md bg-gradient-to-r from-pink-600 to-fuchsia-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:from-pink-700 hover:to-fuchsia-700 disabled:opacity-60"
     >
-      {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><Bot className="h-3.5 w-3.5" /> {hasBrief ? "Regenerate blueprint" : "Generate blueprint"}</>}
+      {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><Bot className="h-3.5 w-3.5" /> {label ?? (hasBrief ? "Regenerate blueprint" : "Generate blueprint")}</>}
     </button>
   );
 }

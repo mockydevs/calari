@@ -22,7 +22,7 @@ import { BlueprintEditor } from "../blueprint-editor";
 import { Tabs, TabPanel } from "../build-tabs";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
-  CALENDAR_TYPE_LABEL,
+  CALENDAR_TYPE_LABEL, ProvBadge,
   INTEGRATION_DIRECTION_LABEL, INTEGRATION_DIRECTION_STYLE, INTEGRATION_MECHANISM_LABEL,
   TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES,
   WORKFLOW_CATEGORY_LABEL, type BuildDetail, type MeetingNote, type Workflow,
@@ -264,7 +264,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                     </tr></thead>
                     <tbody className="divide-y divide-slate-50">{contactSources.map((c) => (
                       <tr key={c.id} className="align-top">
-                        <td className="py-2 pr-3"><span className="font-medium text-slate-800">{c.label}</span> <span className="text-xs text-slate-400">({c.type})</span></td>
+                        <td className="py-2 pr-3"><span className="font-medium text-slate-800">{c.label}</span> <span className="text-xs text-slate-400">({c.type})</span> <ProvBadge inferred={c.inferred} confidence={c.confidence} /></td>
                         <td className="py-2 pr-3 text-slate-600">{c.entry_mechanism || "—"}</td>
                         <td className="py-2 pr-3 text-slate-600">{c.fires || "—"}</td>
                         <td className="py-2 pr-3 font-mono text-xs text-slate-500">{c.tags_applied || "—"}</td>
@@ -284,6 +284,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium text-slate-800">{c.name}</p>
                       <Badge className="bg-slate-100 text-slate-600">{CALENDAR_TYPE_LABEL[c.type] ?? c.type}</Badge>
+                      <ProvBadge inferred={c.inferred} confidence={c.confidence} />
                       {c.books_into_stage != null && stageName.get(c.books_into_stage) && (
                         <span className="text-xs text-slate-400">→ books into {stageName.get(c.books_into_stage)}</span>
                       )}
@@ -306,7 +307,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                     </tr></thead>
                     <tbody className="divide-y divide-slate-50">{integrationLinks.map((ig) => (
                       <tr key={ig.id} className="align-top">
-                        <td className="py-2 pr-3 font-medium text-slate-800">{ig.name}</td>
+                        <td className="py-2 pr-3 font-medium text-slate-800">{ig.name} <ProvBadge inferred={ig.inferred} confidence={ig.confidence} /></td>
                         <td className="py-2 pr-3"><Badge className={INTEGRATION_DIRECTION_STYLE[ig.direction] ?? "bg-slate-100 text-slate-600"}>{INTEGRATION_DIRECTION_LABEL[ig.direction] ?? ig.direction}</Badge></td>
                         <td className="py-2 pr-3 text-slate-600">{INTEGRATION_MECHANISM_LABEL[ig.mechanism] ?? ig.mechanism}</td>
                         <td className="py-2 pr-3 text-slate-600">{ig.data_objects || "—"}</td>
@@ -326,6 +327,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium text-slate-800">{s.order}. {s.name}</p>
                       <Badge className={s.is_automatic ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}>{s.is_automatic ? "Auto" : "Manual"}</Badge>
+                      <ProvBadge inferred={s.inferred} confidence={s.confidence} />
                     </div>
                     {s.description && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">What it means:</span> {s.description}</p>}
                     {s.entry_condition && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">How a lead gets here:</span> {s.entry_condition}</p>}
@@ -360,6 +362,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                           {w.code && <span className="font-mono text-xs font-semibold text-pink-700">{w.code}</span>}
                           <span className="font-medium text-slate-800">{w.name}</span>
                           {w.patient_facing && <Badge className="bg-violet-50 text-violet-700">Patient-facing</Badge>}
+                          <ProvBadge inferred={w.inferred} confidence={w.confidence} />
                         </div>
                         {w.trigger && <p className="mt-0.5 text-xs text-slate-500"><span className="font-semibold">Trigger:</span> {w.trigger}</p>}
                         {w.what_it_does && <p className="mt-0.5 text-xs text-slate-600">{w.what_it_does}</p>}
@@ -453,6 +456,9 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
               <Panel
                 title={`Vision gaps${openGaps.length ? ` (${openGaps.length} open)` : ""}`}
                 icon={<HelpCircle className="h-4 w-4 text-pink-700" />}
+                action={isAdmin && hasBlueprint && (
+                  <GenerateBriefButton buildId={id} hasBrief label="Apply answers & refine" />
+                )}
               >
                 {openGaps.length === 0 ? (
                   <p className="text-sm text-emerald-700">All flagged gaps resolved — the vision is fully pinned down.</p>

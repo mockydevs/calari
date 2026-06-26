@@ -41,6 +41,8 @@ export async function updateBlueprintItem(formData: FormData) {
   const id = String(formData.get("__id") ?? "");
   if (!buildId || !id) throw new Error("Build and item id are required");
   const { section, payload } = buildPayload(resource, formData, { create: false, buildId });
+  // Auto-lock on human edit so a future AI regeneration preserves this change.
+  payload.locked = true;
   await serverApi.patch(`${section.path}/${id}`, payload);
   revalidatePath(`/builds/${buildId}`);
 }
