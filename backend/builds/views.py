@@ -22,7 +22,7 @@ from .models import (
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
     TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
-    ApprovalType,
+    ApprovalType, BuildKnowledge,
 )
 from .serializers import (
     BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
@@ -32,7 +32,7 @@ from .serializers import (
     ClientPortalFeedbackSerializer, NotificationSerializer, NotificationPreferenceSerializer,
     AiApiKeySerializer, TeamInviteSerializer, StageTransitionSerializer, WorkflowSerializer,
     CustomFieldSerializer, TagDefinitionSerializer, PreLaunchItemSerializer, VisionGapSerializer,
-    CalendarSerializer, IntegrationSerializer,
+    CalendarSerializer, IntegrationSerializer, BuildKnowledgeSerializer,
 )
 from . import services
 from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner
@@ -454,6 +454,60 @@ class MeetingNoteViewSet(_BaseViewSet):
         note = MeetingNote.objects.create(build=build, raw_text=text, source="upload", file_url=file_url)
         _log(build, request.user, f'Meeting notes uploaded from "{filename}".')
         return Response(MeetingNoteSerializer(note).data, status=http.HTTP_201_CREATED)
+
+
+class BuildKnowledgeViewSet(_BaseViewSet):
+    """Shared Build Library — any staff member uploads past-build / client docs the
+    AI learns from. Text is extracted on upload and fed into blueprint generation."""
+    queryset = BuildKnowledge.objects.select_related("client", "build", "uploaded_by").all()
+    serializer_class = BuildKnowledgeSerializer
+    filterset_fields = ["client", "build", "use_for_ai"]
+    search_fields = ["title", "summary", "filename"]
+    ordering_fields = ["created_at", "title"]
+    ordering = ["-created_at"]
+
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
+
+    @action(detail=False, methods=["post"], url_path="upload",
+            parser_classes=[MultiPartParser, FormParser])
+    def upload(self, request):
+        """Upload a build/client doc; its text is extracted and stored for AI context."""
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"error": "file is required"}, status=http.HTTP_400_BAD_REQUEST)
+        filename = file.name
+        content_type = getattr(file, "content_type", "") or ""
+        if not services.is_ai_readable(filename, content_type):
+            return Response(
+                {"error": "Unsupported file type. Upload a PDF, DOCX, TXT, CSV, MD, or RTF file."},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+        raw = file.read()
+        try:
+            text = services.extract_text(raw, filename, content_type)
+        except Exception as e:  # noqa: BLE001
+            return Response({"error": f"Could not read the document: {e}"}, status=http.HTTP_400_BAD_REQUEST)
+        if not text.strip():
+            return Response({"error": "No readable text was found in that document."}, status=http.HTTP_400_BAD_REQUEST)
+        file_url = ""
+        try:
+            from django.core.files.storage import default_storage
+            from django.core.files.base import ContentFile
+            key = default_storage.save(f"knowledge/{secrets.token_urlsafe(8)}_{filename}", ContentFile(raw))
+            file_url = default_storage.url(key)
+        except Exception:  # noqa: BLE001 — storage optional; never block the upload
+            pass
+        kn = BuildKnowledge.objects.create(
+            title=(request.data.get("title") or "").strip() or filename,
+            client_id=(request.data.get("client") or None),
+            build_id=(request.data.get("build") or None),
+            filename=filename, file_url=file_url, raw_text=text,
+            summary=(request.data.get("summary") or "").strip(),
+            use_for_ai=str(request.data.get("use_for_ai", "true")).lower() in ("1", "true", "yes", "on"),
+            uploaded_by=request.user,
+        )
+        return Response(BuildKnowledgeSerializer(kn).data, status=http.HTTP_201_CREATED)
 
 
 class DocumentViewSet(_BaseViewSet):

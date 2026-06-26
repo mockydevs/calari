@@ -6,7 +6,7 @@ from .models import (
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, StageTransition, Workflow, CustomField, TagDefinition,
-    PreLaunchItem, VisionGap, Calendar, Integration,
+    PreLaunchItem, VisionGap, Calendar, Integration, BuildKnowledge,
 )
 
 _NULL_STR = serializers.CharField(allow_null=True)
@@ -24,6 +24,34 @@ def _user_initials(user):
         return None
     parts = name.split()
     return (parts[0][0] + parts[-1][0]).upper() if len(parts) > 1 else name[:2].upper()
+
+
+# ─── Build Library (knowledge the AI learns from) ─────────────────────────────
+class BuildKnowledgeSerializer(serializers.ModelSerializer):
+    uploaded_by_name = serializers.SerializerMethodField()
+    client_name = serializers.SerializerMethodField()
+    text_chars = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BuildKnowledge
+        # raw_text is intentionally NOT exposed (can be large); text_chars signals presence.
+        fields = [
+            "id", "title", "client", "client_name", "build", "filename", "file_url",
+            "summary", "use_for_ai", "uploaded_by", "uploaded_by_name", "created_at", "text_chars",
+        ]
+        read_only_fields = ["uploaded_by", "file_url", "filename"]
+
+    @extend_schema_field(_NULL_STR)
+    def get_uploaded_by_name(self, obj):
+        return _user_name(obj.uploaded_by)
+
+    @extend_schema_field(_NULL_STR)
+    def get_client_name(self, obj):
+        return obj.client.name if obj.client else None
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_text_chars(self, obj):
+        return len(obj.raw_text or "")
 
 
 # ─── Sub-resources ────────────────────────────────────────────────────────────

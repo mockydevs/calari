@@ -6,10 +6,13 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import secrets
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 MAX_TEXT_CHARS = 24000
 AI_READABLE_EXTENSIONS = {".pdf", ".docx", ".txt", ".csv", ".md", ".rtf"}
@@ -117,7 +120,15 @@ def _chat(messages, *, model: str | None = None, response_format=None, max_token
         kwargs["max_tokens"] = max_tokens
 
     def _call(m: str):
-        return client.chat.completions.create(model=m, **kwargs).choices[0].message.content
+        completion = client.chat.completions.create(model=m, **kwargs)
+        usage = getattr(completion, "usage", None)
+        if usage is not None:  # observability: model + token usage per call
+            logger.info(
+                "AI call model=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+                m, getattr(usage, "prompt_tokens", None),
+                getattr(usage, "completion_tokens", None), getattr(usage, "total_tokens", None),
+            )
+        return completion.choices[0].message.content
 
     try:
         return _call(target)
@@ -244,13 +255,23 @@ def _arr(items: dict) -> dict:
     return {"type": "array", "items": items}
 
 
+def _pobj(properties: dict) -> dict:
+    """Strict object PLUS provenance fields the reviewer sees: whether the AI
+    inferred the item (vs. read it from the notes) and how confident it is."""
+    return _obj({
+        **properties,
+        "inferred": _bool(),
+        "confidence": _enum("high", "medium", "low"),
+    })
+
+
 _BLUEPRINT_SCHEMA = _obj({
     "overview": _str(),          # "The big idea" — the single-source-of-truth narrative
     "oneLineSummary": _str(),    # one-sentence summary for the team
     "goals": _str(),
     "integrations": _arr(_str()),
     "maintenanceNotes": _str(),  # services, env vars, cadence — empty if unknown
-    "leadSources": _arr(_obj({
+    "leadSources": _arr(_pobj({
         "type": _enum("WEBSITE", "ADS", "MANUAL", "OTHER"),
         "label": _str(),
         "entryMechanism": _str(),     # how it enters: form trigger, webhook, cron sync…
@@ -260,7 +281,7 @@ _BLUEPRINT_SCHEMA = _obj({
         "entryStage": _str(),         # name of the pipeline stage it lands in
         "notes": _str(),
     })),
-    "pipelineStages": _arr(_obj({
+    "pipelineStages": _arr(_pobj({
         "order": _int(),
         "name": _str(),
         "description": _str(),        # "what it means"
@@ -275,7 +296,7 @@ _BLUEPRINT_SCHEMA = _obj({
         "isAutomatic": _bool(),
         "notes": _str(),
     })),
-    "calendars": _arr(_obj({          # booking objects — the conversion point
+    "calendars": _arr(_pobj({          # booking objects — the conversion point
         "name": _str(),
         "type": _enum("ROUND_ROBIN", "COLLECTIVE", "CLASS", "SERVICE", "PERSONAL", "OTHER"),
         "purpose": _str(),            # what it books: consult, in-person visit, demo…
@@ -289,7 +310,7 @@ _BLUEPRINT_SCHEMA = _obj({
     # string list above. A duplicate key silently overwrote it, so the model
     # returned objects under "integrations" and ", ".join(...) crashed in
     # _persist_blueprint. These rich objects feed the Integration model.
-    "externalIntegrations": _arr(_obj({   # external systems wired to GHL (any direction)
+    "externalIntegrations": _arr(_pobj({   # external systems wired to GHL (any direction)
         "name": _str(),               # Patient Prism, Modento, QuickBooks, custom ERP…
         "direction": _enum("INBOUND", "OUTBOUND", "BIDIRECTIONAL"),
         "mechanism": _enum("API", "WEBHOOK", "NATIVE", "ZAPIER", "CRON", "OTHER"),
@@ -298,7 +319,7 @@ _BLUEPRINT_SCHEMA = _obj({
         "triggerCadence": _str(),     # real-time, daily cron, on stage change…
         "notes": _str(),
     })),
-    "workflows": _arr(_obj({
+    "workflows": _arr(_pobj({
         "code": _str(),               # e.g. "A1", "IN3", "K4"
         "category": _enum(
             "ACTIVE_CONVERSION", "INTAKE_ROUTING", "RECORD_KEEPING",
@@ -355,9 +376,13 @@ _BLUEPRINT_SYSTEM_PROMPT = (
     "transition and its exact trigger, the nurture that drives them to a booking, the conversion "
     "calendar, and what happens after conversion. Leave no contact journey half-drawn.\n"
     "- Specify the custom fields, custom values, and tags the workflows above depend on.\n"
-    "When you infer a standard piece the notes didn't state, INCLUDE it (so the build is complete) AND "
-    "record it as a low/medium-severity gap so the admin can confirm or correct it. Be thorough and "
-    "specific over brief — completeness is the whole point.\n\n"
+    "When you infer a standard piece the notes didn't state, INCLUDE it (so the build is complete), mark "
+    "that item inferred=true with a confidence level, AND record it as a low/medium-severity gap so the "
+    "admin can confirm or correct it. Items clearly stated in the notes are inferred=false. Be thorough "
+    "and specific over brief — completeness is the whole point.\n\n"
+    "PROVENANCE: for every leadSource, pipelineStage, calendar, externalIntegration and workflow, set "
+    "`inferred` (true if you supplied it from your expertise rather than the notes) and `confidence` "
+    "(high/medium/low) so reviewers know exactly what to scrutinize.\n\n"
     "Extract:\n"
     "- overview: a plain-English 'big idea' — the single source of truth and how leads flow through it\n"
     "- oneLineSummary: a one-sentence summary the delivery team can repeat\n"
@@ -410,13 +435,52 @@ _BLUEPRINT_SYSTEM_PROMPT = (
 )
 
 
-def generate_blueprint_draft(notes_text: str) -> dict:
-    """Extract the full vision blueprint (handover anatomy) + gaps from meeting notes."""
+KNOWLEDGE_MAX_CHARS = 8000
+
+
+def build_reference_context(build) -> str:
+    """Gather excerpts from the Build Library (use_for_ai docs) as reference material
+    so generation learns from how Calari actually builds. Prefers same-client docs,
+    then general ones; capped in count and size."""
+    from .models import BuildKnowledge
+
+    qs = BuildKnowledge.objects.filter(use_for_ai=True).exclude(raw_text="")
+    docs = list(qs.filter(client_id=build.client_id)[:3]) + list(qs.exclude(client_id=build.client_id)[:2])
+    parts, budget = [], KNOWLEDGE_MAX_CHARS
+    for d in docs:
+        excerpt = (d.summary or d.raw_text or "").strip()[:2500]
+        if not excerpt:
+            continue
+        block = f"### {d.title}\n{excerpt}"
+        parts.append(block)
+        budget -= len(block)
+        if budget <= 0:
+            break
+    return "\n\n".join(parts)[:KNOWLEDGE_MAX_CHARS]
+
+
+def generate_blueprint_draft(notes_text: str, reference_text: str = "", resolved_text: str = "") -> dict:
+    """Extract the full vision blueprint (handover anatomy) + gaps from meeting notes.
+
+    `reference_text` is Build Library context (how Calari builds — the learning loop);
+    `resolved_text` is answered vision-gap Q&A treated as authoritative (the gap loop).
+    """
+    messages = [{"role": "system", "content": _BLUEPRINT_SYSTEM_PROMPT}]
+    if reference_text.strip():
+        messages.append({"role": "system", "content": (
+            "REFERENCE — how Calari has built similar systems (past builds / client docs from our Build "
+            "Library). Use these to match our naming, structure, and conventions; adapt rather than copy "
+            "client-specific details that don't apply here:\n\n" + reference_text[:KNOWLEDGE_MAX_CHARS]
+        )})
+    if resolved_text.strip():
+        messages.append({"role": "system", "content": (
+            "RESOLVED QUESTIONS — the team has answered these previously-open gaps. Treat them as "
+            "AUTHORITATIVE and build them in; do not re-raise them as gaps:\n\n" + resolved_text[:6000]
+        )})
+    messages.append({"role": "user", "content": f"Client meeting notes:\n\n{notes_text[:MAX_TEXT_CHARS]}"})
+
     raw = _chat(
-        [
-            {"role": "system", "content": _BLUEPRINT_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Client meeting notes:\n\n{notes_text[:MAX_TEXT_CHARS]}"},
-        ],
+        messages,
         model=_blueprint_model(),
         response_format={
             "type": "json_schema",

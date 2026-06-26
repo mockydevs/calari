@@ -161,7 +161,22 @@ class Build(models.Model):
         return self.title
 
 
-class PipelineStage(models.Model):
+class BlueprintItemMixin(models.Model):
+    """Provenance + regeneration controls shared by every AI-extractable blueprint
+    item. `ai_generated` marks AI-authored rows (so regeneration only wipes those);
+    `locked` protects a row from being wiped on regenerate (set when a human edits
+    it). `inferred`/`confidence` record whether the AI inferred the item vs. read it
+    from the notes, and how sure it is — for reviewer trust."""
+    ai_generated = models.BooleanField(default=False)
+    locked = models.BooleanField(default=False)
+    inferred = models.BooleanField(default=False)
+    confidence = models.CharField(max_length=8, blank=True, default="")  # high|medium|low|""
+
+    class Meta:
+        abstract = True
+
+
+class PipelineStage(BlueprintItemMixin):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default="")     # "what it means"
     entry_condition = models.TextField(blank=True, default="")  # "how a lead gets here"
@@ -177,7 +192,7 @@ class PipelineStage(models.Model):
         return self.name
 
 
-class ContactSource(models.Model):
+class ContactSource(BlueprintItemMixin):
     type = models.CharField(max_length=16, choices=ContactSourceType.choices, default=ContactSourceType.OTHER)
     label = models.CharField(max_length=255)
     # ── Lead-source mechanics (how it enters the pipeline) ──
@@ -202,7 +217,7 @@ class ManualAction(models.Model):
     stage = models.ForeignKey(PipelineStage, on_delete=models.CASCADE, related_name="manual_actions")
 
 
-class Calendar(models.Model):
+class Calendar(BlueprintItemMixin):
     """A GHL calendar — the booking object where a nurtured lead converts.
 
     Nurture sequences (Workflow category ACTIVE_CONVERSION) push contacts toward
@@ -231,7 +246,7 @@ class Calendar(models.Model):
         return self.name
 
 
-class Integration(models.Model):
+class Integration(BlueprintItemMixin):
     """An external system wired to GHL — inbound, outbound, or bidirectional.
 
     Covers the full data-flow picture beyond lead entry: tools that feed contacts
@@ -260,7 +275,7 @@ class Integration(models.Model):
         return self.name
 
 
-class StageTransition(models.Model):
+class StageTransition(BlueprintItemMixin):
     """An edge between stages — the movement that keeps the build true to the vision."""
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="transitions")
     from_stage = models.ForeignKey(
@@ -281,7 +296,7 @@ class StageTransition(models.Model):
         ordering = ["order"]
 
 
-class Workflow(models.Model):
+class Workflow(BlueprintItemMixin):
     """An automation/workflow in the delivered system (handover §5)."""
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="workflows")
     code = models.CharField(max_length=32, blank=True, default="")  # e.g. "A1", "IN3", "K4"
@@ -301,7 +316,7 @@ class Workflow(models.Model):
         return f"{self.code} {self.name}".strip()
 
 
-class CustomField(models.Model):
+class CustomField(BlueprintItemMixin):
     """A custom field or custom value the system relies on (handover §6)."""
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="custom_fields")
     kind = models.CharField(max_length=8, choices=CustomFieldKind.choices, default=CustomFieldKind.FIELD)
@@ -314,7 +329,7 @@ class CustomField(models.Model):
         ordering = ["kind", "order", "key"]
 
 
-class TagDefinition(models.Model):
+class TagDefinition(BlueprintItemMixin):
     """An entry in the tag glossary (handover §6)."""
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="tags")
     tag = models.CharField(max_length=255)
@@ -325,7 +340,7 @@ class TagDefinition(models.Model):
         ordering = ["order", "tag"]
 
 
-class PreLaunchItem(models.Model):
+class PreLaunchItem(BlueprintItemMixin):
     """A pre-launch checklist line (handover §8)."""
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="pre_launch_items")
     description = models.TextField()
@@ -368,6 +383,7 @@ class Task(models.Model):
     type = models.CharField(max_length=16, choices=TaskType.choices, default=TaskType.OTHER)
     status = models.CharField(max_length=16, choices=TaskStatus.choices, default=TaskStatus.TODO)
     ai_generated = models.BooleanField(default=False)
+    locked = models.BooleanField(default=False)  # protect from regeneration wipe (set on human edit)
     progress_note = models.TextField(blank=True, default="")
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="tasks")
     assignee = models.ForeignKey(
@@ -418,6 +434,7 @@ class MeetingNote(models.Model):
     file_url = models.URLField(max_length=1000, blank=True, default="")
     ai_status = models.CharField(max_length=16, default="pending")  # pending|processing|done|failed
     ai_output = models.JSONField(null=True, blank=True)
+    ai_model = models.CharField(max_length=64, blank=True, default="")  # model that produced ai_output
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="meeting_notes")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -554,3 +571,35 @@ class TeamInvite(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["email"]), models.Index(fields=["expires_at"])]
+
+
+class BuildKnowledge(models.Model):
+    """A past-build / client documentation artifact the team uploads to the shared
+    Build Library. Its extracted text feeds the AI as reference material so the
+    blueprint generator learns from how Calari actually builds (improvement: the
+    learning loop). Any staff member can contribute; `use_for_ai` lets a doc be
+    excluded from generation context if needed."""
+    title = models.CharField(max_length=300)
+    # Optional links — a doc may be tied to a specific client/build or be general.
+    client = models.ForeignKey(
+        "projects.Clients", on_delete=models.SET_NULL, null=True, blank=True, related_name="knowledge_docs"
+    )
+    build = models.ForeignKey(
+        Build, on_delete=models.SET_NULL, null=True, blank=True, related_name="knowledge_docs"
+    )
+    file_url = models.URLField(max_length=1000, blank=True, default="")
+    filename = models.CharField(max_length=500, blank=True, default="")
+    raw_text = models.TextField(blank=True, default="")        # extracted text the AI reads
+    summary = models.TextField(blank=True, default="")          # optional short summary for context
+    use_for_ai = models.BooleanField(default=True)              # include in generation context
+    uploaded_by = models.ForeignKey(
+        USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="knowledge_uploads"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["use_for_ai", "client"])]
+
+    def __str__(self):
+        return self.title
