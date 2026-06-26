@@ -26,6 +26,8 @@ export function BuildLibrary({ clients }: { clients: ClientOpt[] }) {
   const [clientId, setClientId] = React.useState("");
   const [useForAi, setUseForAi] = React.useState(true);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = React.useState("");
+  const [dragOver, setDragOver] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -68,6 +70,7 @@ export function BuildLibrary({ clients }: { clients: ClientOpt[] }) {
       toast.success("Document added to the Build Library.");
       setTitle(""); setClientId("");
       if (fileRef.current) fileRef.current.value = "";
+      setFileName("");
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Upload failed.");
@@ -172,8 +175,38 @@ export function BuildLibrary({ clients }: { clients: ClientOpt[] }) {
           </div>
           <div className="space-y-1">
             <Label htmlFor="kn-file" className="text-xs">File</Label>
-            <input ref={fileRef} id="kn-file" type="file" required className="block w-full text-sm" />
-            <p className="text-[11px] text-slate-400">PDF, DOCX, TXT, CSV, MD, RTF — text is extracted for the AI.</p>
+            <label
+              htmlFor="kn-file"
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f && fileRef.current) { fileRef.current.files = e.dataTransfer.files; setFileName(f.name); }
+              }}
+              className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-7 text-center transition-colors ${
+                dragOver ? "border-pink-400 bg-pink-50/70" : "border-slate-300 bg-slate-50/50 hover:border-pink-300 hover:bg-pink-50/30"
+              }`}
+            >
+              <Upload className={`h-6 w-6 ${dragOver ? "text-pink-600" : "text-slate-400"}`} />
+              {fileName ? (
+                <span className="break-all text-sm font-semibold text-pink-700">{fileName}</span>
+              ) : (
+                <span className="text-sm font-medium text-slate-700">
+                  Click to choose a file <span className="font-normal text-slate-400">or drag &amp; drop</span>
+                </span>
+              )}
+              <span className="text-[11px] text-slate-400">PDF, DOCX, TXT, CSV, MD, RTF — text is extracted for the AI.</span>
+            </label>
+            <input
+              ref={fileRef}
+              id="kn-file"
+              type="file"
+              accept=".pdf,.docx,.txt,.csv,.md,.rtf"
+              className="sr-only"
+              onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
+            />
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={useForAi} onChange={(e) => setUseForAi(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
