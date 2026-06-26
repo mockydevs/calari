@@ -7,10 +7,11 @@ import {
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
-  addComment, addMeetingNote, assignBuild, createChangeRequest, createTask, enablePortal,
+  addComment, addMeetingNote, createChangeRequest, createTask, enablePortal,
   recordApproval, resolveGap, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
-  updateTaskStatus, uploadDocument, approveBuild,
+  updateTaskStatus, uploadDocument,
 } from "../actions";
+import { AssignApprove } from "../assign-approve";
 import { BuildDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
 import { HandoverButton } from "../handover-button";
@@ -143,25 +144,16 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
         </div>
 
         {/* Assign + approve are one control: pick a member, then either just assign,
-            or approve the build-out (records sign-off + notifies). */}
+            or approve the build-out (records sign-off + notifies). Client-side so a
+            missing-member click toasts instead of erroring. */}
         {isAdmin && (
           <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
-            <form className="flex flex-wrap items-end gap-2">
-              <input type="hidden" name="id" value={id} />
-              <div className="space-y-1">
-                <Label htmlFor="assigneeId" className="text-xs">Assign / approve to</Label>
-                <Select id="assigneeId" name="assigneeId" defaultValue={build.assignee != null ? String(build.assignee) : ""} className="h-9">
-                  <option value="" disabled>Select member</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
-                </Select>
-              </div>
-              <Button type="submit" formAction={assignBuild} size="sm" variant="outline">Assign</Button>
-              {hasBlueprint && build.status !== "DELIVERED" && (
-                <Button type="submit" formAction={approveBuild} size="sm" variant="success">
-                  <ShieldCheck className="h-3.5 w-3.5" /> Approve &amp; hand to staff
-                </Button>
-              )}
-            </form>
+            <AssignApprove
+              buildId={id}
+              members={users.map((u) => ({ id: u.id, name: u.full_name || u.username }))}
+              defaultAssigneeId={build.assignee != null ? String(build.assignee) : ""}
+              canApprove={hasBlueprint && build.status !== "DELIVERED"}
+            />
             <form action={enablePortal}>
               <input type="hidden" name="buildId" value={id} />
               <Button type="submit" size="sm" variant="outline"><Link2 className="h-3.5 w-3.5" /> {build.client_portal_enabled ? "Portal enabled" : "Enable client portal"}</Button>
