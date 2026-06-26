@@ -8,6 +8,7 @@ from .models import (
     Build, BuildStatus, ContactSource, PipelineStage, ManualAction, Task,
     BuildMemorySnapshot, Activity, StageTransition, Workflow, CustomField,
     TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
+    ChangeRequest, MeetingNote,
 )
 
 User = get_user_model()
@@ -60,6 +61,66 @@ def generate_task_sop(self, task_id):
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=15)
+def apply_progress_update(self, build_id, note_id, user_id):
+    """Process a follow-up/progress meeting note as a DELTA: capture scope changes
+    as ChangeRequests, new questions as gaps, log progress, and refresh the build's
+    living memory summary — WITHOUT rewriting the blueprint (review-first)."""
+    build = Build.objects.filter(pk=build_id).first()
+    note = MeetingNote.objects.filter(pk=note_id).first()
+    if not build or not note:
+        return
+    user = User.objects.filter(pk=user_id).first()
+    try:
+        delta = services.extract_progress_delta(build, note.raw_text)
+    except Exception:  # noqa: BLE001
+        note.ai_status = "failed"
+        note.save(update_fields=["ai_status"])
+        return
+
+    actor = (user.get_full_name() or user.username) if user else "system"
+    scope_changes = delta.get("scopeChanges", []) or []
+    questions = delta.get("newQuestions", []) or []
+    progress = delta.get("progress", []) or []
+
+    with transaction.atomic():
+        for sc in scope_changes:
+            ChangeRequest.objects.create(
+                build=build, created_by=(user or build.creator),
+                title=(sc.get("title") or "Change request")[:500],
+                description=sc.get("description", "") or "",
+                impact=sc.get("impact", "") or "",
+                requester=(sc.get("requester") or "Client")[:255],
+            )
+        for q in questions:
+            VisionGap.objects.create(
+                build=build, category=q.get("category", "GENERAL"), question=q.get("question", ""),
+                rationale=q.get("rationale", ""), severity=q.get("severity", "medium"), created_by_ai=True,
+            )
+        summary = (delta.get("summary") or "").strip()
+        if summary:
+            build.memory_summary = summary[:8000]
+            build.save(update_fields=["memory_summary", "updated_at"])
+
+        BuildMemorySnapshot.objects.create(
+            build=build, created_by=user, created_by_ai=True,
+            summary=f"Progress update: {note.title or 'meeting'}.",
+            open_questions="\n".join(q.get("question", "") for q in questions),
+            scope_changes=(("Progress:\n" + "\n".join(f"- {p}" for p in progress) + "\n\n") if progress else "")
+                          + f"{len(scope_changes)} change request(s), {len(questions)} new question(s) captured.",
+        )
+        Activity.objects.create(
+            build=build, actor=actor,
+            message=f"{note.title or 'Progress update'}: "
+                    f"{len(scope_changes)} change request(s), {len(questions)} question(s) captured.",
+        )
+
+    note.ai_output = delta
+    note.ai_status = "done"
+    note.ai_model = services._blueprint_model()
+    note.save(update_fields=["ai_output", "ai_status", "ai_model"])
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=15)
 def generate_build_brief(self, build_id, user_id):
     """Generate the full AI vision blueprint (handover anatomy + gaps) for a build.
 
@@ -76,10 +137,17 @@ def generate_build_brief(self, build_id, user_id):
 
     # Learning loop: ground generation in the Build Library (how Calari builds).
     reference = services.build_reference_context(build)
-    # Gap loop: feed previously-answered gaps back as authoritative so regeneration
-    # incorporates them instead of re-asking.
+    # Authoritative context: the living build-state memory (kept fresh by progress
+    # updates) + previously-answered gaps, so regeneration incorporates everything
+    # learned since kickoff instead of re-deriving or re-asking.
+    resolved_parts = []
+    if (build.memory_summary or "").strip():
+        resolved_parts.append("CURRENT BUILD STATE (kept current by progress updates):\n" + build.memory_summary)
     answered = build.gaps.filter(status=GapStatus.ANSWERED).exclude(answer="")
-    resolved = "\n".join(f"Q: {g.question}\nA: {g.answer}" for g in answered)
+    answered_text = "\n".join(f"Q: {g.question}\nA: {g.answer}" for g in answered)
+    if answered_text:
+        resolved_parts.append("ANSWERED QUESTIONS:\n" + answered_text)
+    resolved = "\n\n".join(resolved_parts)
 
     try:
         draft = services.generate_blueprint_draft(notes, reference_text=reference, resolved_text=resolved)

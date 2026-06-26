@@ -83,6 +83,17 @@ class IntegrationMechanism(models.TextChoices):
     OTHER = "OTHER", "Other"
 
 
+class MeetingNoteKind(models.TextChoices):
+    """What a meeting note represents — drives its auto-title and how it's used.
+    KICKOFF/MEETING feed full blueprint (re)generation; PROGRESS/CHANGE_REQUEST run
+    the delta flow (capture changes/progress without rewriting the whole vision)."""
+    KICKOFF = "kickoff", "Kickoff"
+    MEETING = "meeting", "Meeting notes"
+    PROGRESS = "progress", "Progress update"
+    CHANGE_REQUEST = "change_request", "Client-requested update"
+    OTHER = "other", "Other"
+
+
 class GapCategory(models.TextChoices):
     """Which part of the vision a gap relates to — drives where the AI probes."""
     OVERVIEW = "OVERVIEW", "Overview / big idea"
@@ -143,6 +154,9 @@ class Build(models.Model):
     overview = models.TextField(blank=True, default="")          # "The big idea"
     one_line_summary = models.TextField(blank=True, default="")  # one-line summary for the team
     maintenance_notes = models.TextField(blank=True, default="")  # env vars, services, cadence
+    # Rolling "build memory" — current-state summary kept fresh by progress updates
+    # so the build never loses early context as meeting history grows.
+    memory_summary = models.TextField(blank=True, default="")
     client = models.ForeignKey("projects.Clients", on_delete=models.CASCADE, related_name="builds")
     creator = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="created_builds")
     assignee = models.ForeignKey(
@@ -431,6 +445,9 @@ class Document(models.Model):
 class MeetingNote(models.Model):
     source = models.CharField(max_length=32, default="paste")
     raw_text = models.TextField()
+    kind = models.CharField(max_length=20, choices=MeetingNoteKind.choices, default=MeetingNoteKind.MEETING)
+    title = models.CharField(max_length=255, blank=True, default="")  # auto: "2nd Meeting notes", etc.
+    meeting_date = models.DateField(null=True, blank=True)
     file_url = models.URLField(max_length=1000, blank=True, default="")
     ai_status = models.CharField(max_length=16, default="pending")  # pending|processing|done|failed
     ai_output = models.JSONField(null=True, blank=True)

@@ -299,6 +299,30 @@ class BuildViewSet(viewsets.ModelViewSet):
             return err
         return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
 
+    @action(detail=True, methods=["post"], url_path="progress-update")
+    def progress_update(self, request, pk=None):
+        """Log a follow-up/progress meeting as a DELTA: captures scope changes
+        (→ change requests), new questions (→ gaps), progress, and refreshes the
+        build's living memory — without rewriting the blueprint."""
+        build = self.get_object()
+        text = (request.data.get("raw_text") or "").strip()
+        if not text:
+            return Response({"error": "Meeting notes are required."}, status=http.HTTP_400_BAD_REQUEST)
+        kind = request.data.get("kind") or "progress"
+        if kind not in ("progress", "change_request"):
+            kind = "progress"
+        note = MeetingNote.objects.create(build=build, raw_text=text, source="paste", kind=kind, ai_status="processing")
+        note.title = services.auto_note_title(build, kind)
+        note.save(update_fields=["title"])
+        _log(build, request.user, f"{note.title} logged.")
+        from .tasks import apply_progress_update
+        err = _dispatch_async(apply_progress_update, build.id, note.id, request.user.id)
+        if err:
+            note.ai_status = "failed"
+            note.save(update_fields=["ai_status"])
+            return err
+        return Response({"status": "processing", "note": MeetingNoteSerializer(note).data}, status=http.HTTP_202_ACCEPTED)
+
     @action(detail=True, methods=["post"], url_path="brief-qa-check")
     def brief_qa(self, request, pk=None):
         build = self.get_object()
@@ -411,7 +435,15 @@ class ManualActionViewSet(_BaseViewSet):
 class MeetingNoteViewSet(_BaseViewSet):
     queryset = MeetingNote.objects.all()
     serializer_class = MeetingNoteSerializer
-    filterset_fields = ["build", "ai_status"]
+    filterset_fields = ["build", "ai_status", "kind"]
+    ordering = ["created_at"]
+
+    def perform_create(self, serializer):
+        note = serializer.save()
+        if not note.title:  # auto-label: "Kickoff meeting notes", "2nd Meeting notes", …
+            note.title = services.auto_note_title(note.build, note.kind)
+            note.save(update_fields=["title"])
+        _log(note.build, self.request.user, f"{note.title} added.")
 
     @action(detail=False, methods=["post"], url_path="upload",
             parser_classes=[MultiPartParser, FormParser])
@@ -451,8 +483,11 @@ class MeetingNoteViewSet(_BaseViewSet):
             file_url = default_storage.url(key)
         except Exception:  # noqa: BLE001 — storage is optional; never block note creation
             pass
-        note = MeetingNote.objects.create(build=build, raw_text=text, source="upload", file_url=file_url)
-        _log(build, request.user, f'Meeting notes uploaded from "{filename}".')
+        kind = request.data.get("kind") or "meeting"
+        note = MeetingNote.objects.create(build=build, raw_text=text, source="upload", file_url=file_url, kind=kind)
+        note.title = services.auto_note_title(build, kind)
+        note.save(update_fields=["title"])
+        _log(build, request.user, f'{note.title} uploaded from "{filename}".')
         return Response(MeetingNoteSerializer(note).data, status=http.HTTP_201_CREATED)
 
 

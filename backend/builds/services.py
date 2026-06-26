@@ -690,6 +690,92 @@ def suggest_gap_answers(build, question: str, rationale: str = "") -> list[str]:
     return [o for o in (json.loads(raw).get("options") or []) if isinstance(o, str) and o.strip()][:4]
 
 
+# ─── Meeting-note naming + progress-update delta ──────────────────────────────
+def ordinal(n: int) -> str:
+    if 10 <= (n % 100) <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def auto_note_title(build, kind: str) -> str:
+    """A human label for a meeting note. Call AFTER the note is saved (it counts
+    the note in the ordinal). e.g. 'Kickoff meeting notes', '2nd Meeting notes',
+    'Client-requested update', 'Progress update — Jun 27, 2026'."""
+    from datetime import date as _date
+    if kind == "kickoff":
+        return "Kickoff meeting notes"
+    if kind == "change_request":
+        return "Client-requested update"
+    if kind == "progress":
+        return f"Progress update — {_date.today():%b %d, %Y}"
+    n = build.meeting_notes.count() or 1
+    return f"{ordinal(n)} Meeting notes"
+
+
+def _build_state_summary(build) -> str:
+    """Compact snapshot of the current build, for delta comparison."""
+    stages = list(build.stages.all())
+    workflows = list(build.workflows.all())
+    parts = [
+        f"Overview: {build.overview or build.goals or 'n/a'}",
+        f"Pipeline: {' → '.join(s.name for s in stages) or 'none'}",
+        f"Workflows: {', '.join(f'{w.code} {w.name}'.strip() for w in workflows) or 'none'}",
+        f"Integrations: {build.integrations or 'none'}",
+    ]
+    if (build.memory_summary or '').strip():
+        parts.append(f"Latest known state: {build.memory_summary}")
+    return "\n".join(parts)[:6000]
+
+
+_PROGRESS_DELTA_SCHEMA = _obj({
+    "summary": _str(),            # updated running build-state summary
+    "progress": _arr(_str()),     # status / what's done, reported this meeting
+    "scopeChanges": _arr(_obj({   # new or changed requirements vs the current build
+        "title": _str(),
+        "description": _str(),
+        "impact": _str(),
+        "requester": _str(),      # e.g. "Client", a person, or ""
+    })),
+    "newQuestions": _arr(_obj({
+        "category": _enum(
+            "OVERVIEW", "STAGE", "TRANSITION", "LEAD_SOURCE", "CALENDAR",
+            "INTEGRATION", "WORKFLOW", "CUSTOM_FIELD", "TAG", "GENERAL",
+        ),
+        "question": _str(),
+        "rationale": _str(),
+        "severity": _enum("high", "medium", "low"),
+    })),
+})
+
+
+def extract_progress_delta(build, note_text: str) -> dict:
+    """Read a follow-up/progress meeting note AGAINST the current build and return
+    the delta: progress reported, scope changes (→ change requests), new questions
+    (→ gaps), and an updated running summary. Does NOT rewrite the blueprint."""
+    state = _build_state_summary(build)
+    prompt = (
+        "You are a senior Go High Level (GHL) solutions architect at Calari Solutions reviewing notes "
+        "from a FOLLOW-UP / progress meeting on an in-flight build. Compare the new notes to the CURRENT "
+        "build state and extract ONLY the delta:\n"
+        "- progress: concrete status updates (what's done / in progress / blocked).\n"
+        "- scopeChanges: NEW or CHANGED requirements vs the current build — each a specific change with "
+        "its impact and who requested it (use 'Client' if the client asked). Do NOT list unchanged scope.\n"
+        "- newQuestions: open items the meeting raised that must be answered before delivery.\n"
+        "- summary: an updated, concise running summary of the build's CURRENT state incorporating this "
+        "meeting (this becomes the build's living memory).\n\n"
+        f"CURRENT BUILD STATE:\n{state}\n\n"
+        f"NEW MEETING NOTES:\n{note_text[:MAX_TEXT_CHARS]}\n\n"
+        "Return JSON matching the schema. Be specific and concise."
+    )
+    raw = _chat(
+        [{"role": "user", "content": prompt}],
+        response_format={"type": "json_schema", "json_schema": {"name": "progress_delta", "strict": True, "schema": _PROGRESS_DELTA_SCHEMA}},
+    )
+    return json.loads(raw) if raw else {}
+
+
 # ─── Handover render (blueprint → client handover markdown) ───────────────────
 _WORKFLOW_CATEGORY_LABELS = {
     "ACTIVE_CONVERSION": "Active conversion (A)",
