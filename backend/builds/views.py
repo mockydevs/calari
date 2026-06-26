@@ -249,7 +249,11 @@ class BuildViewSet(viewsets.ModelViewSet):
     def handover(self, request, pk=None):
         """Render the captured vision blueprint as the client handover document (markdown)."""
         build = self._detail_queryset().get(pk=self.get_object().pk)
-        return Response({"markdown": services.render_handover_markdown(build)})
+        try:
+            markdown = services.render_handover_markdown(build)
+        except Exception:  # noqa: BLE001 — never 500 the preview; return a soft message
+            markdown = "_The handover could not be rendered for this build yet._"
+        return Response({"markdown": markdown})
 
     @action(detail=True, methods=["get"], url_path="vision-completeness")
     def vision_completeness(self, request, pk=None):
