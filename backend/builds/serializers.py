@@ -29,7 +29,7 @@ def _user_initials(user):
 class AiConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = AiConfig
-        fields = ["provider", "model", "blueprint_model", "updated_at"]
+        fields = ["provider", "model", "blueprint_model", "multi_pass", "updated_at"]
         read_only_fields = ["updated_at"]
 
 

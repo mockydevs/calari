@@ -39,13 +39,13 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
   return Array.isArray(d) ? d : d.results ?? [];
 }
 
-type AiConfig = { provider: string; model: string; blueprint_model: string };
+type AiConfig = { provider: string; model: string; blueprint_model: string; multi_pass: boolean };
 
 export default async function AiSettingsPage() {
   await requireAdmin();
   const [keys, config] = await Promise.all([
     serverApi.get<AiKey[] | { results: AiKey[] }>("builds/ai-keys").then(asList).catch(() => [] as AiKey[]),
-    serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "" } as AiConfig)),
+    serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "", multi_pass: false } as AiConfig)),
   ]);
   // Providers we actually generate with today (others can still store keys).
   const ACTIVE_PROVIDERS = ["OPENAI", "ANTHROPIC"];
@@ -89,6 +89,13 @@ export default async function AiSettingsPage() {
               <Input id="blueprint-model" name="blueprint_model" defaultValue={config.blueprint_model} placeholder="overrides for the build-out" />
               <p className="text-xs text-slate-500">Blank = same as Model.</p>
             </div>
+            <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 text-sm sm:col-span-3">
+              <input type="checkbox" name="multi_pass" defaultChecked={config.multi_pass} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-pink-700" />
+              <span>
+                <span className="block font-semibold text-slate-950">Architect → critic multi-pass</span>
+                <span className="block text-xs text-slate-500">Runs a second self-review pass to improve completeness on the blueprint. Higher quality, ~2× the blueprint cost.</span>
+              </span>
+            </label>
             <div className="sm:col-span-3">
               <Button type="submit"><CheckCircle2 className="h-4 w-4" /> Save active provider</Button>
               <span className="ml-3 text-xs text-slate-500">If the chosen provider/model errors, generation safely falls back to OpenAI.</span>

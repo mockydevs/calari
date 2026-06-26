@@ -582,6 +582,7 @@ class AiConfig(models.Model):
     provider = models.CharField(max_length=16, choices=AIProvider.choices, default=AIProvider.OPENAI)
     model = models.CharField(max_length=64, blank=True, default="")            # blank → provider default
     blueprint_model = models.CharField(max_length=64, blank=True, default="")  # blank → falls back to `model`
+    multi_pass = models.BooleanField(default=False)  # architect→critic→revise on the blueprint
     updated_by = models.ForeignKey(USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -607,6 +608,25 @@ class TeamInvite(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["email"]), models.Index(fields=["expires_at"])]
+
+
+class AiGenerationLog(models.Model):
+    """Per-call AI telemetry: provider/model, token usage, latency, success. Powers
+    cost + observability dashboards and lets you compare models/prompts over time."""
+    op = models.CharField(max_length=32, default="chat")  # blueprint|qa|sop|gap_suggest|progress_delta|embed|…
+    provider = models.CharField(max_length=16, blank=True, default="")
+    model = models.CharField(max_length=64, blank=True, default="")
+    prompt_tokens = models.IntegerField(null=True, blank=True)
+    completion_tokens = models.IntegerField(null=True, blank=True)
+    total_tokens = models.IntegerField(null=True, blank=True)
+    latency_ms = models.IntegerField(null=True, blank=True)
+    ok = models.BooleanField(default=True)
+    error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["op", "created_at"]), models.Index(fields=["created_at"])]
 
 
 class BuildKnowledge(models.Model):

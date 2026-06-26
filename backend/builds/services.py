@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import secrets
+import time
 
 from django.conf import settings
 
@@ -73,13 +74,16 @@ def get_active_provider_key(provider: str) -> str | None:
 
 
 # ─── OpenAI brief generation ──────────────────────────────────────────────────
+_AI_MAX_RETRIES = int(os.getenv("AI_MAX_RETRIES", "4"))  # SDK retries on 429/5xx (rate-limit resilience)
+
+
 def _openai_client():
     from openai import OpenAI
 
     key = get_active_provider_key("OPENAI")
     if not key:
         raise RuntimeError("OpenAI API key is not configured")
-    return OpenAI(api_key=key)
+    return OpenAI(api_key=key, max_retries=_AI_MAX_RETRIES)
 
 
 # The model is NOT restricted to any specific version. OPENAI_MODEL accepts ANY
@@ -134,7 +138,17 @@ def _fallback_model() -> str:
     return os.getenv("OPENAI_FALLBACK_MODEL", _SMART_MODEL_DEFAULT)
 
 
-def _openai_complete(model, messages, response_format, max_tokens) -> str:
+def _multi_pass_enabled() -> bool:
+    """Architect→critic→revise pass on the blueprint. Off by default (it doubles the
+    blueprint call); enable in Settings → AI Keys or via AI_MULTIPASS."""
+    cfg = _ai_config()
+    if cfg is not None:
+        return bool(cfg.multi_pass)
+    return os.getenv("AI_MULTIPASS", "False").lower() in ("1", "true", "yes")
+
+
+def _openai_complete(model, messages, response_format, max_tokens):
+    """Returns (content, usage_dict)."""
     client = _openai_client()
     kwargs = {"messages": messages}
     if response_format is not None:
@@ -143,25 +157,25 @@ def _openai_complete(model, messages, response_format, max_tokens) -> str:
         kwargs["max_tokens"] = max_tokens
     completion = client.chat.completions.create(model=model, **kwargs)
     usage = getattr(completion, "usage", None)
-    if usage is not None:
-        logger.info(
-            "AI call provider=OPENAI model=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s",
-            model, getattr(usage, "prompt_tokens", None),
-            getattr(usage, "completion_tokens", None), getattr(usage, "total_tokens", None),
-        )
-    return completion.choices[0].message.content
+    u = {
+        "prompt": getattr(usage, "prompt_tokens", None),
+        "completion": getattr(usage, "completion_tokens", None),
+        "total": getattr(usage, "total_tokens", None),
+    } if usage is not None else {}
+    return completion.choices[0].message.content, u
 
 
-def _anthropic_complete(model, messages, response_format, max_tokens) -> str:
+def _anthropic_complete(model, messages, response_format, max_tokens):
     """Claude path. Structured output (OpenAI-style json_schema) is achieved via a
     forced tool call: the schema becomes the tool's input_schema and we return the
-    tool input as a JSON string so callers' json.loads(...) works unchanged."""
+    tool input as a JSON string so callers' json.loads(...) works unchanged.
+    Returns (content, usage_dict)."""
     import anthropic
 
     key = get_active_provider_key("ANTHROPIC")
     if not key:
         raise RuntimeError("Anthropic API key is not configured")
-    client = anthropic.Anthropic(api_key=key)
+    client = anthropic.Anthropic(api_key=key, max_retries=_AI_MAX_RETRIES)
 
     # Anthropic separates the system prompt from the message list. Send it as blocks
     # and cache the first one (our big static expert prompt) so repeat calls reuse it
@@ -176,35 +190,44 @@ def _anthropic_complete(model, messages, response_format, max_tokens) -> str:
         blocks[0]["cache_control"] = {"type": "ephemeral"}
         kwargs["system"] = blocks
 
+    def _usage(msg):
+        u = getattr(msg, "usage", None)
+        if u is None:
+            return {}
+        inp, out = getattr(u, "input_tokens", None), getattr(u, "output_tokens", None)
+        return {"prompt": inp, "completion": out,
+                "total": (inp + out) if inp is not None and out is not None else None}
+
     if response_format and response_format.get("type") == "json_schema":
         js = response_format["json_schema"]
         name = js.get("name", "result")
         kwargs["tools"] = [{"name": name, "description": "Return the structured result.", "input_schema": js["schema"]}]
         kwargs["tool_choice"] = {"type": "tool", "name": name}
         msg = client.messages.create(**kwargs)
-        _log_anthropic_usage(model, msg)
         for block in msg.content:
             if getattr(block, "type", None) == "tool_use":
-                return json.dumps(block.input)
-        return None
+                return json.dumps(block.input), _usage(msg)
+        return None, _usage(msg)
     msg = client.messages.create(**kwargs)
-    _log_anthropic_usage(model, msg)
-    return "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", None) == "text")
+    return "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", None) == "text"), _usage(msg)
 
 
-def _log_anthropic_usage(model, msg):
-    usage = getattr(msg, "usage", None)
-    if usage is not None:
-        logger.info(
-            "AI call provider=ANTHROPIC model=%s input_tokens=%s output_tokens=%s",
-            model, getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None),
+def _record_ai_log(op, provider, model, usage, latency_ms, ok, error=""):
+    """Persist one AI-call telemetry row. Never let logging break the call."""
+    try:
+        from .models import AiGenerationLog
+        AiGenerationLog.objects.create(
+            op=(op or "chat")[:32], provider=(provider or "")[:16], model=(model or "")[:64],
+            prompt_tokens=usage.get("prompt"), completion_tokens=usage.get("completion"),
+            total_tokens=usage.get("total"), latency_ms=latency_ms, ok=ok, error=(error or "")[:1000],
         )
+    except Exception:  # noqa: BLE001
+        pass
 
 
-def _chat(messages, *, model: str | None = None, response_format=None, max_tokens=None) -> str:
-    """One completion call routed to the active provider (OpenAI or Anthropic),
-    with a graceful fallback: if the chosen provider/model errors, retry once on the
-    known-good OpenAI fallback so a provider/model misconfig never fails a request."""
+def _chat(messages, *, model: str | None = None, response_format=None, max_tokens=None, op: str = "chat") -> str:
+    """One completion call routed to the active provider (OpenAI or Anthropic), with a
+    graceful fallback (retry on the known-good OpenAI model) and per-call telemetry."""
     provider = _active_provider()
     target = model or _model()
 
@@ -213,13 +236,25 @@ def _chat(messages, *, model: str | None = None, response_format=None, max_token
             return _anthropic_complete(m, messages, response_format, max_tokens)
         return _openai_complete(m, messages, response_format, max_tokens)
 
+    t0 = time.monotonic()
     try:
-        return _call(provider, target)
-    except Exception:  # noqa: BLE001 — APIError/missing key/model-not-found/etc.
+        content, usage = _call(provider, target)
+        _record_ai_log(op, provider, target, usage, int((time.monotonic() - t0) * 1000), True)
+        return content
+    except Exception as exc:  # noqa: BLE001 — APIError/missing key/model-not-found/etc.
         fb = _fallback_model()
         if provider == "OPENAI" and target == fb:
+            _record_ai_log(op, provider, target, {}, int((time.monotonic() - t0) * 1000), False, str(exc))
             raise
-        return _call("OPENAI", fb)
+        t1 = time.monotonic()
+        try:
+            content, usage = _call("OPENAI", fb)
+            _record_ai_log(op, "OPENAI", fb, usage, int((time.monotonic() - t1) * 1000), True,
+                           f"fallback from {provider}/{target}: {exc}")
+            return content
+        except Exception as exc2:  # noqa: BLE001
+            _record_ai_log(op, "OPENAI", fb, {}, int((time.monotonic() - t1) * 1000), False, str(exc2))
+            raise
 
 
 _BRIEF_SCHEMA = {
@@ -641,7 +676,14 @@ def _vectors_enabled() -> bool:
 def embed_texts(texts: list[str]) -> list[list[float]]:
     """Embed text via OpenAI (embeddings are OpenAI regardless of the chat provider)."""
     client = _openai_client()
+    t0 = time.monotonic()
     resp = client.embeddings.create(model=EMBED_MODEL, input=texts)
+    usage = getattr(resp, "usage", None)
+    _record_ai_log(
+        "embed", "OPENAI", EMBED_MODEL,
+        {"prompt": getattr(usage, "prompt_tokens", None), "total": getattr(usage, "total_tokens", None)},
+        int((time.monotonic() - t0) * 1000), True,
+    )
     return [d.embedding for d in resp.data]
 
 
@@ -792,10 +834,48 @@ def generate_blueprint_draft(notes_text: str, reference_text: str = "", resolved
             "type": "json_schema",
             "json_schema": {"name": "build_blueprint", "strict": True, "schema": _BLUEPRINT_SCHEMA},
         },
+        op="blueprint",
     )
     if not raw:
         raise RuntimeError("AI returned no content")
-    return json.loads(raw)
+    draft = json.loads(raw)
+    if _multi_pass_enabled():
+        draft = _critique_and_revise(draft, notes_text, reference_text)
+    return draft
+
+
+def _critique_and_revise(draft: dict, notes_text: str, reference_text: str = "") -> dict:
+    """Architect→critic→revise: a second pass that reviews the draft against the notes
+    and our standard patterns and returns an IMPROVED blueprint (same schema). Falls
+    back to the original draft on any error so it can never make things worse."""
+    try:
+        messages = [
+            {"role": "system", "content": _BLUEPRINT_SYSTEM_PROMPT},
+            {"role": "system", "content": (
+                "You are now the REVIEWER. You are given a DRAFT blueprint another architect produced from "
+                "the same notes. Critique it for completeness and consistency, then return an IMPROVED "
+                "blueprint in the same schema: fill missing workflows / pre-launch & A2P-SMS compliance "
+                "items, fix broken stage references and half-drawn contact journeys, and tighten naming "
+                "to our conventions. Keep everything correct from the draft — only add or fix, never drop "
+                "good content."
+            )},
+        ]
+        if reference_text.strip():
+            messages.append({"role": "system", "content": "REFERENCE:\n" + reference_text[:KNOWLEDGE_MAX_CHARS]})
+        messages.append({"role": "user", "content": (
+            f"Client meeting notes:\n\n{notes_text[:MAX_TEXT_CHARS]}\n\n"
+            f"DRAFT blueprint to improve (same schema):\n{json.dumps(draft)[:60000]}"
+        )})
+        raw = _chat(
+            messages, model=_blueprint_model(),
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "build_blueprint", "strict": True, "schema": _BLUEPRINT_SCHEMA}},
+            op="blueprint_revise",
+        )
+        return json.loads(raw) if raw else draft
+    except Exception:  # noqa: BLE001 — never let the critic pass break generation
+        logger.exception("multi-pass revise failed; using original draft")
+        return draft
 
 
 _QA_SCHEMA = {
@@ -843,6 +923,7 @@ def run_brief_qa(build) -> dict:
     raw = _chat(
         [{"role": "user", "content": prompt}],
         response_format={"type": "json_schema", "json_schema": {"name": "qa_report", "strict": True, "schema": _QA_SCHEMA}},
+        op="qa",
     )
     if not raw:
         raise RuntimeError("AI returned no QA content")
@@ -867,7 +948,7 @@ def generate_task_sop(task) -> str:
         f"Task title: {task.title}\nTask type: {task.type}\nTask description: {task.description or 'no description'}\n\n"
         f"Build context:\n{context}\n\nRespond ONLY with the numbered SOP steps. No intro or outro sentences."
     )
-    sop = (_chat([{"role": "user", "content": prompt}], max_tokens=800) or "").strip()
+    sop = (_chat([{"role": "user", "content": prompt}], max_tokens=800, op="sop") or "").strip()
     if not sop:
         raise RuntimeError("AI returned no SOP content")
     return sop
@@ -912,6 +993,7 @@ def suggest_gap_answers(build, question: str, rationale: str = "") -> list[str]:
             "type": "json_schema",
             "json_schema": {"name": "gap_answers", "strict": True, "schema": _GAP_SUGGEST_SCHEMA},
         },
+        op="gap_suggest",
     )
     if not raw:
         return []
@@ -1000,6 +1082,7 @@ def extract_progress_delta(build, note_text: str) -> dict:
     raw = _chat(
         [{"role": "user", "content": prompt}],
         response_format={"type": "json_schema", "json_schema": {"name": "progress_delta", "strict": True, "schema": _PROGRESS_DELTA_SCHEMA}},
+        op="progress_delta",
     )
     return json.loads(raw) if raw else {}
 

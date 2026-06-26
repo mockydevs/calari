@@ -42,6 +42,7 @@ export async function updateAiConfig(formData: FormData) {
     provider: String(formData.get("provider") ?? "OPENAI"),
     model: String(formData.get("model") ?? "").trim(),
     blueprint_model: String(formData.get("blueprint_model") ?? "").trim(),
+    multi_pass: formData.get("multi_pass") === "on",
   });
   revalidatePath("/settings/ai");
 }

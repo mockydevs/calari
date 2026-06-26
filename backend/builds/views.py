@@ -112,6 +112,34 @@ def _501(exc):
     return Response({"error": str(exc)}, status=http.HTTP_501_NOT_IMPLEMENTED)
 
 
+# Relations whose rows carry ai_generated/locked — used for the AI-quality metric.
+_QUALITY_RELATIONS = (
+    "stages", "workflows", "contact_sources", "calendars", "external_integrations",
+    "transitions", "custom_fields", "tags", "pre_launch_items", "tasks",
+)
+
+
+def _build_quality(build):
+    """AI-acceptance metric (edit-distance proxy): how much of the AI's build-out
+    survived to approval unedited. Lower edits over time = the AI getting smarter."""
+    ai = edited = human = 0
+    for rel in _QUALITY_RELATIONS:
+        for obj in getattr(build, rel).all():
+            if getattr(obj, "ai_generated", False):
+                ai += 1
+                if getattr(obj, "locked", False):
+                    edited += 1
+            else:
+                human += 1
+    kept = ai - edited
+    return {
+        "ai_items": ai, "edited": edited, "human_added": human, "kept": kept,
+        "kept_pct": round(kept * 100 / ai) if ai else 0,
+        "gaps_total": build.gaps.count(),
+        "gaps_resolved": build.gaps.exclude(status=GapStatus.OPEN).count(),
+    }
+
+
 def _dispatch_async(task_fn, *args):
     """Queue a Celery task. Returns a clean 503 Response if the broker (Redis) is
     unreachable, instead of letting the connection error bubble up as a 500."""
@@ -220,6 +248,14 @@ class BuildViewSet(viewsets.ModelViewSet):
         ApprovalRecord.objects.create(
             build=build, approver=request.user, type=ApprovalType.BRIEF,
             note=(request.data.get("note") or "").strip() or "Build-out approved — handed to staff.",
+        )
+        # Capture the AI-acceptance metric at the moment of approval (quality signal).
+        q = _build_quality(build)
+        BuildMemorySnapshot.objects.create(
+            build=build, created_by=request.user, created_by_ai=False,
+            summary=f"Approved — AI quality: {q['kept']}/{q['ai_items']} AI items kept unedited ({q['kept_pct']}%).",
+            scope_changes=f"{q['edited']} AI item(s) edited, {q['human_added']} human-added, "
+                          f"{q['gaps_resolved']}/{q['gaps_total']} gaps resolved.",
         )
         _log(build, request.user, f"Build-out approved and handed to {assignee.get_full_name() or assignee.username}.")
         _notify(
