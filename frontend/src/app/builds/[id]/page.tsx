@@ -8,10 +8,11 @@ import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
   addComment, addMeetingNote, createChangeRequest, createTask, enablePortal,
-  recordApproval, resolveGap, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
+  recordApproval, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
   updateTaskStatus, uploadDocument,
 } from "../actions";
 import { AssignApprove } from "../assign-approve";
+import { GapResolver } from "../gap-resolver";
 import { BuildDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
 import { HandoverButton } from "../handover-button";
@@ -21,7 +22,7 @@ import { BlueprintEditor } from "../blueprint-editor";
 import { Tabs, TabPanel } from "../build-tabs";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
-  CALENDAR_TYPE_LABEL, GAP_CATEGORY_LABEL, GAP_SEVERITY_STYLE,
+  CALENDAR_TYPE_LABEL,
   INTEGRATION_DIRECTION_LABEL, INTEGRATION_DIRECTION_STYLE, INTEGRATION_MECHANISM_LABEL,
   TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES,
   WORKFLOW_CATEGORY_LABEL, type BuildDetail, type MeetingNote, type Workflow,
@@ -457,27 +458,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                   <p className="text-sm text-emerald-700">All flagged gaps resolved — the vision is fully pinned down.</p>
                 ) : (
                   <ul className="space-y-3">{openGaps.map((g) => (
-                    <li key={g.id} className="rounded-md border border-slate-200 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${GAP_SEVERITY_STYLE[g.severity]}`}>{g.severity}</span>
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">{GAP_CATEGORY_LABEL[g.category] ?? g.category}</span>
-                          </div>
-                          <p className="mt-1.5 text-sm font-medium text-slate-900">{g.question}</p>
-                          {g.rationale && <p className="mt-0.5 text-xs text-slate-500">{g.rationale}</p>}
-                        </div>
-                      </div>
-                      <form action={resolveGap} className="mt-2.5 space-y-2">
-                        <input type="hidden" name="id" value={g.id} />
-                        <input type="hidden" name="buildId" value={id} />
-                        <Textarea name="answer" rows={2} placeholder="Capture the answer from the client…" />
-                        <div className="flex items-center gap-2">
-                          <Button type="submit" name="status" value="ANSWERED" size="sm">Save answer</Button>
-                          <Button type="submit" name="status" value="DISMISSED" size="sm" variant="outline">Dismiss</Button>
-                        </div>
-                      </form>
-                    </li>
+                    <GapResolver key={g.id} gap={g} buildId={id} />
                   ))}</ul>
                 )}
                 {resolvedGaps.length > 0 && (

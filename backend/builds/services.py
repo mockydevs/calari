@@ -503,6 +503,51 @@ def generate_task_sop(task) -> str:
     return sop
 
 
+_GAP_SUGGEST_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"options": {"type": "array", "items": {"type": "string"}}},
+    "required": ["options"],
+}
+
+
+def suggest_gap_answers(build, question: str, rationale: str = "") -> list[str]:
+    """Propose 2–4 concise, expert best-practice answers to an open vision gap.
+
+    These become click-to-use options in the UI; the team can pick one and edit,
+    or type their own.
+    """
+    stages = list(build.stages.all())
+    sources = list(build.contact_sources.all())
+    context = "\n".join([
+        f"Goals: {build.goals or 'not set'}",
+        f"Integrations: {build.integrations or 'none'}",
+        f"Pipeline stages: {' → '.join(s.name for s in stages) or 'none'}",
+        f"Lead sources: {', '.join(s.label for s in sources) or 'none'}",
+    ])
+    prompt = (
+        "You are a senior Go High Level (GHL) solutions architect at Calari Solutions. A build's vision "
+        "blueprint has an OPEN gap — a question that must be resolved before delivery. Propose 2 to 4 "
+        "concise, expert ANSWER options the team could adopt as the resolution. Each option must be a "
+        "complete, specific answer (NOT another question), grounded in GHL conventions and the build "
+        "context. Prefer sensible best-practice defaults; keep each option to 1–2 sentences.\n\n"
+        f"GAP QUESTION: {question}\n"
+        f"WHY IT MATTERS: {rationale or 'n/a'}\n\n"
+        f"BUILD CONTEXT:\n{context}\n\n"
+        "Return JSON matching the schema."
+    )
+    raw = _chat(
+        [{"role": "user", "content": prompt}],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"name": "gap_answers", "strict": True, "schema": _GAP_SUGGEST_SCHEMA},
+        },
+    )
+    if not raw:
+        return []
+    return [o for o in (json.loads(raw).get("options") or []) if isinstance(o, str) and o.strip()][:4]
+
+
 # ─── Handover render (blueprint → client handover markdown) ───────────────────
 _WORKFLOW_CATEGORY_LABELS = {
     "ACTIVE_CONVERSION": "Active conversion (A)",

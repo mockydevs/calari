@@ -592,6 +592,19 @@ class VisionGapViewSet(_BaseViewSet):
     ordering = ["status", "created_at"]
 
     @action(detail=True, methods=["post"])
+    def suggest(self, request, pk=None):
+        """AI-suggested answer options for an open gap — the team picks one or edits."""
+        gap = self.get_object()
+        try:
+            options = services.suggest_gap_answers(gap.build, gap.question, gap.rationale)
+        except Exception:  # noqa: BLE001 — never 500 the suggest button
+            return Response(
+                {"error": "Could not generate suggestions right now. Type an answer instead."},
+                status=http.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({"options": options})
+
+    @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
         """Answer or dismiss a gap the AI flagged, closing the loop on the vision."""
         gap = self.get_object()
