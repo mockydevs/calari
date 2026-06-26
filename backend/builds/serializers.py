@@ -6,7 +6,7 @@ from .models import (
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, StageTransition, Workflow, CustomField, TagDefinition,
-    PreLaunchItem, VisionGap, Calendar, Integration, BuildKnowledge,
+    PreLaunchItem, VisionGap, Calendar, Integration, BuildKnowledge, AiConfig,
 )
 
 _NULL_STR = serializers.CharField(allow_null=True)
@@ -24,6 +24,13 @@ def _user_initials(user):
         return None
     parts = name.split()
     return (parts[0][0] + parts[-1][0]).upper() if len(parts) > 1 else name[:2].upper()
+
+
+class AiConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AiConfig
+        fields = ["provider", "model", "blueprint_model", "updated_at"]
+        read_only_fields = ["updated_at"]
 
 
 # ─── Build Library (knowledge the AI learns from) ─────────────────────────────

@@ -558,6 +558,25 @@ class AiApiKey(models.Model):
         indexes = [models.Index(fields=["provider", "active"])]
 
 
+class AiConfig(models.Model):
+    """Singleton: which provider + model the AI generation uses (chosen in
+    Settings → AI Keys). The active KEY *within* a provider is selected separately
+    (AiApiKey.active). Blank model fields fall back to a sensible provider default."""
+    provider = models.CharField(max_length=16, choices=AIProvider.choices, default=AIProvider.OPENAI)
+    model = models.CharField(max_length=64, blank=True, default="")            # blank → provider default
+    blueprint_model = models.CharField(max_length=64, blank=True, default="")  # blank → falls back to `model`
+    updated_by = models.ForeignKey(USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return f"AiConfig(provider={self.provider}, model={self.model or 'default'})"
+
+
 class TeamInvite(models.Model):
     email = models.EmailField()
     name = models.CharField(max_length=255)

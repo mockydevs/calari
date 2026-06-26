@@ -22,7 +22,7 @@ from .models import (
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
     TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
-    ApprovalType, BuildKnowledge,
+    ApprovalType, BuildKnowledge, AiConfig,
 )
 from .serializers import (
     BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
@@ -32,7 +32,7 @@ from .serializers import (
     ClientPortalFeedbackSerializer, NotificationSerializer, NotificationPreferenceSerializer,
     AiApiKeySerializer, TeamInviteSerializer, StageTransitionSerializer, WorkflowSerializer,
     CustomFieldSerializer, TagDefinitionSerializer, PreLaunchItemSerializer, VisionGapSerializer,
-    CalendarSerializer, IntegrationSerializer, BuildKnowledgeSerializer,
+    CalendarSerializer, IntegrationSerializer, BuildKnowledgeSerializer, AiConfigSerializer,
 )
 from . import services
 from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner
@@ -697,6 +697,21 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     def mark_all_read(self, request):
         self.get_queryset().filter(read=False).update(read=True)
         return Response({"ok": True})
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes(PERMS)
+def ai_config(request):
+    """Read/update the active AI provider + model used for generation (managers only)."""
+    if not _is_manager(request.user):
+        return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+    cfg = AiConfig.get_solo()
+    if request.method == "PATCH":
+        ser = AiConfigSerializer(cfg, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save(updated_by=request.user)
+        return Response(ser.data)
+    return Response(AiConfigSerializer(cfg).data)
 
 
 @api_view(["GET", "PATCH"])

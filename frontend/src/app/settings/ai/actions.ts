@@ -33,3 +33,15 @@ export async function deleteApiKey(formData: FormData) {
   await serverApi.del(`builds/ai-keys/${id}`);
   revalidatePath("/settings/ai");
 }
+
+export async function updateAiConfig(formData: FormData) {
+  await requireAdmin();
+  // Which provider + model the AI generation uses (the active key within that
+  // provider is chosen separately via Activate).
+  await serverApi.patch("builds/ai-config", {
+    provider: String(formData.get("provider") ?? "OPENAI"),
+    model: String(formData.get("model") ?? "").trim(),
+    blueprint_model: String(formData.get("blueprint_model") ?? "").trim(),
+  });
+  revalidatePath("/settings/ai");
+}

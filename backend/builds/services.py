@@ -82,61 +82,139 @@ def _openai_client():
 
 
 # The model is NOT restricted to any specific version. OPENAI_MODEL accepts ANY
-# current or future OpenAI model id (gpt-4o, gpt-5.x, o-series, …) — set it to the
-# latest as it releases, no code change needed. The smartest model is used for
-# everything (blueprint, QA, SOP). The only hardcoded value is the *fallback*
-# (also overridable) used to keep working if the configured model errors.
-_SMART_MODEL_DEFAULT = "gpt-4o"
+# current or future model id — set it to the latest as it releases, no code change
+# needed. The smartest model is used for everything (blueprint, QA, SOP). The
+# provider + model are chosen in Settings → AI Keys (AiConfig); env vars are the
+# fallback. The only hardcoded values are the per-provider defaults + the
+# known-good fallback used when the configured model errors.
+_SMART_MODEL_DEFAULT = "gpt-4o"        # OpenAI default
+_ANTHROPIC_MODEL_DEFAULT = "claude-opus-4-8"  # smartest Claude
+
+
+def _ai_config():
+    """The AiConfig singleton (provider/model chosen in Settings). None if the DB
+    isn't reachable — callers then fall back to env."""
+    try:
+        from .models import AiConfig
+        return AiConfig.get_solo()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _active_provider() -> str:
+    cfg = _ai_config()
+    if cfg and cfg.provider:
+        return cfg.provider
+    return os.getenv("AI_PROVIDER", "OPENAI")
 
 
 def _model() -> str:
+    cfg = _ai_config()
+    if cfg and cfg.model:
+        return cfg.model
+    if _active_provider() == "ANTHROPIC":
+        return os.getenv("ANTHROPIC_MODEL", _ANTHROPIC_MODEL_DEFAULT)
     return os.getenv("OPENAI_MODEL", _SMART_MODEL_DEFAULT)
 
 
 def _blueprint_model() -> str:
-    """The high-stakes 'expert build-out'. Defaults to OPENAI_MODEL; override with
-    OPENAI_BLUEPRINT_MODEL to point the blueprint at a different/newer model."""
+    """The high-stakes 'expert build-out'. Uses AiConfig.blueprint_model if set,
+    else the general model."""
+    cfg = _ai_config()
+    if cfg and cfg.blueprint_model:
+        return cfg.blueprint_model
     return os.getenv("OPENAI_BLUEPRINT_MODEL") or _model()
 
 
 def _fallback_model() -> str:
-    """Known-good model retried on if the configured model errors (typo, not yet on
-    the account, capability mismatch). Overridable via OPENAI_FALLBACK_MODEL — this
-    is what lets you fearlessly point OPENAI_MODEL at a brand-new release."""
+    """Known-good OpenAI model retried on if the chosen provider/model errors (typo,
+    missing key, not yet on the account). This is what lets you fearlessly switch
+    provider/model — a misconfig never hard-fails generation."""
     return os.getenv("OPENAI_FALLBACK_MODEL", _SMART_MODEL_DEFAULT)
 
 
-def _chat(messages, *, model: str | None = None, response_format=None, max_tokens=None) -> str:
-    """One chat-completion call with a graceful model fallback, shared by every AI
-    feature. Retries once on the fallback model if the configured model errors, so
-    a model-config issue (e.g. trying a not-yet-available newer model) never fails
-    the request."""
+def _openai_complete(model, messages, response_format, max_tokens) -> str:
     client = _openai_client()
-    target = model or _model()
     kwargs = {"messages": messages}
     if response_format is not None:
         kwargs["response_format"] = response_format
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
+    completion = client.chat.completions.create(model=model, **kwargs)
+    usage = getattr(completion, "usage", None)
+    if usage is not None:
+        logger.info(
+            "AI call provider=OPENAI model=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+            model, getattr(usage, "prompt_tokens", None),
+            getattr(usage, "completion_tokens", None), getattr(usage, "total_tokens", None),
+        )
+    return completion.choices[0].message.content
 
-    def _call(m: str):
-        completion = client.chat.completions.create(model=m, **kwargs)
-        usage = getattr(completion, "usage", None)
-        if usage is not None:  # observability: model + token usage per call
-            logger.info(
-                "AI call model=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s",
-                m, getattr(usage, "prompt_tokens", None),
-                getattr(usage, "completion_tokens", None), getattr(usage, "total_tokens", None),
-            )
-        return completion.choices[0].message.content
+
+def _anthropic_complete(model, messages, response_format, max_tokens) -> str:
+    """Claude path. Structured output (OpenAI-style json_schema) is achieved via a
+    forced tool call: the schema becomes the tool's input_schema and we return the
+    tool input as a JSON string so callers' json.loads(...) works unchanged."""
+    import anthropic
+
+    key = get_active_provider_key("ANTHROPIC")
+    if not key:
+        raise RuntimeError("Anthropic API key is not configured")
+    client = anthropic.Anthropic(api_key=key)
+
+    # Anthropic separates the system prompt from the message list.
+    system = "\n\n".join(m["content"] for m in messages if m.get("role") == "system")
+    conv = [{"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")]
+    if not conv:
+        conv = [{"role": "user", "content": ""}]
+    kwargs = {"model": model, "max_tokens": max_tokens or 16000, "messages": conv}
+    if system:
+        kwargs["system"] = system
+
+    if response_format and response_format.get("type") == "json_schema":
+        js = response_format["json_schema"]
+        name = js.get("name", "result")
+        kwargs["tools"] = [{"name": name, "description": "Return the structured result.", "input_schema": js["schema"]}]
+        kwargs["tool_choice"] = {"type": "tool", "name": name}
+        msg = client.messages.create(**kwargs)
+        _log_anthropic_usage(model, msg)
+        for block in msg.content:
+            if getattr(block, "type", None) == "tool_use":
+                return json.dumps(block.input)
+        return None
+    msg = client.messages.create(**kwargs)
+    _log_anthropic_usage(model, msg)
+    return "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", None) == "text")
+
+
+def _log_anthropic_usage(model, msg):
+    usage = getattr(msg, "usage", None)
+    if usage is not None:
+        logger.info(
+            "AI call provider=ANTHROPIC model=%s input_tokens=%s output_tokens=%s",
+            model, getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None),
+        )
+
+
+def _chat(messages, *, model: str | None = None, response_format=None, max_tokens=None) -> str:
+    """One completion call routed to the active provider (OpenAI or Anthropic),
+    with a graceful fallback: if the chosen provider/model errors, retry once on the
+    known-good OpenAI fallback so a provider/model misconfig never fails a request."""
+    provider = _active_provider()
+    target = model or _model()
+
+    def _call(prov: str, m: str):
+        if prov == "ANTHROPIC":
+            return _anthropic_complete(m, messages, response_format, max_tokens)
+        return _openai_complete(m, messages, response_format, max_tokens)
 
     try:
-        return _call(target)
-    except Exception:  # noqa: BLE001 — APIError/BadRequest/model-not-found/etc.
+        return _call(provider, target)
+    except Exception:  # noqa: BLE001 — APIError/missing key/model-not-found/etc.
         fb = _fallback_model()
-        if target == fb:
+        if provider == "OPENAI" and target == fb:
             raise
-        return _call(fb)
+        return _call("OPENAI", fb)
 
 
 _BRIEF_SCHEMA = {

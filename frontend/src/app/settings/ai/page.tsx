@@ -1,7 +1,7 @@
-import { Bot, CheckCircle2, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Bot, CheckCircle2, KeyRound, Plus, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { createApiKey, activateApiKey, deleteApiKey } from "./actions";
+import { createApiKey, activateApiKey, deleteApiKey, updateAiConfig } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,12 +39,16 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
   return Array.isArray(d) ? d : d.results ?? [];
 }
 
+type AiConfig = { provider: string; model: string; blueprint_model: string };
+
 export default async function AiSettingsPage() {
   await requireAdmin();
-  const keys = await serverApi
-    .get<AiKey[] | { results: AiKey[] }>("builds/ai-keys")
-    .then(asList)
-    .catch(() => [] as AiKey[]);
+  const [keys, config] = await Promise.all([
+    serverApi.get<AiKey[] | { results: AiKey[] }>("builds/ai-keys").then(asList).catch(() => [] as AiKey[]),
+    serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "" } as AiConfig)),
+  ]);
+  // Providers we actually generate with today (others can still store keys).
+  const ACTIVE_PROVIDERS = ["OPENAI", "ANTHROPIC"];
 
   return (
     <div className="space-y-5">
@@ -55,6 +59,43 @@ export default async function AiSettingsPage() {
           Add API keys for OpenAI, Claude, and other providers. Keys are encrypted and only previews are shown.
         </p>
       </div>
+
+      {/* Active provider + model used for generation */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
+              <Sparkles className="h-4 w-4" />
+            </span>
+            Active AI provider &amp; model
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form action={updateAiConfig} className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="active-provider">Provider</Label>
+              <Select id="active-provider" name="provider" defaultValue={config.provider || "OPENAI"}>
+                {ACTIVE_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
+              </Select>
+              <p className="text-xs text-slate-500">Uses that provider&apos;s active key above.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="active-model">Model</Label>
+              <Input id="active-model" name="model" defaultValue={config.model} placeholder="e.g. gpt-4o / claude-opus-4-8" />
+              <p className="text-xs text-slate-500">Blank = provider default. Any current/future model id works.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="blueprint-model">Blueprint model (optional)</Label>
+              <Input id="blueprint-model" name="blueprint_model" defaultValue={config.blueprint_model} placeholder="overrides for the build-out" />
+              <p className="text-xs text-slate-500">Blank = same as Model.</p>
+            </div>
+            <div className="sm:col-span-3">
+              <Button type="submit"><CheckCircle2 className="h-4 w-4" /> Save active provider</Button>
+              <span className="ml-3 text-xs text-slate-500">If the chosen provider/model errors, generation safely falls back to OpenAI.</span>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_390px]">
         <div className="space-y-4">
