@@ -136,7 +136,7 @@ def token_refresh(request):
 
     try:
         refresh = RefreshToken(refresh_token)
-        new_access = refresh.access_token
+        new_access = refresh.access_token  # derive access from the *current* refresh first
         response = Response({'success': True}, status=status.HTTP_200_OK)
 
         jwt_settings = settings.SIMPLE_JWT
@@ -150,8 +150,21 @@ def token_refresh(request):
             path='/',
         )
 
-        # If rotation is enabled, also set new refresh cookie
+        # Actually rotate: blacklist the consumed refresh token, then mint a NEW
+        # one (fresh jti/exp/iat). The previous code re-set the *same* refresh
+        # token, so ROTATE_REFRESH_TOKENS / BLACKLIST_AFTER_ROTATION were no-ops
+        # and a leaked refresh token stayed valid for its full lifetime. This
+        # mirrors SimpleJWT's own TokenRefreshSerializer.
         if jwt_settings.get('ROTATE_REFRESH_TOKENS'):
+            if jwt_settings.get('BLACKLIST_AFTER_ROTATION'):
+                try:
+                    refresh.blacklist()
+                except AttributeError:
+                    # blacklist app not installed — nothing to invalidate
+                    pass
+            refresh.set_jti()
+            refresh.set_exp()
+            refresh.set_iat()
             response.set_cookie(
                 jwt_settings['AUTH_COOKIE_REFRESH'],
                 str(refresh),
@@ -519,25 +532,33 @@ def forgot_password(request):
         PasswordResetToken.objects.filter(user=user, used=False).update(used=True)
 
         frontend = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
-        # Dispatch via Celery so the request doesn't block on SMTP.
-        send_notification_email.delay(
-            recipient_email=user.email,
-            subject="Your temporary Calari password",
-            context={
-                "recipient_name": user.full_name or user.username,
-                "event_type": "",
-                "event_title": "Your temporary password",
-                "event_detail": (
-                    f"Use this temporary password to sign in: {temp_password} — "
-                    f"then change it from your profile right away. "
-                    f"If you did not request this, contact your administrator."
-                ),
-                "actor_name": "Calari",
-                "project_name": "",
-                "portal_url": f"{frontend}/login",
-                "year": timezone.now().year,
-            },
-        )
+        # Dispatch via Celery so the request doesn't block on SMTP. Guard the
+        # dispatch: if the broker is unreachable, .delay() raises — without this
+        # the request 500s AND the password has already been rotated to a temp
+        # value that was never delivered, locking the user out. Swallowing the
+        # error keeps the response uniform (anti-enumeration) and lets the user
+        # retry once the queue is back.
+        try:
+            send_notification_email.delay(
+                recipient_email=user.email,
+                subject="Your temporary Calari password",
+                context={
+                    "recipient_name": user.full_name or user.username,
+                    "event_type": "",
+                    "event_title": "Your temporary password",
+                    "event_detail": (
+                        f"Use this temporary password to sign in: {temp_password} — "
+                        f"then change it from your profile right away. "
+                        f"If you did not request this, contact your administrator."
+                    ),
+                    "actor_name": "Calari",
+                    "project_name": "",
+                    "portal_url": f"{frontend}/login",
+                    "year": timezone.now().year,
+                },
+            )
+        except Exception:  # noqa: BLE001 — broker/kombu errors must not leak or 500
+            pass
     except User.DoesNotExist:
         pass  # Silent — don't reveal whether the email exists.
 

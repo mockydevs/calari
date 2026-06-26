@@ -1,14 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, CheckCircle2, Mail } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Mail } from "lucide-react";
 import { api, ApiError } from "@/lib/portal/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function ForgotPassword() {
-  const [open, setOpen] = React.useState(false);
+/**
+ * Reset-password panel. Controlled by the parent (LoginForm): it replaces the
+ * sign-in fields rather than rendering below them. `onCancel` returns to sign-in.
+ */
+export function ForgotPassword({ onCancel }: { onCancel: () => void }) {
   const [email, setEmail] = React.useState("");
   const [state, setState] = React.useState<"idle" | "sending" | "sent" | "error">("idle");
   const [message, setMessage] = React.useState("");
@@ -27,66 +30,61 @@ export function ForgotPassword() {
     }
   }
 
-  if (!open) {
+  if (state === "sent") {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-4 w-full text-center text-sm font-medium text-pink-700 transition-colors hover:text-pink-800"
-      >
-        Forgot your password?
-      </button>
+      <div className="space-y-4">
+        <div className="flex items-start gap-2.5 rounded-md bg-emerald-50 px-3.5 py-3 text-sm text-emerald-700 ring-1 ring-inset ring-emerald-200">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{message}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-pink-700"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+        </button>
+      </div>
     );
   }
 
   return (
-    <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
-      {state === "sent" ? (
-        <div className="flex items-start gap-2.5 text-sm text-emerald-700">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>{message}</p>
+    <form onSubmit={submit} className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="reset-email">Reset password</Label>
+        <p className="text-sm text-slate-500">
+          We&apos;ll email you a temporary password to sign in with.
+        </p>
+        <Input
+          id="reset-email"
+          type="email"
+          required
+          autoComplete="email"
+          placeholder="you@calari.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="h-10"
+        />
+      </div>
+
+      {state === "error" && (
+        <div className="flex items-center gap-2 text-xs text-red-600">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {message}
         </div>
-      ) : (
-        <form onSubmit={submit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="reset-email">Reset password</Label>
-            <p className="text-xs text-slate-500">
-              Enter your email and we&apos;ll send you a temporary password to sign in with.
-            </p>
-            <Input
-              id="reset-email"
-              type="email"
-              required
-              autoComplete="email"
-              placeholder="you@calari.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="h-10"
-            />
-          </div>
-
-          {state === "error" && (
-            <div className="flex items-center gap-2 text-xs text-red-600">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              {message}
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <Button type="submit" disabled={state === "sending"} className="h-9 flex-1">
-              <Mail className="h-4 w-4" />
-              {state === "sending" ? "Sending…" : "Email me a temporary password"}
-            </Button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="h-9 rounded-md px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
       )}
-    </div>
+
+      <Button type="submit" disabled={state === "sending"} className="h-10 w-full">
+        <Mail className="h-4 w-4" />
+        {state === "sending" ? "Sending…" : "Send temporary password"}
+      </Button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-pink-700"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+      </button>
+    </form>
   );
 }
