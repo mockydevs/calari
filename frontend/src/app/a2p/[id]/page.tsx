@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileDown } from "lucide-react";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { formatDate } from "@/lib/utils";
@@ -55,16 +55,24 @@ export default async function A2PDetailPage({ params }: { params: Promise<{ id: 
             {s.dba_brand_name && <p className="mt-1 text-sm text-slate-600">DBA: {s.dba_brand_name}</p>}
             <p className="mt-1 text-xs text-slate-400">Submitted {formatDate(s.created_at)}</p>
           </div>
-          <form action={updateA2PSubmission} className="flex items-end gap-2">
-            <input type="hidden" name="id" value={s.id} />
-            <div className="space-y-1">
-              <Label htmlFor="status" className="text-xs">Status</Label>
-              <Select id="status" name="status" defaultValue={s.status} className="h-9">
-                {A2P_STATUSES.map((st) => <option key={st} value={st}>{A2P_STATUS_LABEL[st]}</option>)}
-              </Select>
-            </div>
-            <Button type="submit" size="sm" variant="outline">Update</Button>
-          </form>
+          <div className="flex items-end gap-2">
+            <a
+              href={`/api/portal/a2p/submissions/${s.id}/export-pdf`}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              <FileDown className="h-4 w-4" /> PDF
+            </a>
+            <form action={updateA2PSubmission} className="flex items-end gap-2">
+              <input type="hidden" name="id" value={s.id} />
+              <div className="space-y-1">
+                <Label htmlFor="status" className="text-xs">Status</Label>
+                <Select id="status" name="status" defaultValue={s.status} className="h-9">
+                  {A2P_STATUSES.map((st) => <option key={st} value={st}>{A2P_STATUS_LABEL[st]}</option>)}
+                </Select>
+              </div>
+              <Button type="submit" size="sm" variant="outline">Update</Button>
+            </form>
+          </div>
         </div>
       </section>
 
