@@ -87,6 +87,7 @@ INSTALLED_APPS = [
     'Auth',
     'projects',
     'builds',
+    'vectorstore',
 
 ]
 
@@ -230,6 +231,28 @@ else:
 # otherwise every request pays a fresh connect/TLS round-trip.
 DATABASES['default']['CONN_MAX_AGE'] = 60
 DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+
+# ── Second database: pgvector store for semantic Build Library retrieval ──
+# Optional. When VECTOR_DATABASE_URL is set, the `vectorstore` app (embeddings)
+# lives here and retrieval goes semantic; otherwise it's absent and retrieval
+# falls back to Postgres full-text search on the default DB. Kept separate because
+# the main managed Postgres doesn't have the `vector` extension.
+VECTOR_DATABASE_URL = os.getenv("VECTOR_DATABASE_URL")
+VECTOR_DB_ALIAS = "vectors"
+if VECTOR_DATABASE_URL:
+    _vdb = urlparse(VECTOR_DATABASE_URL)
+    DATABASES[VECTOR_DB_ALIAS] = {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': (_vdb.path or '/postgres').lstrip('/') or 'postgres',
+        'USER': unquote(_vdb.username or ''),
+        'PASSWORD': unquote(_vdb.password or ''),
+        'HOST': _vdb.hostname or '127.0.0.1',
+        'PORT': str(_vdb.port or 5432),
+        'CONN_MAX_AGE': 60,
+        'CONN_HEALTH_CHECKS': True,
+    }
+
+DATABASE_ROUTERS = ["config.db_router.VectorRouter"]
 
 
 # Password validation

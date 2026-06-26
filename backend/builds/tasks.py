@@ -46,6 +46,26 @@ def run_build_qa(self, build_id, user_id):
         return
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def reindex_knowledge(self, knowledge_id):
+    """(Re)embed a Build Library doc into the pgvector store. No-op if vectors aren't
+    configured. Retries on transient embedding/API errors."""
+    from .models import BuildKnowledge
+    kn = BuildKnowledge.objects.filter(pk=knowledge_id).first()
+    if not kn:
+        services.delete_knowledge_chunks(knowledge_id)
+        return
+    try:
+        services.index_knowledge(kn)
+    except Exception as exc:  # noqa: BLE001
+        raise self.retry(exc=exc)
+
+
+@shared_task
+def remove_knowledge_chunks(knowledge_id):
+    services.delete_knowledge_chunks(knowledge_id)
+
+
 @shared_task(bind=True, max_retries=1, default_retry_delay=15)
 def generate_task_sop(self, task_id):
     """Generate a step-by-step SOP for a build task and save it as the description."""

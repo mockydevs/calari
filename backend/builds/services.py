@@ -629,6 +629,101 @@ def _candidate_docs(build, query_text: str):
     return list(out.values())
 
 
+# ─── Semantic vector retrieval (optional second DB: pgvector) ─────────────────
+EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+EMBED_DIM = 1536
+
+
+def _vectors_enabled() -> bool:
+    return getattr(settings, "VECTOR_DB_ALIAS", "vectors") in settings.DATABASES
+
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed text via OpenAI (embeddings are OpenAI regardless of the chat provider)."""
+    client = _openai_client()
+    resp = client.embeddings.create(model=EMBED_MODEL, input=texts)
+    return [d.embedding for d in resp.data]
+
+
+def _chunk_text(text: str, size: int = 1500, overlap: int = 150, max_chunks: int = 50) -> list[str]:
+    text = (text or "").strip()
+    if not text:
+        return []
+    chunks, i = [], 0
+    step = max(size - overlap, 1)
+    while i < len(text) and len(chunks) < max_chunks:
+        chunks.append(text[i:i + size])
+        i += step
+    return chunks
+
+
+def index_knowledge(knowledge) -> int:
+    """(Re)build the vector chunks for one BuildKnowledge doc in the vectors DB.
+    No-op when the vector DB isn't configured."""
+    if not _vectors_enabled():
+        return 0
+    from vectorstore.models import BuildKnowledgeChunk
+
+    BuildKnowledgeChunk.objects.filter(knowledge_id=knowledge.id).delete()
+    if not knowledge.use_for_ai:
+        return 0
+    text = "\n\n".join(filter(None, [knowledge.summary, knowledge.raw_text]))
+    chunks = _chunk_text(text)
+    if not chunks:
+        return 0
+    vectors = embed_texts(chunks)
+    BuildKnowledgeChunk.objects.bulk_create([
+        BuildKnowledgeChunk(
+            knowledge_id=knowledge.id, client_id=knowledge.client_id, title=knowledge.title,
+            chunk_index=i, content=c, embedding=v, use_for_ai=True,
+        )
+        for i, (c, v) in enumerate(zip(chunks, vectors))
+    ])
+    return len(chunks)
+
+
+def delete_knowledge_chunks(knowledge_id) -> int:
+    if not _vectors_enabled():
+        return 0
+    from vectorstore.models import BuildKnowledgeChunk
+    deleted, _ = BuildKnowledgeChunk.objects.filter(knowledge_id=knowledge_id).delete()
+    return deleted
+
+
+def _semantic_context(build, query_text: str):
+    """Top relevant chunks by cosine similarity from the pgvector store, preferring
+    same-client docs. Returns None (→ caller falls back to FTS) if unavailable."""
+    if not _vectors_enabled() or not query_text.strip():
+        return None
+    try:
+        from vectorstore.models import BuildKnowledgeChunk
+        from pgvector.django import CosineDistance
+
+        qv = embed_texts([query_text])[0]
+        base = BuildKnowledgeChunk.objects.filter(use_for_ai=True).annotate(
+            dist=CosineDistance("embedding", qv))
+        rows, seen = [], set()
+        if getattr(build, "client_id", None):
+            for r in base.filter(client_id=build.client_id).order_by("dist")[:4]:
+                rows.append(r); seen.add(r.id)
+        for r in base.order_by("dist")[:8]:
+            if r.id not in seen:
+                rows.append(r); seen.add(r.id)
+        if not rows:
+            return None
+        parts, budget = [], KNOWLEDGE_MAX_CHARS
+        for r in rows:
+            block = f"### {r.title}\n{r.content.strip()[:_REF_PER_DOC_CHARS]}"
+            if parts and budget - len(block) < 0:
+                break
+            parts.append(block)
+            budget -= len(block)
+        return ("\n\n".join(parts)[:KNOWLEDGE_MAX_CHARS]) or None
+    except Exception:  # noqa: BLE001 — any failure → FTS fallback
+        logger.exception("semantic retrieval failed; falling back to full-text search")
+        return None
+
+
 def build_reference_context(build) -> str:
     """Gather excerpts from the Build Library (use_for_ai docs) as reference material so
     generation learns from how Calari actually builds. Prefers same-client docs, then
@@ -638,8 +733,13 @@ def build_reference_context(build) -> str:
     query_text = " ".join(filter(None, (
         getattr(build, "title", ""), getattr(build, "goals", ""), getattr(build, "integrations", ""),
     )))
-    query_tokens = _ref_tokenize(query_text)
 
+    # Semantic first (pgvector second DB) when configured; FTS keyword path otherwise.
+    semantic = _semantic_context(build, query_text)
+    if semantic:
+        return semantic
+
+    query_tokens = _ref_tokenize(query_text)
     docs = _candidate_docs(build, query_text)  # bounded + DB-ranked; never loads the whole library
 
     def ranked(group):

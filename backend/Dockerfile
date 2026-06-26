@@ -34,7 +34,7 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 # anthropic isn't in the hash-pinned requirements export; install it separately
 # so pip's hash-checking mode (triggered by the hashed requirements) isn't broken.
-RUN pip install --no-cache-dir "anthropic>=0.40,<1.0"
+RUN pip install --no-cache-dir "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0"
 
 COPY . .
 
@@ -42,4 +42,4 @@ EXPOSE 8000
 
 # Apply migrations, run Celery worker + beat in the background, and serve the
 # ASGI app with Daphne (required for Channels websockets) in the foreground.
-CMD bash -c "python manage.py migrate --noinput && python manage.py seed_build_library || true; (celery -A config worker --loglevel=info &) && (celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler &) && daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+CMD bash -c "python manage.py migrate --noinput && python manage.py migrate vectorstore --database=vectors --noinput || true; python manage.py seed_build_library || true; (celery -A config worker --loglevel=info &) && (celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler &) && daphne -b 0.0.0.0 -p 8000 config.asgi:application"
