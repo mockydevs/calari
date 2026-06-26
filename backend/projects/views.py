@@ -56,6 +56,9 @@ from .serializers import (
     TaskLabelSerializer, TaskCommentSerializer, TaskChecklistSerializer, TaskActivitySerializer,
 )
 from .tasks import send_notification_email
+from .permissions import (
+    IsManagerOrProjectMember, IsManagerOrTaskOwner, IsManagerOrReadOnly,
+)
 
 # Use IsAuthenticated always (security-first; DEBUG open-access removed)
 _PERMISSIONS = [IsAuthenticated]
@@ -119,7 +122,8 @@ def _notify(recipient, subject, event_type, event_title, event_detail, actor, pr
 class ClientsViewSet(viewsets.ModelViewSet):
     queryset = Clients.objects.all()
     serializer_class = ClientsSerializer
-    permission_classes = _PERMISSIONS
+    # Clients have no per-user owner — anyone may read, only managers may write.
+    permission_classes = [IsManagerOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['is_active']
     search_fields = ['name', 'email', 'phone_number', 'company_name']
@@ -142,10 +146,14 @@ class ProjectsViewSet(viewsets.ModelViewSet):
     queryset = Projects.objects.select_related('client', 'assigned_to').prefetch_related(
         'files__uploaded_by', 'contacts',
         'blockers__reported_by', 'blockers__resolved_by',
-        'tasks__assigned_to', 'co_assignments__user', 'milestones__created_by',
+        # tasks are serialized with TaskCardSerializer, which reads each task's
+        # checklist/comments/labels for its counts — prefetch them so those
+        # reads hit cache instead of N+1-ing per task.
+        'tasks__assigned_to', 'tasks__checklist', 'tasks__comments', 'tasks__labels',
+        'co_assignments__user', 'milestones__created_by',
     ).all()
     serializer_class = ProjectsSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrProjectMember]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['client', 'assigned_to', 'status', 'priority', 'start_date', 'end_date']
     search_fields = ['name', 'description', 'client__name', 'assigned_to__username']
@@ -551,7 +559,7 @@ class TasksViewSet(viewsets.ModelViewSet):
         'comments__author', 'checklist__completed_by', 'labels', 'activities__user',
     ).all()
     serializer_class = TasksSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrTaskOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['project', 'assigned_to', 'status', 'priority', 'created_by', 'due_date']
     search_fields = ['name', 'description', 'project__name', 'assigned_to__username']

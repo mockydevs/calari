@@ -297,15 +297,17 @@ class TasksSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.IntegerField())
     def get_checklist_total(self, obj):
-        return obj.checklist.count()
+        # Count over the prefetched list (len of .all()) instead of .count(),
+        # which would issue a fresh COUNT query per task and defeat the prefetch.
+        return len(obj.checklist.all())
 
     @extend_schema_field(serializers.IntegerField())
     def get_checklist_done(self, obj):
-        return obj.checklist.filter(completed=True).count()
+        return sum(1 for c in obj.checklist.all() if c.completed)
 
     @extend_schema_field(serializers.IntegerField())
     def get_comment_count(self, obj):
-        return obj.comments.count()
+        return len(obj.comments.all())
 
 
 # Lightweight serializer for Kanban board cards (avoids heavy nested queries)
@@ -344,15 +346,16 @@ class TaskCardSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.IntegerField())
     def get_checklist_total(self, obj):
-        return obj.checklist.count()
+        # See TasksSerializer: iterate the prefetched relation, never .count().
+        return len(obj.checklist.all())
 
     @extend_schema_field(serializers.IntegerField())
     def get_checklist_done(self, obj):
-        return obj.checklist.filter(completed=True).count()
+        return sum(1 for c in obj.checklist.all() if c.completed)
 
     @extend_schema_field(serializers.IntegerField())
     def get_comment_count(self, obj):
-        return obj.comments.count()
+        return len(obj.comments.all())
 
 
 # ─────────────────────────────────────────────────────────────
@@ -392,10 +395,13 @@ class ProjectsSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.IntegerField())
     def get_progress_percent(self, obj):
-        total = obj.tasks.count()
+        # Tasks are already prefetched + fully serialized below, so count them in
+        # Python rather than firing two extra COUNT queries per project.
+        tasks = obj.tasks.all()
+        total = len(tasks)
         if total == 0:
             return 0
-        done = obj.tasks.filter(status='done').count()
+        done = sum(1 for t in tasks if t.status == 'done')
         return round((done / total) * 100)
 
 
@@ -435,22 +441,27 @@ class ProjectListSerializer(serializers.ModelSerializer):
     def get_client_name(self, obj):
         return obj.client.name if obj.client else None
 
+    # All four counts read from the `tasks` / `blockers` relations that the
+    # my_projects view prefetches. Using len()/sum() over the cached .all()
+    # reuses that prefetch; the previous .count()/.filter() calls each issued a
+    # fresh query per project (≈5 × N), making the prefetch dead weight.
     @extend_schema_field(serializers.IntegerField())
     def get_progress_percent(self, obj):
-        total = obj.tasks.count()
+        tasks = obj.tasks.all()
+        total = len(tasks)
         if total == 0:
             return 0
-        done = obj.tasks.filter(status='done').count()
+        done = sum(1 for t in tasks if t.status == 'done')
         return round((done / total) * 100)
 
     @extend_schema_field(serializers.IntegerField())
     def get_task_total(self, obj):
-        return obj.tasks.count()
+        return len(obj.tasks.all())
 
     @extend_schema_field(serializers.IntegerField())
     def get_task_done(self, obj):
-        return obj.tasks.filter(status='done').count()
+        return sum(1 for t in obj.tasks.all() if t.status == 'done')
 
     @extend_schema_field(serializers.IntegerField())
     def get_open_blockers(self, obj):
-        return obj.blockers.filter(resolved=False).count()
+        return sum(1 for b in obj.blockers.all() if not b.resolved)

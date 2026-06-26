@@ -130,7 +130,10 @@ AWS_DEFAULT_ACL = S3_DEFAULT_ACL
 AWS_QUERYSTRING_AUTH = S3_QUERYSTRING_AUTH
 AWS_S3_REGION_NAME = S3_REGION
 AWS_S3_SIGNATURE_VERSION = 's3v4'
-AWS_S3_VERIFY = False
+# Verify TLS certs by default. Only an S3-compatible endpoint with a self-signed
+# cert (e.g. local MinIO) should opt out via S3_VERIFY=False — never disable it
+# against real AWS/managed S3, which would expose uploads to MITM.
+AWS_S3_VERIFY = str2bool(os.getenv("S3_VERIFY", "True"))
 
 # Use S3 only when it is FULLY configured (bucket + access key + secret). A
 # partial config (e.g. an empty S3_BUCKET_NAME, or keys without a bucket) must
