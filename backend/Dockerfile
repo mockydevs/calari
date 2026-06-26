@@ -32,9 +32,10 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt ./
 
 RUN pip install --upgrade pip && pip install -r requirements.txt
-# anthropic isn't in the hash-pinned requirements export; install it separately
-# so pip's hash-checking mode (triggered by the hashed requirements) isn't broken.
-RUN pip install --no-cache-dir "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0"
+# openai/anthropic/pgvector aren't in the hash-pinned requirements export, so
+# install them separately (a single hashed entry would force --require-hashes on
+# all of requirements.txt). Without this, every AI call fails: "No module named 'openai'".
+RUN pip install --no-cache-dir "openai>=2,<3" "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0"
 
 COPY . .
 
