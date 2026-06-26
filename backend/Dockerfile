@@ -42,4 +42,4 @@ EXPOSE 8000
 
 # Apply migrations, run Celery worker + beat in the background, and serve the
 # ASGI app with Daphne (required for Channels websockets) in the foreground.
-CMD bash -c "python manage.py migrate --noinput && (celery -A config worker --loglevel=info &) && (celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler &) && daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+CMD bash -c "python manage.py migrate --noinput && python manage.py seed_build_library || true; (celery -A config worker --loglevel=info &) && (celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler &) && daphne -b 0.0.0.0 -p 8000 config.asgi:application"

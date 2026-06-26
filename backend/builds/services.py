@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 
 from django.conf import settings
@@ -162,14 +163,18 @@ def _anthropic_complete(model, messages, response_format, max_tokens) -> str:
         raise RuntimeError("Anthropic API key is not configured")
     client = anthropic.Anthropic(api_key=key)
 
-    # Anthropic separates the system prompt from the message list.
-    system = "\n\n".join(m["content"] for m in messages if m.get("role") == "system")
+    # Anthropic separates the system prompt from the message list. Send it as blocks
+    # and cache the first one (our big static expert prompt) so repeat calls reuse it
+    # — large cost + latency win at volume (OpenAI caches such prefixes automatically).
+    system_texts = [m["content"] for m in messages if m.get("role") == "system" and m.get("content")]
     conv = [{"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")]
     if not conv:
         conv = [{"role": "user", "content": ""}]
     kwargs = {"model": model, "max_tokens": max_tokens or 16000, "messages": conv}
-    if system:
-        kwargs["system"] = system
+    if system_texts:
+        blocks = [{"type": "text", "text": t} for t in system_texts]
+        blocks[0]["cache_control"] = {"type": "ephemeral"}
+        kwargs["system"] = blocks
 
     if response_format and response_format.get("type") == "json_schema":
         js = response_format["json_schema"]
@@ -507,6 +512,48 @@ _BLUEPRINT_SYSTEM_PROMPT = (
     "external integration whose direction, mechanism, or data flow is unclear — add a 'gaps' entry with a specific, answerable follow-up "
     "question and why it matters. Do NOT silently invent these; surface them as gaps. Only infer a "
     "sensible minimal default when the gap is low-stakes, and still note it as a low-severity gap.\n\n"
+    "CALARI STANDARD BUILD PATTERNS — these recur across our portfolio (dental, med-spa, "
+    "recruitment, home services, auto, events). Include the ones that fit, even when the notes "
+    "don't name them, marked inferred=true with a confidence level, and emit them through the "
+    "existing schema (workflows / preLaunchItems / tasks / gaps / externalIntegrations):\n"
+    "- Speed-to-lead: an auto-reply (email + SMS) within ~5 minutes of a form fill, plus an "
+    "internal alert to the ASSIGNED owner (not all users) with the contact's name/phone and a "
+    "follow-up task.\n"
+    "- Nurture: separate sequences for unqualified (warm-up) vs qualified (push-to-book) leads; "
+    "multi-touch SMS+email cadence; suppress/exit the moment they book.\n"
+    "- Appointment lifecycle: booking confirmation, reminders (commonly 24h + 1–2h before), "
+    "no-show recovery (graduated; only mark Lost after a rebooking window), and a reschedule flow "
+    "that CLEARS stale reminders and re-queues new ones.\n"
+    "- Post-visit: review request + referral ask after completion.\n"
+    "- Lead-source routing & tagging for clean attribution; a lead-value step that reads a "
+    "budget/qualification field and sets the opportunity value.\n"
+    "- Internal ops: booking alerts to the assigned rep and a daily digest of upcoming "
+    "appointments where useful.\n"
+    "- External app sync (often BIDIRECTIONAL GHL<->client app): appointments, estimates/quotes, "
+    "invoices, and pipeline-stage status — capture under externalIntegrations.\n"
+    "- Reporting pipelines: a data source -> Google Sheet -> reporting tool (scorecards/dashboards) "
+    "on a daily sync — capture as an OUTBOUND externalIntegration and note the sync cadence/latency.\n"
+    "- Embedded AI qualification: an AI step that validates eligibility (e.g., location/state) and "
+    "routes or auto-disqualifies — capture as a workflow and flag what it decides.\n"
+    "- Hygiene an expert always sets: sticky/dedup contacts, two-way calendar sync, and correct "
+    "email sender identity (assigned-user From-name + signature, never a blank merge tag).\n\n"
+    "A2P / SMS COMPLIANCE — MANDATORY whenever ANY workflow sends SMS (it is a required "
+    "pre-launch workstream, not a nicety, and is the most common thing that blocks go-live). When "
+    "the build sends SMS, ALWAYS include:\n"
+    "- preLaunchItems for: a compliant Privacy Policy + Terms of Service; an SMS consent flow "
+    "(unchecked opt-in checkbox, optional phone field, 'consent not required to purchase', message "
+    "types, 'message & data rates may apply', STOP/HELP instructions, and the mandatory "
+    "'no mobile information will be shared with third parties for marketing' clause); and Twilio "
+    "brand + campaign registration under the Customer Care / transactional use case with sample "
+    "messages.\n"
+    "- tasks to build the consent flow and submit the brand + campaign registration.\n"
+    "- an externalIntegration for the Twilio messaging service (mechanism API/NATIVE) connected to GHL.\n"
+    "- gaps for the unknowns that cause rejections: legal business name/DBA, the public opt-in form "
+    "URL, the campaign use case, and which sending numbers to link. RAISE these known failure modes "
+    "as gaps/notes: opt-in error 30896 (reviewers can't verify opt-in — promotional content on the "
+    "main site conflicts with a transactional Customer-Care campaign, often forcing a dedicated "
+    "standalone compliance website); TOLL-FREE numbers will NOT connect to GHL (use a LOCAL number); "
+    "and a previously approved brand may need deletion/reset before a clean resubmission.\n\n"
     "Meeting notes may include a kickoff plus later updates. Treat the earliest notes as the baseline "
     "intent and later notes as refinements that supersede earlier details only when they clearly "
     "conflict. Preserve unchanged context. Return only data matching the schema."
@@ -514,19 +561,100 @@ _BLUEPRINT_SYSTEM_PROMPT = (
 
 
 KNOWLEDGE_MAX_CHARS = 8000
+_REF_PER_DOC_CHARS = 2500
+_REF_SAME_CLIENT = 3   # how many same-client docs to include
+_REF_OTHER = 2         # how many general/other-client docs to include
+# Common words that carry no signal for matching a build to a reference doc.
+_REF_STOPWORDS = frozenset((
+    "the and for with that this from your you our are has have was were will "
+    "build builds client clients lead leads contact contacts workflow workflows "
+    "ghl gohighlevel system update completed pending into when then they them"
+).split())
+
+
+def _ref_tokenize(text: str) -> set[str]:
+    """Lowercase word set used for lightweight relevance scoring (>2 chars, no stopwords)."""
+    return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower())
+            if len(t) > 2 and t not in _REF_STOPWORDS}
+
+
+def relevance_score(doc_text: str, query_tokens: set[str]) -> int:
+    """Number of distinct query tokens that appear in the doc — a cheap, dependency-free
+    proxy for 'how relevant is this past build to the one being generated'. Pure function
+    so it can be unit-tested without a database."""
+    if not query_tokens:
+        return 0
+    return len(query_tokens & _ref_tokenize(doc_text))
+
+
+_REF_CANDIDATE_LIMIT = 25  # cap docs pulled into memory regardless of library size
+
+
+def _candidate_docs(build, query_text: str):
+    """Bounded candidate set for reference selection — SCALES by ranking + LIMITing at
+    the DB (Postgres full-text search; no extension needed) instead of loading the whole
+    library into memory. Always includes recent same-client docs (so client context is
+    never missed), then the most lexically-relevant general docs. Falls back to most-recent
+    if FTS is unavailable or matches nothing. Final fine-ranking happens in Python on this
+    bounded set."""
+    from .models import BuildKnowledge
+
+    base = BuildKnowledge.objects.filter(use_for_ai=True)
+    out: dict = {}
+    if getattr(build, "client_id", None):
+        for d in base.filter(client_id=build.client_id).order_by("-created_at")[:_REF_CANDIDATE_LIMIT]:
+            out[d.id] = d
+
+    general = None
+    if query_text.strip():
+        try:
+            from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+            vector = (
+                SearchVector("title", weight="A")
+                + SearchVector("summary", weight="B")
+                + SearchVector("raw_text", weight="D")
+            )
+            query = SearchQuery(query_text, search_type="websearch")
+            general = list(
+                base.annotate(rank=SearchRank(vector, query)).filter(rank__gt=0)
+                .order_by("-rank")[:_REF_CANDIDATE_LIMIT]
+            )
+        except Exception:  # noqa: BLE001 — FTS unavailable/misconfig → recency fallback
+            general = None
+    if not general:
+        general = list(base.order_by("-created_at")[:_REF_CANDIDATE_LIMIT])
+
+    for d in general:
+        out.setdefault(d.id, d)
+    return list(out.values())
 
 
 def build_reference_context(build) -> str:
-    """Gather excerpts from the Build Library (use_for_ai docs) as reference material
-    so generation learns from how Calari actually builds. Prefers same-client docs,
-    then general ones; capped in count and size."""
-    from .models import BuildKnowledge
+    """Gather excerpts from the Build Library (use_for_ai docs) as reference material so
+    generation learns from how Calari actually builds. Prefers same-client docs, then
+    general ones; within each group the most RELEVANT docs (by overlap with this build's
+    title/goals/integrations) come first, so the library can grow without burying the
+    references that actually match the build being generated. Capped in count and size."""
+    query_text = " ".join(filter(None, (
+        getattr(build, "title", ""), getattr(build, "goals", ""), getattr(build, "integrations", ""),
+    )))
+    query_tokens = _ref_tokenize(query_text)
 
-    qs = BuildKnowledge.objects.filter(use_for_ai=True).exclude(raw_text="")
-    docs = list(qs.filter(client_id=build.client_id)[:3]) + list(qs.exclude(client_id=build.client_id)[:2])
+    docs = _candidate_docs(build, query_text)  # bounded + DB-ranked; never loads the whole library
+
+    def ranked(group):
+        # Highest relevance first; sorted() is stable so ties keep the queryset's
+        # default ordering (most recent first).
+        return sorted(group, key=lambda d: relevance_score(
+            f"{d.title} {d.summary} {d.raw_text}", query_tokens), reverse=True)
+
+    same = ranked([d for d in docs if build.client_id and d.client_id == build.client_id])[:_REF_SAME_CLIENT]
+    same_ids = {d.id for d in same}
+    other = ranked([d for d in docs if d.id not in same_ids])[:_REF_OTHER]
+
     parts, budget = [], KNOWLEDGE_MAX_CHARS
-    for d in docs:
-        excerpt = (d.summary or d.raw_text or "").strip()[:2500]
+    for d in same + other:
+        excerpt = (d.summary or d.raw_text or "").strip()[:_REF_PER_DOC_CHARS]
         if not excerpt:
             continue
         block = f"### {d.title}\n{excerpt}"
