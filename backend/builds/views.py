@@ -22,6 +22,7 @@ from .models import (
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
     TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
+    ApprovalType,
 )
 from .serializers import (
     BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
@@ -34,6 +35,7 @@ from .serializers import (
     CalendarSerializer, IntegrationSerializer,
 )
 from . import services
+from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner
 
 User = get_user_model()
 PERMS = [IsAuthenticated]
@@ -140,7 +142,9 @@ _DETAIL_PREFETCH = (
 
 class BuildViewSet(viewsets.ModelViewSet):
     queryset = Build.objects.select_related("client", "creator", "assignee").all()
-    permission_classes = PERMS
+    # Reads open to all staff; writes (incl. assign/status/delete/AI actions)
+    # require a manager, the creator, or the assignee.
+    permission_classes = [IsManagerOrBuildOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["status", "assignee", "client"]
     search_fields = ["title", "goals", "integrations", "client__name"]
@@ -191,6 +195,38 @@ class BuildViewSet(viewsets.ModelViewSet):
             _notify(build.creator, "READY_FOR_REVIEW", f'"{build.title}" is ready for review.', f"/builds/{build.id}")
         elif new_status == BuildStatus.CHANGES_REQUESTED:
             _notify(build.assignee, "CHANGES_REQUESTED", f'Changes requested on "{build.title}".', f"/builds/{build.id}")
+        return Response(BuildSerializer(build).data)
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        """Admin approves the AI build-out and hands it to staff to implement.
+
+        Records a BRIEF approval, assigns the build, moves it to ASSIGNED, and
+        notifies the assignee. This is the gate between the AI draft and staff
+        starting the build.
+        """
+        if not _is_manager(request.user):
+            return Response({"error": "Only admins can approve a build-out."}, status=http.HTTP_403_FORBIDDEN)
+        build = self.get_object()
+        assignee = User.objects.filter(id=request.data.get("assignee_id")).first() or build.assignee
+        if not assignee:
+            return Response(
+                {"error": "Assign a staff member before approving."},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+        build.assignee = assignee
+        build.status = BuildStatus.ASSIGNED
+        build.save(update_fields=["assignee", "status", "updated_at"])
+        ApprovalRecord.objects.create(
+            build=build, approver=request.user, type=ApprovalType.BRIEF,
+            note=(request.data.get("note") or "").strip() or "Build-out approved — handed to staff.",
+        )
+        _log(build, request.user, f"Build-out approved and handed to {assignee.get_full_name() or assignee.username}.")
+        _notify(
+            assignee, "BUILD_ASSIGNED",
+            f'Build "{build.title}" approved — ready to implement.',
+            f"/builds/{build.id}", actor=request.user, build_name=build.title,
+        )
         return Response(BuildSerializer(build).data)
 
     @action(detail=True, methods=["post"], url_path="enable-portal")
@@ -284,7 +320,7 @@ def my_builds(request):
 # ─── Tasks ────────────────────────────────────────────────────────────────────
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.select_related("assignee", "build").prefetch_related("documents__uploader", "comments__author").all()
-    permission_classes = PERMS
+    permission_classes = [IsManagerOrBuildTaskOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["build", "status", "type", "assignee"]
     search_fields = ["title", "description"]

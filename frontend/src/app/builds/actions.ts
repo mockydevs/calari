@@ -44,6 +44,19 @@ export async function assignBuild(formData: FormData) {
   revalidatePath(`/builds/${id}`);
 }
 
+export async function approveBuild(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const assigneeId = String(formData.get("assigneeId") ?? "");
+  if (!id) throw new Error("Build is required");
+  // assignee_id is optional — the backend falls back to the current assignee.
+  await serverApi.post(
+    `builds/builds/${id}/approve`,
+    assigneeId ? { assignee_id: Number(assigneeId) } : {},
+  );
+  revalidatePath(`/builds/${id}`);
+}
+
 export async function setBuildStatus(formData: FormData) {
   await requireUser();
   const id = String(formData.get("id") ?? "");

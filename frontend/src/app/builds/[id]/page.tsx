@@ -9,13 +9,14 @@ import { serverApi } from "@/lib/portal/server";
 import {
   addComment, addMeetingNote, assignBuild, createChangeRequest, createTask, enablePortal,
   recordApproval, resolveGap, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
-  updateTaskStatus, uploadDocument,
+  updateTaskStatus, uploadDocument, approveBuild,
 } from "../actions";
 import { BuildDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
 import { HandoverButton } from "../handover-button";
 import { MeetingNoteUpload } from "../meeting-note-upload";
 import { RunQaButton, GenerateSopButton } from "../ai-buttons";
+import { BlueprintEditor } from "../blueprint-editor";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
   CALENDAR_TYPE_LABEL, GAP_CATEGORY_LABEL, GAP_SEVERITY_STYLE,
@@ -62,6 +63,13 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
     serverApi.get<MeetingNote[] | { results: MeetingNote[] }>(`builds/meeting-notes?build=${id}`).then(asList).catch(() => [] as MeetingNote[]),
   ]);
   if (!build) notFound();
+
+  // Reads are open to all staff, but the backend now limits build writes to a
+  // manager OR the build owner (assignee). Mirror that here so non-owners don't
+  // see status controls that would 403. Admin-only actions (assign, delete,
+  // AI generation) stay gated by isAdmin below.
+  const isOwner = build.assignee != null && String(build.assignee) === user.id;
+  const canManage = isAdmin || isOwner;
 
   const tasks = build.tasks ?? [];
   const stages = build.stages ?? [];
@@ -121,15 +129,17 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
             <p className="mt-1 text-sm text-slate-600">{build.client_name || "No client"}</p>
             <p className="mt-1 text-xs text-slate-400">Assignee: {build.assignee_name || "Unassigned"}</p>
           </div>
-          <form action={setBuildStatus} className="flex items-end gap-2">
-            <input type="hidden" name="id" value={id} />
-            <div className="space-y-1"><Label htmlFor="status" className="text-xs">Status</Label>
-              <Select id="status" name="status" defaultValue={build.status} className="h-9">
-                {BUILD_STATUSES.map((s) => <option key={s} value={s}>{BUILD_STATUS_LABEL[s]}</option>)}
-              </Select>
-            </div>
-            <Button type="submit" size="sm" variant="outline">Update</Button>
-          </form>
+          {canManage && (
+            <form action={setBuildStatus} className="flex items-end gap-2">
+              <input type="hidden" name="id" value={id} />
+              <div className="space-y-1"><Label htmlFor="status" className="text-xs">Status</Label>
+                <Select id="status" name="status" defaultValue={build.status} className="h-9">
+                  {BUILD_STATUSES.map((s) => <option key={s} value={s}>{BUILD_STATUS_LABEL[s]}</option>)}
+                </Select>
+              </div>
+              <Button type="submit" size="sm" variant="outline">Update</Button>
+            </form>
+          )}
         </div>
         {isAdmin && (
           <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-slate-100 pt-4">
@@ -154,6 +164,21 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
               <BuildDeleteButton id={Number(id)} title={build.title} label="Delete build" />
             </div>
           </div>
+        )}
+        {/* Approval gate: review/edit the AI build-out, then approve to hand it to staff. */}
+        {isAdmin && hasBlueprint && build.status !== "DELIVERED" && (
+          <form action={approveBuild} className="mt-4 flex flex-wrap items-end gap-2 rounded-md border border-emerald-200 bg-emerald-50/50 p-3">
+            <ShieldCheck className="h-4 w-4 text-emerald-700" />
+            <div className="space-y-1">
+              <Label htmlFor="approveAssignee" className="text-xs">Approve build-out &amp; hand to</Label>
+              <Select id="approveAssignee" name="assigneeId" defaultValue={build.assignee != null ? String(build.assignee) : ""} className="h-9">
+                <option value="" disabled>Select member</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
+              </Select>
+            </div>
+            <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700">Approve &amp; hand to staff</Button>
+            <p className="w-full text-xs text-emerald-800/80">Review and edit the blueprint below first — approving assigns the build and notifies the staff member to start implementing.</p>
+          </form>
         )}
       </section>
 
@@ -235,6 +260,28 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
           </form>
         </div>
       </Panel>
+
+      {/* Admin edit — correct the AI build-out before approving */}
+      {isAdmin && hasBlueprint && (
+        <Panel title="Edit blueprint" icon={<Sparkles className="h-4 w-4 text-pink-700" />}>
+          <BlueprintEditor
+            buildId={id}
+            stageOptions={stages.map((s) => ({ value: String(s.id), label: s.name }))}
+            sections={[
+              { resource: "stage", label: "Pipeline stages", items: stages },
+              { resource: "transition", label: "Stage movement", items: transitions },
+              { resource: "leadsource", label: "Lead sources", items: contactSources },
+              { resource: "calendar", label: "Calendars", items: calendars },
+              { resource: "integration", label: "Integrations", items: integrationLinks },
+              { resource: "workflow", label: "Workflows", items: workflows },
+              { resource: "customfield", label: "Custom fields & values", items: customFields },
+              { resource: "tag", label: "Tags", items: tags },
+              { resource: "prelaunch", label: "Pre-launch checklist", items: preLaunch },
+              { resource: "task", label: "Tasks", items: tasks },
+            ]}
+          />
+        </Panel>
+      )}
 
       {/* Vision gaps — what the AI couldn't pin down */}
       {(openGaps.length > 0 || resolvedGaps.length > 0) && (
@@ -477,11 +524,15 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                   <div className="min-w-0"><p className="text-sm font-medium text-slate-900">{t.title}</p><p className="text-xs text-slate-400">{t.type}</p></div>
                   <div className="flex items-center gap-2">
                     {isAdmin && <GenerateSopButton buildId={id} taskId={t.id} hasDescription={Boolean(t.description)} />}
-                    <form action={updateTaskStatus} className="flex items-center gap-2">
-                      <input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="buildId" value={id} />
-                      <Select name="status" defaultValue={t.status} className="h-8 text-xs">{TASK_STATUSES.map((s) => <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>)}</Select>
-                      <Button type="submit" size="sm" variant="outline">Set</Button>
-                    </form>
+                    {canManage ? (
+                      <form action={updateTaskStatus} className="flex items-center gap-2">
+                        <input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="buildId" value={id} />
+                        <Select name="status" defaultValue={t.status} className="h-8 text-xs">{TASK_STATUSES.map((s) => <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>)}</Select>
+                        <Button type="submit" size="sm" variant="outline">Set</Button>
+                      </form>
+                    ) : (
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{TASK_STATUS_LABEL[t.status]}</span>
+                    )}
                   </div>
                 </div>
                 {t.description && (
