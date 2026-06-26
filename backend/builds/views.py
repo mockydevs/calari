@@ -5,6 +5,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Count, Sum, Avg, Q
 from django.utils import timezone
 
 from projects.tasks import send_notification_email
@@ -22,7 +23,7 @@ from .models import (
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
     TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
-    ApprovalType, BuildKnowledge, AiConfig,
+    ApprovalType, BuildKnowledge, AiConfig, AiGenerationLog,
 )
 from .serializers import (
     BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
@@ -768,6 +769,79 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     def mark_all_read(self, request):
         self.get_queryset().filter(read=False).update(read=True)
         return Response({"ok": True})
+
+
+# Rough USD per 1M tokens (input, output). Estimates — update as provider pricing
+# changes; models not listed report tokens only (cost omitted).
+_AI_PRICES = {
+    "gpt-4o": (2.5, 10.0),
+    "gpt-4o-mini": (0.15, 0.6),
+    "text-embedding-3-small": (0.02, 0.0),
+    "text-embedding-3-large": (0.13, 0.0),
+    "claude-opus-4-8": (15.0, 75.0),
+}
+
+
+def _estimate_cost(model_rows) -> float | None:
+    total, known = 0.0, False
+    for r in model_rows:
+        price = _AI_PRICES.get(r.get("model"))
+        if not price:
+            continue
+        known = True
+        total += (r.get("prompt") or 0) / 1e6 * price[0] + (r.get("completion") or 0) / 1e6 * price[1]
+    return round(total, 4) if known else None
+
+
+@api_view(["GET"])
+@permission_classes(PERMS)
+def ai_usage(request):
+    """AI telemetry rollup (managers only): tokens / latency / success / est. cost
+    over a window, broken down by operation and model."""
+    if not _is_manager(request.user):
+        return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+    try:
+        days = max(1, min(int(request.query_params.get("days", 30)), 365))
+    except (TypeError, ValueError):
+        days = 30
+    since = timezone.now() - timezone.timedelta(days=days)
+    qs = AiGenerationLog.objects.filter(created_at__gte=since)
+
+    totals = qs.aggregate(
+        calls=Count("id"), ok=Count("id", filter=Q(ok=True)),
+        total_tokens=Sum("total_tokens"), prompt_tokens=Sum("prompt_tokens"),
+        completion_tokens=Sum("completion_tokens"), avg_latency_ms=Avg("latency_ms"),
+    )
+    by_op = list(qs.values("op").annotate(
+        calls=Count("id"), tokens=Sum("total_tokens"), avg_latency_ms=Avg("latency_ms"),
+        ok=Count("id", filter=Q(ok=True)),
+    ).order_by("-calls"))
+    by_model = list(qs.values("provider", "model").annotate(
+        calls=Count("id"), tokens=Sum("total_tokens"),
+        prompt=Sum("prompt_tokens"), completion=Sum("completion_tokens"),
+    ).order_by("-tokens"))
+
+    def _round_latency(rows):
+        for r in rows:
+            if r.get("avg_latency_ms") is not None:
+                r["avg_latency_ms"] = round(r["avg_latency_ms"])
+        return rows
+
+    calls = totals["calls"] or 0
+    return Response({
+        "days": days,
+        "totals": {
+            "calls": calls,
+            "ok_rate": round((totals["ok"] or 0) * 100 / calls) if calls else 100,
+            "total_tokens": totals["total_tokens"] or 0,
+            "prompt_tokens": totals["prompt_tokens"] or 0,
+            "completion_tokens": totals["completion_tokens"] or 0,
+            "avg_latency_ms": round(totals["avg_latency_ms"]) if totals["avg_latency_ms"] else 0,
+            "estimated_cost_usd": _estimate_cost(by_model),
+        },
+        "by_op": _round_latency(by_op),
+        "by_model": [{"provider": r["provider"], "model": r["model"], "calls": r["calls"], "tokens": r["tokens"]} for r in by_model],
+    })
 
 
 @api_view(["GET", "PATCH"])

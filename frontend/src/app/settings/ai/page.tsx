@@ -40,12 +40,24 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 }
 
 type AiConfig = { provider: string; model: string; blueprint_model: string; multi_pass: boolean };
+type AiUsage = {
+  days: number;
+  totals: {
+    calls: number; ok_rate: number; total_tokens: number; prompt_tokens: number;
+    completion_tokens: number; avg_latency_ms: number; estimated_cost_usd: number | null;
+  };
+  by_op: { op: string; calls: number; tokens: number | null; avg_latency_ms: number | null; ok: number }[];
+  by_model: { provider: string; model: string; calls: number; tokens: number | null }[];
+};
+
+const nfmt = (n: number | null | undefined) => (n ?? 0).toLocaleString();
 
 export default async function AiSettingsPage() {
   await requireAdmin();
-  const [keys, config] = await Promise.all([
+  const [keys, config, usage] = await Promise.all([
     serverApi.get<AiKey[] | { results: AiKey[] }>("builds/ai-keys").then(asList).catch(() => [] as AiKey[]),
     serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "", multi_pass: false } as AiConfig)),
+    serverApi.get<AiUsage>("builds/ai-usage").catch(() => null),
   ]);
   // Providers we actually generate with today (others can still store keys).
   const ACTIVE_PROVIDERS = ["OPENAI", "ANTHROPIC"];
@@ -103,6 +115,62 @@ export default async function AiSettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      {/* AI usage telemetry */}
+      {usage && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100"><Bot className="h-4 w-4" /></span>
+              AI usage — last {usage.days} days
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              {([
+                ["Calls", nfmt(usage.totals.calls)],
+                ["Tokens", nfmt(usage.totals.total_tokens)],
+                ["Success", `${usage.totals.ok_rate}%`],
+                ["Avg latency", `${nfmt(usage.totals.avg_latency_ms)} ms`],
+                ["Est. cost", usage.totals.estimated_cost_usd != null ? `$${usage.totals.estimated_cost_usd.toFixed(2)}` : "—"],
+              ] as [string, string][]).map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">{value}</p>
+                </div>
+              ))}
+            </div>
+            {usage.by_op.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead><tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="py-2 pr-3">Operation</th><th className="py-2 pr-3">Calls</th><th className="py-2 pr-3">Tokens</th><th className="py-2 pr-3">Avg ms</th><th className="py-2">OK</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-50">{usage.by_op.map((r) => (
+                    <tr key={r.op}>
+                      <td className="py-2 pr-3 font-medium text-slate-800">{r.op}</td>
+                      <td className="py-2 pr-3 text-slate-600">{nfmt(r.calls)}</td>
+                      <td className="py-2 pr-3 text-slate-600">{nfmt(r.tokens)}</td>
+                      <td className="py-2 pr-3 text-slate-600">{nfmt(r.avg_latency_ms)}</td>
+                      <td className="py-2 text-slate-600">{r.ok}/{r.calls}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">No AI calls recorded yet.</p>
+            )}
+            {usage.by_model.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {usage.by_model.map((m) => (
+                  <span key={`${m.provider}-${m.model}`} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{m.model || m.provider}: {nfmt(m.tokens)} tok</span>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-400">Cost is an estimate from public token pricing and may drift.</p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[1fr_390px]">
         <div className="space-y-4">

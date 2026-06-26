@@ -35,6 +35,7 @@ urlpatterns = [
     path("my-builds/", views.my_builds, name="my-builds"),
     path("notification-preferences/", views.notification_preferences, name="notification-preferences"),
     path("ai-config/", views.ai_config, name="ai-config"),
+    path("ai-usage/", views.ai_usage, name="ai-usage"),
     path("upload/presign/", views.upload_presign, name="upload-presign"),
     path("upload/finalize/", views.upload_finalize, name="upload-finalize"),
     path("portal/<str:token>/build/", views.portal_build, name="portal-build"),
