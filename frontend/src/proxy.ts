@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Public paths that don't require a session.
-const PUBLIC_PATHS = ["/login", "/signup", "/api/portal", "/api/health"];
+// /api/a2p-intake is the public relay for the marketing-site A2P form (anonymous).
+const PUBLIC_PATHS = ["/login", "/signup", "/api/portal", "/api/health", "/api/a2p-intake"];
 
 export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
