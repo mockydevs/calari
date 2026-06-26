@@ -91,8 +91,21 @@ export async function addMeetingNote(formData: FormData) {
   await requireUser();
   const buildId = String(formData.get("buildId") ?? "");
   const rawText = String(formData.get("rawText") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "meeting");
   if (!buildId || !rawText) throw new Error("Note is required");
-  await serverApi.post("builds/meeting-notes", { build: Number(buildId), raw_text: rawText, source: "follow_up" });
+  await serverApi.post("builds/meeting-notes", { build: Number(buildId), raw_text: rawText, source: "paste", kind });
+  revalidatePath(`/builds/${buildId}`);
+}
+
+export async function logProgressUpdate(formData: FormData) {
+  await requireUser();
+  const buildId = String(formData.get("buildId") ?? "");
+  const rawText = String(formData.get("rawText") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "progress");
+  if (!buildId || !rawText) throw new Error("Notes are required");
+  // Delta flow: captures scope changes / questions / progress without rewriting
+  // the blueprint. Backend processes asynchronously.
+  await serverApi.post(`builds/builds/${buildId}/progress-update`, { raw_text: rawText, kind });
   revalidatePath(`/builds/${buildId}`);
 }
 

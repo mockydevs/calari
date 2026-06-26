@@ -7,11 +7,12 @@ import {
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
-  addComment, addMeetingNote, createChangeRequest, createTask, enablePortal,
+  addComment, createChangeRequest, createTask, enablePortal,
   recordApproval, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
   updateTaskStatus, uploadDocument,
 } from "../actions";
 import { AssignApprove } from "../assign-approve";
+import { NoteComposer } from "../note-composer";
 import { GapResolver } from "../gap-resolver";
 import { BuildDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
@@ -24,7 +25,7 @@ import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
   CALENDAR_TYPE_LABEL, ProvBadge,
   INTEGRATION_DIRECTION_LABEL, INTEGRATION_DIRECTION_STYLE, INTEGRATION_MECHANISM_LABEL,
-  TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES,
+  TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES, MEETING_NOTE_KIND_LABEL,
   WORKFLOW_CATEGORY_LABEL, type BuildDetail, type MeetingNote, type Workflow,
 } from "../_shared";
 import { Badge } from "@/components/ui/badge";
@@ -229,25 +230,28 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
             )}
 
             <div className="mt-5 border-t border-slate-100 pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Meeting notes ({notes.length})</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Meeting history ({notes.length})</p>
               {notes.length > 0 && (
                 <ul className="mt-2 space-y-2">{notes.map((n) => (
                   <li key={n.id} className="rounded-md bg-slate-50 p-2.5 text-xs text-slate-700">
-                    <span className="text-slate-400">{n.source} · {formatDate(n.created_at)}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="font-semibold text-slate-800">{n.title || MEETING_NOTE_KIND_LABEL[n.kind ?? "meeting"] || "Notes"}</span>
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">{MEETING_NOTE_KIND_LABEL[n.kind ?? "meeting"] ?? "Note"}</span>
+                        {n.ai_status === "processing" && <span className="text-[10px] text-amber-600">processing…</span>}
+                      </span>
+                      <span className="text-slate-400">{formatDate(n.created_at)}</span>
+                    </div>
                     <p className="mt-1 line-clamp-4 whitespace-pre-wrap">{n.raw_text}</p>
                   </li>
                 ))}</ul>
               )}
-              <form action={addMeetingNote} className="mt-3 space-y-2">
-                <input type="hidden" name="buildId" value={id} />
-                <Textarea name="rawText" rows={3} placeholder="Paste or type follow-up meeting notes…" required />
-                <div className="flex items-center gap-2">
-                  <Button type="submit" size="sm" variant="outline"><Plus className="h-3.5 w-3.5" /> Add note</Button>
-                  <span className="text-xs text-slate-400">or</span>
-                  <MeetingNoteUpload buildId={id} />
-                  <span className="text-xs text-slate-400">PDF, DOCX, TXT, CSV, MD, RTF</span>
-                </div>
-              </form>
+              <NoteComposer buildId={id} />
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-slate-400">or upload a file</span>
+                <MeetingNoteUpload buildId={id} />
+                <span className="text-xs text-slate-400">PDF, DOCX, TXT, CSV, MD, RTF</span>
+              </div>
             </div>
           </Panel>
         </TabPanel>

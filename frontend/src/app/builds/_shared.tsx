@@ -170,7 +170,14 @@ export interface Approval { id: number; type: string; note: string; approver_nam
 export interface BuildComment { id: number; body: string; author_name?: string; created_at: string }
 export interface BuildDocument { id: number; filename: string; url: string; uploaded_by_name?: string; created_at: string }
 export interface BuildActivity { id: number; actor: string; message: string; created_at: string }
-export interface MeetingNote { id: number; raw_text: string; source: string; ai_status: string; created_at: string }
+export interface MeetingNote {
+  id: number; raw_text: string; source: string; ai_status: string; created_at: string;
+  kind?: string; title?: string; meeting_date?: string | null;
+}
+export const MEETING_NOTE_KIND_LABEL: Record<string, string> = {
+  kickoff: "Kickoff", meeting: "Meeting notes", progress: "Progress update",
+  change_request: "Client-requested update", other: "Note",
+};
 export interface MemorySnapshot { id: number; summary: string; scope_changes: string; created_by_name?: string; created_by_ai: boolean; created_at: string }
 
 export const CHANGE_REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED", "IMPLEMENTED"] as const;
