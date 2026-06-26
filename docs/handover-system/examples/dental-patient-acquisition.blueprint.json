@@ -1,0 +1,286 @@
+{
+  "overview": "Everything funnels into one GoHighLevel pipeline — Patient Acquisition — which is the single source of truth for every lead regardless of source. The team works one board daily; automations move leads forward wherever there is a reliable signal (form submit, relo tag, booking webhook, appointment status), and the team manually handles the few judgment steps (logging the 3-month value, marking Lost). Four sources feed it: website form fills, Patient Prism relo (reload) call leads, Patient Prism general call events, and Modento online bookings.",
+  "oneLineSummary": "Every lead — website, Patient Prism call, relo, or online booking — lands in one pipeline and moves itself forward until the appointment is completed; staff only log the 3-month value and mark Lost.",
+  "goals": "Replace the practice's spreadsheet with a single GHL pipeline that captures every lead source, surfaces high-value reload leads in a Qualified stage with an alert and the call's dollar value, nurtures leads to book online, and tracks conversion quality end to end.",
+  "integrations": ["GoHighLevel", "Patient Prism", "Modento / Dental Intelligence", "Google Tag Manager", "Meta Conversion API"],
+  "maintenanceNotes": "Relo sync is a standalone Python cron service (runs ~daily) that reads Patient Prism and writes to the GHL Contacts API; env vars: PATIENT_PRISM_TOKEN, GHL_TOKEN, GHL_LOCATION_ID. GHL token needs contacts.write + locations/customFields.readonly. The sync's SQLite state DB is production data — back it up. Online bookings depend on a GTM container (capture tag + send tag, secret-validated webhook); changes must be published. Meta CAPI fires from the call-events workflow for ad optimization. Increase the cron frequency if near-real-time relos are required.",
+  "leadSources": [
+    {
+      "type": "WEBSITE",
+      "label": "Website form fills",
+      "entryMechanism": "GHL 'Form Submitted' trigger",
+      "fires": "Internal team email + task to the practice owner; UTM source tagging",
+      "tagsApplied": "Website, source UTM tags (Meta / Google / paid / none)",
+      "handlingWorkflow": "IN1 - Website Form Leads",
+      "entryStage": "New Lead – Unqualified",
+      "notes": "Branches by ad source before creating the opportunity.",
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "type": "OTHER",
+      "label": "Patient Prism reload (relo) leads",
+      "entryMechanism": "Python cron sync → GHL Contacts API upsert (dedup by phone), then tag added as a separate call",
+      "fires": "Meta CAPI, internal relo alert, task to the practice owner",
+      "tagsApplied": "new-opportunity, follow-up, not-booked, patient_prism_call",
+      "handlingWorkflow": "A1 - Patient Prism Relo Leads (to Qualified)",
+      "entryStage": "Qualified Lead",
+      "notes": "Trigger MUST be 'tag added: new-opportunity' because the sync adds the tag after the contact upsert; a contact-created trigger would miss it. Opportunity value is set from the synced dollar-value custom field.",
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "type": "OTHER",
+      "label": "Patient Prism general call events",
+      "entryMechanism": "Inbound webhook from Patient Prism",
+      "fires": "Meta CAPI",
+      "tagsApplied": "follow-up, booked-appointment, showed, no-show",
+      "handlingWorkflow": "IN2 - Patient Prism Call Conversion Events (non-relo)",
+      "entryStage": "Routes by tag (New Lead – Unqualified / Appointment Booked / First Appointment Completed)",
+      "notes": "Separate path from the relo cron. Call-disqualified leads stay as contacts only, not in the pipeline.",
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "type": "OTHER",
+      "label": "Modento online bookings",
+      "entryMechanism": "Browser-side Google Tag Manager capture → GHL inbound webhook (secret-validated) on the 'Scheduled appointment' event",
+      "fires": "Create opportunity; suppression tag to exit nurtures",
+      "tagsApplied": "booked, suppression tag (do-not-contact / qualified)",
+      "handlingWorkflow": "REC1 - Modento Booking to GHL (Appointment Booked)",
+      "entryStage": "Appointment Booked",
+      "notes": "Record-keeping: the patient already converted by booking, so no patient comms are sent here. GHL holds the opportunity, not a calendar appointment — by design.",
+      "inferred": false,
+      "confidence": "high"
+    }
+  ],
+  "pipelineStages": [
+    {
+      "order": 1,
+      "name": "New Lead – Unqualified",
+      "description": "A fresh lead that still needs to be qualified.",
+      "entryCondition": "Website form fills; generic Patient Prism call contacts.",
+      "isAutomatic": true,
+      "manualActions": [{"description": "Team calls to qualify the lead.", "owner": "Front desk"}],
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "order": 2,
+      "name": "Qualified Lead",
+      "description": "A Patient Prism reload lead — should have booked but didn't; worth calling back.",
+      "entryCondition": "Relo sync tag 'new-opportunity'; also a cancelled appointment drops back here.",
+      "isAutomatic": true,
+      "manualActions": [{"description": "Call the reload lead back while the call is fresh.", "owner": "Front desk"}],
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "order": 3,
+      "name": "Appointment Booked",
+      "description": "Lead has an appointment.",
+      "entryCondition": "Modento online booking; Patient Prism 'booked'; a no-show stays here for rebooking.",
+      "isAutomatic": true,
+      "manualActions": [],
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "order": 4,
+      "name": "Scheduled",
+      "description": "Appointment confirmed / upcoming.",
+      "entryCondition": "Appointment status = confirmed (auto via the appointment-confirmed workflow).",
+      "isAutomatic": true,
+      "manualActions": [],
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "order": 5,
+      "name": "First Appointment Completed",
+      "description": "Patient attended their first visit; initial value logged.",
+      "entryCondition": "Appointment status = showed (auto via sync-tag workflow); Patient Prism 'showed'.",
+      "isAutomatic": true,
+      "manualActions": [{"description": "Log the initial appointment value.", "owner": "Front desk"}],
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "order": 6,
+      "name": "3-Month Value Completed",
+      "description": "True patient value known after follow-up work (crowns, extractions, etc.).",
+      "entryCondition": "Manual team move ~2–3 months later once the PMS reflects the true value.",
+      "isAutomatic": false,
+      "manualActions": [{"description": "Update the opportunity with the true 3-month patient value.", "owner": "Practice owner"}],
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "order": 7,
+      "name": "Spam",
+      "description": "Bad / disqualified lead (Medicaid-only, junk) kept for clean conversion reporting.",
+      "entryCondition": "Auto via the invalid-tag workflow; or manual.",
+      "isAutomatic": true,
+      "manualActions": [],
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "order": 8,
+      "name": "Lost",
+      "description": "Got far but didn't close.",
+      "entryCondition": "Manual team move.",
+      "isAutomatic": false,
+      "manualActions": [{"description": "Mark the opportunity Lost when the deal is dead.", "owner": "Front desk"}],
+      "inferred": false,
+      "confidence": "high"
+    }
+  ],
+  "stageTransitions": [
+    {"fromStage": "", "toStage": "New Lead – Unqualified", "trigger": "Website form submitted", "isAutomatic": true, "notes": "Entry from website forms."},
+    {"fromStage": "", "toStage": "Qualified Lead", "trigger": "Relo sync adds tag 'new-opportunity'", "isAutomatic": true, "notes": "Entry for reload leads, plus alert + task."},
+    {"fromStage": "", "toStage": "Appointment Booked", "trigger": "Modento booking webhook (secret-validated)", "isAutomatic": true, "notes": "Online booking entry."},
+    {"fromStage": "New Lead – Unqualified", "toStage": "Appointment Booked", "trigger": "Lead books online / is booked", "isAutomatic": true, "notes": "Nurtured lead converts."},
+    {"fromStage": "Qualified Lead", "toStage": "Appointment Booked", "trigger": "Reload lead books", "isAutomatic": true, "notes": "Booking-push nurture drives the booking."},
+    {"fromStage": "Appointment Booked", "toStage": "Scheduled", "trigger": "Appointment status = confirmed", "isAutomatic": true, "notes": "Handled by the appointment-confirmed workflow."},
+    {"fromStage": "Scheduled", "toStage": "First Appointment Completed", "trigger": "Appointment status = showed", "isAutomatic": true, "notes": "Handled by the showed sync-tag workflow."},
+    {"fromStage": "First Appointment Completed", "toStage": "3-Month Value Completed", "trigger": "Team logs true value ~2–3 months later", "isAutomatic": false, "notes": "Manual move."},
+    {"fromStage": "Appointment Booked", "toStage": "Qualified Lead", "trigger": "Appointment cancelled", "isAutomatic": true, "notes": "Drops back so the booking-push nurture re-engages."},
+    {"fromStage": "Appointment Booked", "toStage": "Spam", "trigger": "Appointment status = invalid", "isAutomatic": true, "notes": "Routes invalid leads for clean reporting."},
+    {"fromStage": "Appointment Booked", "toStage": "Lost", "trigger": "Manual — deal dead", "isAutomatic": false, "notes": "Catch-all manual move."}
+  ],
+  "calendars": [
+    {
+      "name": "Online booking page (new-patient & emergency)",
+      "type": "SERVICE",
+      "purpose": "Books new-patient visits ($199 new-patient special) and emergency exams ($59) — the single booking page embedded in every nurture.",
+      "assignedTo": "Practice providers",
+      "booksIntoStage": "Appointment Booked",
+      "onBooking": "GTM tag POSTs to the GHL inbound webhook → create opportunity in Appointment Booked; apply suppression tag so 'please book' nurtures stop.",
+      "reminders": "Handled in Modento / Dental Intelligence (the system of record for scheduling).",
+      "notes": "GHL does not hold a calendar appointment for online bookings by design; the booking is captured as the conversion and later stages are moved manually.",
+      "inferred": false,
+      "confidence": "high"
+    }
+  ],
+  "externalIntegrations": [
+    {
+      "name": "Patient Prism (relo sync)",
+      "direction": "INBOUND",
+      "mechanism": "CRON",
+      "dataObjects": "contacts, AI call summary, opportunity dollar value, call recording URL, lead sentiment, agent sentiment",
+      "purpose": "Push only true reload leads into GHL and enrich the contact so the relo surfaces in Qualified with its dollar value.",
+      "triggerCadence": "Daily cron (increase frequency for near-real-time)",
+      "notes": "Standalone Python service; upserts by phone then adds the 'new-opportunity' tag as a separate call.",
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "name": "Patient Prism (call events)",
+      "direction": "INBOUND",
+      "mechanism": "WEBHOOK",
+      "dataObjects": "contacts, call event type (booked / showed / no-show / follow-up)",
+      "purpose": "Route general call outcomes into the pipeline and fire Meta CAPI.",
+      "triggerCadence": "Real-time on call event",
+      "notes": "Separate from the relo cron path.",
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "name": "Modento / Dental Intelligence",
+      "direction": "INBOUND",
+      "mechanism": "WEBHOOK",
+      "dataObjects": "contacts (name, phone, email, DOB), booking event",
+      "purpose": "Capture online bookings as conversions in GHL.",
+      "triggerCadence": "Real-time on 'Scheduled appointment'",
+      "notes": "Delivered via Google Tag Manager browser tags; secret-validated webhook.",
+      "inferred": false,
+      "confidence": "high"
+    },
+    {
+      "name": "Meta Conversion API",
+      "direction": "OUTBOUND",
+      "mechanism": "API",
+      "dataObjects": "conversion events",
+      "purpose": "Feed conversions back to Meta so ads can optimize for sales-qualified leads.",
+      "triggerCadence": "On lead / conversion event",
+      "notes": "Fires from the call-events workflow; expand once API-qualified-lead data is available.",
+      "inferred": false,
+      "confidence": "medium"
+    }
+  ],
+  "workflows": [
+    {"code": "IN1", "category": "INTAKE_ROUTING", "name": "Website Form Leads", "trigger": "Form submitted", "whatItDoes": "Branches by UTM source, tags the source, updates fields, creates the opportunity in New Lead – Unqualified.", "patientFacing": false, "inferred": false, "confidence": "high"},
+    {"code": "A1", "category": "ACTIVE_CONVERSION", "name": "Patient Prism Relo Leads (to Qualified)", "trigger": "Contact tag added: new-opportunity", "whatItDoes": "Creates the opportunity in Qualified Lead with the synced dollar value, fires Meta CAPI, sends the relo alert and a task to the owner.", "patientFacing": false, "inferred": false, "confidence": "high"},
+    {"code": "IN2", "category": "INTAKE_ROUTING", "name": "Patient Prism Call Conversion Events (non-relo)", "trigger": "Inbound webhook", "whatItDoes": "Creates the contact then routes by tag into the right stage; fires Meta CAPI.", "patientFacing": false, "inferred": false, "confidence": "high"},
+    {"code": "REC1", "category": "RECORD_KEEPING", "name": "Modento Booking to GHL", "trigger": "Inbound webhook (secret-validated)", "whatItDoes": "Creates the contact and the opportunity in Appointment Booked; applies the suppression tag.", "patientFacing": false, "inferred": false, "confidence": "high"},
+    {"code": "C", "category": "ACTIVE_CONVERSION", "name": "Unqualified Lead Nurture", "trigger": "Enters New Lead – Unqualified", "whatItDoes": "Welcome email then a multi-step nurture with a 'Book your appointment' CTA driving to the online booking page.", "patientFacing": true, "inferred": false, "confidence": "high"},
+    {"code": "D", "category": "ACTIVE_CONVERSION", "name": "Qualified Lead Booking Push", "trigger": "Enters Qualified Lead", "whatItDoes": "SMS + email with the booking link to push reload leads to rebook.", "patientFacing": true, "inferred": false, "confidence": "high"},
+    {"code": "E", "category": "APPOINTMENT_LIFECYCLE", "name": "Appointment Confirmed to Scheduled", "trigger": "Appointment status = confirmed", "whatItDoes": "Tags and moves the opportunity to Scheduled (status open).", "patientFacing": false, "inferred": false, "confidence": "high"},
+    {"code": "F", "category": "APPOINTMENT_LIFECYCLE", "name": "No Show Recovery", "trigger": "Contact tag added: no-show", "whatItDoes": "Recovery nurture; keeps the opportunity in Appointment Booked for rebooking.", "patientFacing": true, "inferred": false, "confidence": "high"},
+    {"code": "G", "category": "POST_VISIT", "name": "Post Visit Reviews and Referrals", "trigger": "Enters First Appointment Completed", "whatItDoes": "Thank-you email, then a review request and a referral ask.", "patientFacing": true, "inferred": false, "confidence": "high"},
+    {"code": "H", "category": "INTERNAL_UTILITY", "name": "Internal Team Notification", "trigger": "Form submitted", "whatItDoes": "Internal email to front desk + a task to the practice owner.", "patientFacing": false, "inferred": false, "confidence": "high"},
+    {"code": "K1", "category": "APPOINTMENT_LIFECYCLE", "name": "Sync Confirmed Tag", "trigger": "Appointment confirmed", "whatItDoes": "Adds the 'confirmed' tag.", "patientFacing": false, "inferred": false, "confidence": "medium"},
+    {"code": "K2", "category": "APPOINTMENT_LIFECYCLE", "name": "Sync Cancelled Tag", "trigger": "Appointment cancelled", "whatItDoes": "Adds the tag and moves the opportunity back to Qualified Lead to re-engage.", "patientFacing": false, "inferred": false, "confidence": "medium"},
+    {"code": "K3", "category": "APPOINTMENT_LIFECYCLE", "name": "Sync New Tag", "trigger": "Appointment new", "whatItDoes": "Adds the 'new' tag.", "patientFacing": false, "inferred": false, "confidence": "medium"},
+    {"code": "K4", "category": "APPOINTMENT_LIFECYCLE", "name": "Sync Showed Tag", "trigger": "Appointment showed", "whatItDoes": "Adds the tag and moves the opportunity to First Appointment Completed.", "patientFacing": false, "inferred": false, "confidence": "medium"},
+    {"code": "K5", "category": "APPOINTMENT_LIFECYCLE", "name": "Sync Invalid Tag", "trigger": "Appointment invalid", "whatItDoes": "Adds the tag and moves the opportunity to Spam.", "patientFacing": false, "inferred": false, "confidence": "medium"},
+    {"code": "K6", "category": "APPOINTMENT_LIFECYCLE", "name": "Sync No-Show Tag", "trigger": "Appointment no-show", "whatItDoes": "Adds the 'no-show' tag (which triggers No Show Recovery).", "patientFacing": false, "inferred": false, "confidence": "medium"},
+    {"code": "X", "category": "INTERNAL_UTILITY", "name": "Booking-Link Click Qualifier", "trigger": "Calendar booking link clicked", "whatItDoes": "Tags and updates the opportunity as a hot engagement signal.", "patientFacing": false, "inferred": true, "confidence": "low"},
+    {"code": "Y", "category": "INTERNAL_UTILITY", "name": "Lead Reply to Team Alert", "trigger": "Customer replied (email/SMS)", "whatItDoes": "Tags and sends an internal alert so the team jumps on engaged leads.", "patientFacing": false, "inferred": false, "confidence": "medium"},
+    {"code": "Z", "category": "INTERNAL_UTILITY", "name": "Global Exits and Suppression", "trigger": "Tags booked / qualified / do-not-contact", "whatItDoes": "Removes the contact from active nurtures to prevent over-messaging.", "patientFacing": false, "inferred": false, "confidence": "high"}
+  ],
+  "customFields": [
+    {"kind": "FIELD", "key": "pp_call_summary", "description": "AI call summary from Patient Prism.", "populated": true},
+    {"kind": "FIELD", "key": "pp_opportunity_value", "description": "Reload lead dollar value.", "populated": true},
+    {"kind": "FIELD", "key": "pp_call_recording_url", "description": "Call recording URL.", "populated": true},
+    {"kind": "FIELD", "key": "pp_lead_sentiment", "description": "Lead sentiment from the call.", "populated": true},
+    {"kind": "FIELD", "key": "pp_agent_sentiment", "description": "Receptionist/agent sentiment from the call.", "populated": true},
+    {"kind": "VALUE", "key": "calendar_link", "description": "Online booking page (carries both services).", "populated": true},
+    {"kind": "VALUE", "key": "phone", "description": "Practice phone line for merge fields.", "populated": true},
+    {"kind": "VALUE", "key": "business_address", "description": "Practice address.", "populated": true},
+    {"kind": "VALUE", "key": "google_reviews_link", "description": "Google review URL for post-visit review CTAs.", "populated": false},
+    {"kind": "VALUE", "key": "referral_incentive_amount", "description": "Referral credit shown in the referral email.", "populated": false},
+    {"kind": "VALUE", "key": "promotion_name", "description": "Current promotion name used in nurtures.", "populated": false},
+    {"kind": "VALUE", "key": "hours_of_operation", "description": "Practice hours used in templates.", "populated": false}
+  ],
+  "tags": [
+    {"tag": "new-opportunity", "meaning": "Reload lead identified by Patient Prism (triggers the relo workflow)."},
+    {"tag": "follow-up", "meaning": "Patient Prism follow-up recommended."},
+    {"tag": "booked-appointment", "meaning": "Patient Prism booked event."},
+    {"tag": "showed", "meaning": "Patient attended the appointment."},
+    {"tag": "no-show", "meaning": "Patient missed the appointment (triggers recovery)."},
+    {"tag": "confirmed", "meaning": "Appointment confirmed."},
+    {"tag": "cancelled", "meaning": "Appointment cancelled."},
+    {"tag": "invalid", "meaning": "Disqualified / spam lead."},
+    {"tag": "patient_prism_call", "meaning": "Source tag for any Patient Prism call contact."},
+    {"tag": "do-not-contact", "meaning": "Suppression — exit all nurtures."}
+  ],
+  "preLaunchItems": [
+    {"description": "Populate google_reviews_link with the practice's Google review URL (review CTAs are dead until then).", "optional": false},
+    {"description": "Set referral_incentive_amount and fix the referral email placeholder text + the 'Refer a friend' button destination.", "optional": false},
+    {"description": "Confirm the online-booking workflow applies a suppression tag so booked patients stop receiving 'please book' nurtures.", "optional": false},
+    {"description": "Verify the dedup rule (email first, then phone) in settings before heavy live traffic.", "optional": true},
+    {"description": "Decide the relo sync cadence (daily vs hourly) to match the 'call within ~10 min' expectation.", "optional": true},
+    {"description": "Confirm whether the engagement utilities (booking-link click qualifier, SMS reply handler) should be live or draft.", "optional": true},
+    {"description": "Throttle the Performance Max ad campaigns driving low-quality leads.", "optional": true},
+    {"description": "Deliver team training and run an end-to-end live test (form, relo, booking, status changes).", "optional": false}
+  ],
+  "tasks": [
+    {"title": "Build relo intake on tag 'new-opportunity' into Qualified Lead with alert + task", "type": "AUTOMATION", "description": "Trigger on tag added (not contact-created); create the opportunity in Qualified Lead, set value from pp_opportunity_value, fire Meta CAPI, send the alert and a task to the owner."},
+    {"title": "Wire website form intake to New Lead – Unqualified with UTM branching", "type": "AUTOMATION", "description": "Branch by UTM source, tag the source, create the opportunity, and trigger the internal notification + task."},
+    {"title": "Configure the Modento → GHL inbound webhook with secret validation", "type": "INTEGRATION", "description": "Validate the shared secret, create the contact + opportunity in Appointment Booked, and apply the suppression tag."},
+    {"title": "Publish the nurtures and the suppression workflow", "type": "AUTOMATION", "description": "Publish the unqualified nurture, the qualified booking push, and global exits/suppression so booked leads stop receiving 'please book' messages."},
+    {"title": "Build the appointment-status sync-tag workflows", "type": "AUTOMATION", "description": "Turn appointment statuses (confirmed/cancelled/showed/invalid/no-show) into tags and the matching stage moves."},
+    {"title": "Embed the booking link with both services in every nurture email", "type": "FUNNEL", "description": "Use the calendar_link custom value so the $199 new-patient and $59 emergency offers are present and changeable in one place."}
+  ],
+  "gaps": [
+    {"category": "CUSTOM_FIELD", "question": "What is the practice's Google review URL for google_reviews_link?", "rationale": "Post-visit review CTAs render a dead link until this value is set.", "severity": "high"},
+    {"category": "CUSTOM_FIELD", "question": "What referral incentive amount should the referral email show, and where should the 'Refer a friend' button point?", "rationale": "The referral email currently has placeholder text and the button points at the booking page — a logic mismatch that would reach patients.", "severity": "high"},
+    {"category": "WORKFLOW", "question": "Does the online-booking workflow apply a suppression tag that the global-exits workflow listens for?", "rationale": "Without it, a patient who books online keeps getting 'please book' nurtures.", "severity": "high"},
+    {"category": "INTEGRATION", "question": "Should the Patient Prism relo cron run more frequently than daily?", "rationale": "The team expects reload leads within ~10 minutes; a daily cron batches them once per day.", "severity": "medium"},
+    {"category": "INTEGRATION", "question": "Which Meta conversion events should be sent for sales-qualified-lead optimization, and is the GHL V2 API auth/scope set up for it?", "rationale": "Ads are driving low-quality leads; feeding qualified-lead conversions back is what lets Meta optimize.", "severity": "medium"},
+    {"category": "GENERAL", "question": "Should call recordings / phone numbers be attached to the GHL contact, or stay in Patient Prism?", "rationale": "Owner decision affecting where staff review call context.", "severity": "low"},
+    {"category": "STAGE", "question": "Confirm 'Spam' as the disqualified-lead stage name and the 2–3 month value-review protocol.", "rationale": "Naming and the manual 3-month move need an owner to confirm the cadence.", "severity": "low"}
+  ]
+}
