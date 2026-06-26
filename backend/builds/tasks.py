@@ -71,13 +71,15 @@ def generate_build_brief(self, build_id, user_id):
 
     try:
         draft = services.generate_blueprint_draft(notes)
+        # Persist inside the same guard: a persistence hiccup must mark the note
+        # "failed" (so the UI shows a clear error) instead of leaving it stuck on
+        # "processing" forever.
+        _persist_blueprint(build, draft, user)
     except Exception:  # noqa: BLE001 — record failure so the UI can surface it
         if latest_note:
             latest_note.ai_status = "failed"
             latest_note.save(update_fields=["ai_status"])
         return
-
-    _persist_blueprint(build, draft, user)
 
     if latest_note:
         latest_note.ai_output = draft
@@ -106,11 +108,13 @@ def _persist_blueprint(build, draft, user):
         # Refresh only AI-authored open gaps; keep ones a human has answered/dismissed.
         build.gaps.filter(created_by_ai=True, status=GapStatus.OPEN).delete()
 
-        build.overview = draft.get("overview", "")
-        build.one_line_summary = draft.get("oneLineSummary", "")
-        build.maintenance_notes = draft.get("maintenanceNotes", "")
-        build.goals = draft.get("goals", "")
-        build.integrations = ", ".join(draft.get("integrations", []))
+        build.overview = draft.get("overview", "") or ""
+        build.one_line_summary = draft.get("oneLineSummary", "") or ""
+        build.maintenance_notes = draft.get("maintenanceNotes", "") or ""
+        build.goals = draft.get("goals", "") or ""
+        # Defensive: integrations is a string list, but coerce in case the model
+        # returns numbers/objects so a stray type never crashes the whole persist.
+        build.integrations = ", ".join(str(x).strip() for x in (draft.get("integrations") or []) if x)
         build.status = BuildStatus.AI_DRAFTED
         build.save(update_fields=[
             "overview", "one_line_summary", "maintenance_notes",
@@ -150,7 +154,7 @@ def _persist_blueprint(build, draft, user):
                 notes=cal.get("notes", ""), order=i,
             )
 
-        for i, ig in enumerate(draft.get("integrations", [])):
+        for i, ig in enumerate(draft.get("externalIntegrations", [])):
             Integration.objects.create(
                 build=build, name=ig.get("name", ""), direction=ig.get("direction", "INBOUND"),
                 mechanism=ig.get("mechanism", "API"), data_objects=ig.get("dataObjects", ""),

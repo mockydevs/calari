@@ -78,8 +78,54 @@ def _openai_client():
     return OpenAI(api_key=key)
 
 
+# The model is NOT restricted to any specific version. OPENAI_MODEL accepts ANY
+# current or future OpenAI model id (gpt-4o, gpt-5.x, o-series, …) — set it to the
+# latest as it releases, no code change needed. The smartest model is used for
+# everything (blueprint, QA, SOP). The only hardcoded value is the *fallback*
+# (also overridable) used to keep working if the configured model errors.
+_SMART_MODEL_DEFAULT = "gpt-4o"
+
+
 def _model() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    return os.getenv("OPENAI_MODEL", _SMART_MODEL_DEFAULT)
+
+
+def _blueprint_model() -> str:
+    """The high-stakes 'expert build-out'. Defaults to OPENAI_MODEL; override with
+    OPENAI_BLUEPRINT_MODEL to point the blueprint at a different/newer model."""
+    return os.getenv("OPENAI_BLUEPRINT_MODEL") or _model()
+
+
+def _fallback_model() -> str:
+    """Known-good model retried on if the configured model errors (typo, not yet on
+    the account, capability mismatch). Overridable via OPENAI_FALLBACK_MODEL — this
+    is what lets you fearlessly point OPENAI_MODEL at a brand-new release."""
+    return os.getenv("OPENAI_FALLBACK_MODEL", _SMART_MODEL_DEFAULT)
+
+
+def _chat(messages, *, model: str | None = None, response_format=None, max_tokens=None) -> str:
+    """One chat-completion call with a graceful model fallback, shared by every AI
+    feature. Retries once on the fallback model if the configured model errors, so
+    a model-config issue (e.g. trying a not-yet-available newer model) never fails
+    the request."""
+    client = _openai_client()
+    target = model or _model()
+    kwargs = {"messages": messages}
+    if response_format is not None:
+        kwargs["response_format"] = response_format
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+
+    def _call(m: str):
+        return client.chat.completions.create(model=m, **kwargs).choices[0].message.content
+
+    try:
+        return _call(target)
+    except Exception:  # noqa: BLE001 — APIError/BadRequest/model-not-found/etc.
+        fb = _fallback_model()
+        if target == fb:
+            raise
+        return _call(fb)
 
 
 _BRIEF_SCHEMA = {
@@ -239,7 +285,11 @@ _BLUEPRINT_SCHEMA = _obj({
         "reminders": _str(),          # reminder/confirmation cadence
         "notes": _str(),
     })),
-    "integrations": _arr(_obj({       # external systems wired to GHL (any direction)
+    # NOTE: must NOT be named "integrations" — that key is already the simple
+    # string list above. A duplicate key silently overwrote it, so the model
+    # returned objects under "integrations" and ", ".join(...) crashed in
+    # _persist_blueprint. These rich objects feed the Integration model.
+    "externalIntegrations": _arr(_obj({   # external systems wired to GHL (any direction)
         "name": _str(),               # Patient Prism, Modento, QuickBooks, custom ERP…
         "direction": _enum("INBOUND", "OUTBOUND", "BIDIRECTIONAL"),
         "mechanism": _enum("API", "WEBHOOK", "NATIVE", "ZAPIER", "CRON", "OTHER"),
@@ -285,11 +335,30 @@ _BLUEPRINT_SCHEMA = _obj({
 })
 
 _BLUEPRINT_SYSTEM_PROMPT = (
-    "You are a senior solutions architect at Calari Solutions, an automation agency that builds "
-    "client systems in Go High Level (GHL), Zapier, Patient Prism, and similar tools.\n\n"
-    "Your job is to turn client meeting notes into a COMPLETE system blueprint — the same structure "
-    "that appears in our end-of-build client handover. The blueprint must capture the client's vision "
-    "precisely so the delivered build never strays from what they asked for. Extract:\n"
+    "You are THE most senior Go High Level (GHL) solutions architect at Calari Solutions — a true "
+    "expert who has shipped hundreds of GHL builds and knows the platform (pipelines, workflows, "
+    "calendars, custom fields/values, tags, triggers, the V2 API and webhooks) cold.\n\n"
+    "Your job: turn client meeting notes into a COMPLETE, READY-TO-BUILD system blueprint — the exact "
+    "structure of our end-of-build client handover — so a Calari staff member can IMPLEMENT it in GHL "
+    "without going back to the client for the obvious pieces. Think like the architect who designs the "
+    "whole system, names every part, and hands the builder a finished plan.\n\n"
+    "BUILD IT OUT IN FULL — do not just transcribe the notes:\n"
+    "- Design the ENTIRE pipeline and NAME every stage (real GHL stage names, in order).\n"
+    "- Design EVERY workflow the system needs and NAME each one with a code prefix per our convention "
+    "(A = active conversion, IN = intake/routing, REC = record-keeping, E/K = appointment lifecycle, "
+    "G = post-visit, H/X/Y/Z = internal/utility), each with its trigger and what it does. Include the "
+    "supporting automations an expert KNOWS a build needs (lead acknowledgement, speed-to-lead, "
+    "nurture, no-show/reschedule, reminders, review/referral, internal alerts) even when the notes "
+    "don't spell them out.\n"
+    "- Trace the COMPLETE movement of a contact END TO END: for every way a contact arrives (each lead "
+    "source / funnel / external party), give the entry mechanism, the stage they land in, every stage "
+    "transition and its exact trigger, the nurture that drives them to a booking, the conversion "
+    "calendar, and what happens after conversion. Leave no contact journey half-drawn.\n"
+    "- Specify the custom fields, custom values, and tags the workflows above depend on.\n"
+    "When you infer a standard piece the notes didn't state, INCLUDE it (so the build is complete) AND "
+    "record it as a low/medium-severity gap so the admin can confirm or correct it. Be thorough and "
+    "specific over brief — completeness is the whole point.\n\n"
+    "Extract:\n"
     "- overview: a plain-English 'big idea' — the single source of truth and how leads flow through it\n"
     "- oneLineSummary: a one-sentence summary the delivery team can repeat\n"
     "- goals, integrations: the outcome the client wants and the tools involved\n"
@@ -305,7 +374,7 @@ _BLUEPRINT_SYSTEM_PROMPT = (
     "like a dental appointment), its type, who it's assigned to, which pipeline stage a booking lands "
     "in, and what fires on booking (confirmation, reminders, stage move). Nurture sequences exist to "
     "drive a booking on one of these calendars — make that journey explicit.\n"
-    "- integrations: every external system wired to GHL, in ANY direction. INBOUND tools feed contacts "
+    "- externalIntegrations: every external system wired to GHL, in ANY direction. INBOUND tools feed contacts "
     "into GHL (e.g. Patient Prism, Modento, a website app, an ERP); OUTBOUND flows push data out of GHL "
     "(to an external database, accounting/ERP, or to generate quotes and invoices); BIDIRECTIONAL syncs "
     "both ways. For each, capture the mechanism (API, webhook, native, Zapier, cron), the data objects "
@@ -316,6 +385,19 @@ _BLUEPRINT_SYSTEM_PROMPT = (
     "- tags: the tag glossary\n"
     "- preLaunchItems: checklist items, decisions, and risks to resolve before go-live\n"
     "- tasks: concrete build tasks for a team member\n\n"
+    "GHL API AWARENESS — Calari builds run on Go High Level. GHL exposes a V2 REST API "
+    "(base https://services.leadconnectorhq.com, OAuth 2.0 or a Private Integration Token; the "
+    "legacy V1 keys reached end-of-support on 31 Dec 2025). Most of this blueprint maps onto GHL API "
+    "objects: lead sources → Contacts API + inbound webhooks; stages/transitions → Opportunities & "
+    "Pipelines API; calendars → Calendars & Events API; workflows → Workflows API; custom fields/values "
+    "and tags → their respective APIs. PREFER webhooks (50+ event types) over polling. When an "
+    "integration or workflow plainly needs the API, classify its mechanism accordingly (API / WEBHOOK / "
+    "NATIVE / ZAPIER / CRON) and, when the notes leave the API specifics unanswered, RAISE GAPS for: "
+    "(a) auth model + OAuth scopes, (b) which webhook events to subscribe to, (c) inbound vs outbound vs "
+    "bidirectional direction, (d) data objects exchanged (contacts, opportunities, appointments, "
+    "invoices, payments), (e) rate-limit risk for bulk syncs (100 req / 10s burst, 200k / day per "
+    "resource), and (f) any client still on V1 that must migrate. Do NOT invent endpoint paths — surface "
+    "the unknown as a gap.\n\n"
     "CRITICAL — always seek the structure. The client's notes will be incomplete. For every part of the "
     "blueprint that the notes do not pin down — especially missing stage transitions, lead-source "
     "mechanics, ambiguous stage movement, the conversion calendar(s) the nurture drives toward, and any "
@@ -330,19 +412,17 @@ _BLUEPRINT_SYSTEM_PROMPT = (
 
 def generate_blueprint_draft(notes_text: str) -> dict:
     """Extract the full vision blueprint (handover anatomy) + gaps from meeting notes."""
-    client = _openai_client()
-    completion = client.chat.completions.create(
-        model=_model(),
-        messages=[
+    raw = _chat(
+        [
             {"role": "system", "content": _BLUEPRINT_SYSTEM_PROMPT},
             {"role": "user", "content": f"Client meeting notes:\n\n{notes_text[:MAX_TEXT_CHARS]}"},
         ],
+        model=_blueprint_model(),
         response_format={
             "type": "json_schema",
             "json_schema": {"name": "build_blueprint", "strict": True, "schema": _BLUEPRINT_SCHEMA},
         },
     )
-    raw = completion.choices[0].message.content
     if not raw:
         raise RuntimeError("AI returned no content")
     return json.loads(raw)
@@ -372,7 +452,6 @@ _QA_SCHEMA = {
 
 
 def run_brief_qa(build) -> dict:
-    client = _openai_client()
     stages = list(build.stages.all())
     sources = list(build.contact_sources.all())
     tasks = list(build.tasks.all())
@@ -391,19 +470,16 @@ def run_brief_qa(build) -> dict:
         f"BRIEF:\n{brief}\n\nTASKS ({len(tasks)} total):\n{task_lines}\n\n"
         "Return JSON matching the schema. Be concise and specific. Focus on meaningful gaps — not style nitpicks."
     )
-    completion = client.chat.completions.create(
-        model=_model(),
-        messages=[{"role": "user", "content": prompt}],
+    raw = _chat(
+        [{"role": "user", "content": prompt}],
         response_format={"type": "json_schema", "json_schema": {"name": "qa_report", "strict": True, "schema": _QA_SCHEMA}},
     )
-    raw = completion.choices[0].message.content
     if not raw:
         raise RuntimeError("AI returned no QA content")
     return json.loads(raw)
 
 
 def generate_task_sop(task) -> str:
-    client = _openai_client()
     build = task.build
     stages = list(build.stages.all())
     sources = list(build.contact_sources.all())
@@ -421,10 +497,7 @@ def generate_task_sop(task) -> str:
         f"Task title: {task.title}\nTask type: {task.type}\nTask description: {task.description or 'no description'}\n\n"
         f"Build context:\n{context}\n\nRespond ONLY with the numbered SOP steps. No intro or outro sentences."
     )
-    completion = client.chat.completions.create(
-        model=_model(), messages=[{"role": "user", "content": prompt}], max_tokens=800,
-    )
-    sop = (completion.choices[0].message.content or "").strip()
+    sop = (_chat([{"role": "user", "content": prompt}], max_tokens=800) or "").strip()
     if not sop:
         raise RuntimeError("AI returned no SOP content")
     return sop
@@ -598,6 +671,9 @@ def _s3_client():
         "region_name": settings.AWS_S3_REGION_NAME,
         "aws_access_key_id": settings.AWS_ACCESS_KEY_ID,
         "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY,
+        # Honor the same TLS-verify setting django-storages uses, so presigned
+        # uploads behave consistently with FileField saves.
+        "verify": settings.AWS_S3_VERIFY,
     }
     if settings.AWS_S3_ENDPOINT_URL:
         kwargs["endpoint_url"] = settings.AWS_S3_ENDPOINT_URL
