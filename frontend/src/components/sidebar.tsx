@@ -16,6 +16,7 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
     { href: "/builds", label: "Builds", iconName: "BriefcaseBusiness", show: true },
     { href: "/builds/kanban", label: "Board", iconName: "KanbanSquare", show: true },
     { href: "/library", label: "Build Library", iconName: "BookOpen", show: true },
+    { href: "/a2p", label: "A2P intake", iconName: "MessageSquare", show: isAdmin },
     { href: "/clients", label: "Clients", iconName: "Users", show: isAdmin },
     { href: "/settings/profile", label: "Profile", iconName: "CircleUserRound", show: true },
     { href: "/settings/team", label: "Team", iconName: "Settings", show: isAdmin },

@@ -37,6 +37,7 @@ urlpatterns = [
     path('', include('Auth.urls', namespace='auth_app')),
     path('api/projects/', include('projects.urls', namespace='projects')),
     path('api/builds/', include('builds.urls', namespace='builds')),
+    path('api/a2p/', include('a2p.urls', namespace='a2p')),
 
     # API Docs
     path('swagger.json',  SpectacularAPIView.as_view(),                         name='schema'),

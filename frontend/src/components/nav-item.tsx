@@ -10,6 +10,7 @@ import {
   KanbanSquare,
   KeyRound,
   LayoutDashboard,
+  MessageSquare,
   Settings,
   Users,
 } from "lucide-react";
@@ -26,6 +27,7 @@ const ICON_MAP = {
   Bell,
   CircleUserRound,
   BookOpen,
+  MessageSquare,
 } as const;
 
 export type NavIconName = keyof typeof ICON_MAP;

@@ -88,6 +88,7 @@ INSTALLED_APPS = [
     'projects',
     'builds',
     'vectorstore',
+    'a2p',
 
 ]
 
@@ -442,6 +443,10 @@ EMAIL_USE_SSL = str_to_bool(os.getenv("EMAIL_USE_SSL", "False"))
 EMAIL_HOST_USER = os.getenv("SMTP_USER") or os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("SMTP_PASS") or os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("EMAIL_FROM") or os.getenv("DEFAULT_FROM_EMAIL") or EMAIL_HOST_USER
+
+# Where new public A2P intake submissions are emailed (comma-separated). If unset,
+# falls back to active admin/superuser emails.
+A2P_NOTIFY_EMAILS = os.getenv("A2P_NOTIFY_EMAILS", "")
 
 USE_HTTPS = os.getenv("USE_HTTPS", "False").lower() in ("true", "1")
 SCHEME = "https" if USE_HTTPS else "http"
