@@ -7,8 +7,9 @@ import Link from "next/link";
 
 const MAIN_SITE_URL = "https://calarisolutions.com";
 
-export function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null } }) {
+export function Sidebar({ user }: { user: { id: string; name: string; role: string; image?: string | null; features?: string[] } }) {
   const isAdmin = user.role === "ADMIN";
+  const can = (key: string) => isAdmin || (user.features ?? []).includes(key);
 
   const navItems: { href: string; label: string; iconName: NavIconName; show: boolean }[] = [
     { href: "/dashboard", label: "Dashboard", iconName: "LayoutDashboard", show: true },
@@ -16,11 +17,11 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
     { href: "/builds", label: "Builds", iconName: "BriefcaseBusiness", show: true },
     { href: "/builds/kanban", label: "Board", iconName: "KanbanSquare", show: true },
     { href: "/library", label: "Build Library", iconName: "BookOpen", show: true },
-    { href: "/a2p", label: "A2P intake", iconName: "MessageSquare", show: isAdmin },
-    { href: "/clients", label: "Clients", iconName: "Users", show: isAdmin },
+    { href: "/a2p", label: "A2P intake", iconName: "MessageSquare", show: can("a2p") },
+    { href: "/clients", label: "Clients", iconName: "Users", show: can("clients") },
     { href: "/settings/profile", label: "Profile", iconName: "CircleUserRound", show: true },
-    { href: "/settings/team", label: "Team", iconName: "Settings", show: isAdmin },
-    { href: "/settings/ai", label: "AI Keys", iconName: "KeyRound", show: isAdmin },
+    { href: "/settings/team", label: "Team", iconName: "Settings", show: can("team") },
+    { href: "/settings/ai", label: "AI Keys", iconName: "KeyRound", show: can("ai_keys") },
   ];
 
   const initials = user.name

@@ -1,13 +1,13 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireUser, requireAdmin } from "@/lib/auth-helpers";
+import { requireUser, requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 
 type Created = { id: number };
 
 export async function createBuild(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const title = String(formData.get("title") ?? "").trim();
   const client = String(formData.get("client") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
@@ -27,7 +27,7 @@ export async function createBuild(formData: FormData) {
 }
 
 export async function deleteBuild(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const id = String(formData.get("id") ?? "");
   if (!id) throw new Error("Build id is required");
   await serverApi.del(`builds/builds/${id}`);
@@ -36,7 +36,7 @@ export async function deleteBuild(formData: FormData) {
 }
 
 export async function assignBuild(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const id = String(formData.get("id") ?? "");
   const assigneeId = String(formData.get("assigneeId") ?? "");
   if (!id || !assigneeId) throw new Error("Build and assignee are required");
@@ -45,7 +45,7 @@ export async function assignBuild(formData: FormData) {
 }
 
 export async function approveBuild(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const id = String(formData.get("id") ?? "");
   const assigneeId = String(formData.get("assigneeId") ?? "");
   if (!id) throw new Error("Build is required");
@@ -119,7 +119,7 @@ export async function logProgressUpdate(formData: FormData) {
 }
 
 export async function generateBrief(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const buildId = String(formData.get("buildId") ?? "");
   if (!buildId) throw new Error("Build is required");
   await serverApi.post(`builds/builds/${buildId}/generate-brief`, {});
@@ -170,7 +170,7 @@ export async function createChangeRequest(formData: FormData) {
 }
 
 export async function setChangeRequestStatus(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const id = String(formData.get("id") ?? "");
   const buildId = String(formData.get("buildId") ?? "");
   const status = String(formData.get("status") ?? "");
@@ -180,7 +180,7 @@ export async function setChangeRequestStatus(formData: FormData) {
 }
 
 export async function deleteChangeRequest(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const id = String(formData.get("id") ?? "");
   const buildId = String(formData.get("buildId") ?? "");
   if (!id) throw new Error("Change request is required");
@@ -189,7 +189,7 @@ export async function deleteChangeRequest(formData: FormData) {
 }
 
 export async function recordApproval(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const buildId = String(formData.get("buildId") ?? "");
   const type = String(formData.get("type") ?? "BRIEF");
   const note = String(formData.get("note") ?? "").trim();
@@ -200,7 +200,7 @@ export async function recordApproval(formData: FormData) {
 
 // ─── Client portal ───────────────────────────────────────────────────────────
 export async function enablePortal(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const buildId = String(formData.get("buildId") ?? "");
   if (!buildId) throw new Error("Build is required");
   await serverApi.post(`builds/builds/${buildId}/enable-portal`, {});

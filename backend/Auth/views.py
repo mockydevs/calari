@@ -34,6 +34,11 @@ def _is_superuser(user):
     return user.is_superuser or user.role == 'superuser'
 
 
+def _can_manage_team(user):
+    """Managers, or members granted the 'team' feature, may manage staff."""
+    return _is_manager(user) or (hasattr(user, 'has_feature') and user.has_feature('team'))
+
+
 def _get_client_ip(request):
     x_forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded:
@@ -332,7 +337,7 @@ def register_user(request):
 @permission_classes([IsAuthenticated])
 def list_users(request):
     """GET /api/auth/users/ — Manager lists all users"""
-    if not _is_manager(request.user):
+    if not _can_manage_team(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     users = User.objects.all().order_by('-date_joined')
@@ -350,7 +355,7 @@ def list_users(request):
 @permission_classes([IsAuthenticated])
 def update_user(request, user_id):
     """PATCH /api/auth/users/<id>/ — Manager updates user"""
-    if not _is_manager(request.user):
+    if not _can_manage_team(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -371,6 +376,14 @@ def update_user(request, user_id):
 
     for field, value in serializer.validated_data.items():
         setattr(user, field, value)
+
+    # Feature grants (per-member access to admin-area features). Only true managers
+    # may grant features — a 'team'-granted member must not escalate privileges.
+    if 'feature_permissions' in request.data and _is_manager(request.user):
+        from .models import FEATURE_KEYS
+        requested = request.data.get('feature_permissions') or []
+        if isinstance(requested, list):
+            user.feature_permissions = [k for k in requested if k in FEATURE_KEYS]
 
     # Sync superuser flag with role
     if 'role' in serializer.validated_data:
@@ -399,7 +412,7 @@ def update_user(request, user_id):
 @permission_classes([IsAuthenticated])
 def deactivate_user(request, user_id):
     """POST /api/auth/users/<id>/deactivate/ — Manager deactivates user"""
-    if not _is_manager(request.user):
+    if not _can_manage_team(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.user.id == user_id:
@@ -439,7 +452,7 @@ def deactivate_user(request, user_id):
 @permission_classes([IsAuthenticated])
 def activate_user(request, user_id):
     """POST /api/auth/users/<id>/activate/ — Manager activates user"""
-    if not _is_manager(request.user):
+    if not _can_manage_team(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     try:

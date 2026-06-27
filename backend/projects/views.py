@@ -122,8 +122,10 @@ def _notify(recipient, subject, event_type, event_title, event_detail, actor, pr
 class ClientsViewSet(viewsets.ModelViewSet):
     queryset = Clients.objects.all()
     serializer_class = ClientsSerializer
-    # Clients have no per-user owner — anyone may read, only managers may write.
+    # Clients have no per-user owner — anyone may read; managers OR members granted
+    # the 'clients' feature may write.
     permission_classes = [IsManagerOrReadOnly]
+    write_feature = "clients"
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['is_active']
     search_fields = ['name', 'email', 'phone_number', 'company_name']

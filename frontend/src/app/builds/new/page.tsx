@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, ClipboardList, Plus } from "lucide-react";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { createBuild } from "../actions";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 }
 
 export default async function NewBuildPage() {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const clients = await serverApi
     .get<DjangoClient[] | { results: DjangoClient[] }>("projects/clients")
     .then(asList)

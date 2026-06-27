@@ -1,5 +1,5 @@
 import { Bot, CheckCircle2, KeyRound, Plus, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { createApiKey, activateApiKey, deleteApiKey, updateAiConfig } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,7 +53,7 @@ type AiUsage = {
 const nfmt = (n: number | null | undefined) => (n ?? 0).toLocaleString();
 
 export default async function AiSettingsPage() {
-  await requireAdmin();
+  await requireFeature("ai_keys");
   const [keys, config, usage] = await Promise.all([
     serverApi.get<AiKey[] | { results: AiKey[] }>("builds/ai-keys").then(asList).catch(() => [] as AiKey[]),
     serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "", multi_pass: false } as AiConfig)),

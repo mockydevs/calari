@@ -59,21 +59,21 @@ function Panel({ title, icon, children, action }: { title: string; icon: React.R
 export default async function BuildDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireUser();
-  const isAdmin = user.role === "ADMIN";
+  const canManageBuilds = user.role === "ADMIN" || (user.features ?? []).includes("builds_manage");
 
   // Fetch build + users + notes in parallel (one round-trip wave).
   const [build, users, notes] = await Promise.all([
     serverApi.get<BuildDetail>(`builds/builds/${id}`).catch(() => null),
-    isAdmin ? serverApi.get<DjangoUser[] | { results: DjangoUser[] }>("auth/users").then(asList).catch(() => []) : Promise.resolve([] as DjangoUser[]),
+    canManageBuilds ? serverApi.get<DjangoUser[] | { results: DjangoUser[] }>("auth/users").then(asList).catch(() => []) : Promise.resolve([] as DjangoUser[]),
     serverApi.get<MeetingNote[] | { results: MeetingNote[] }>(`builds/meeting-notes?build=${id}`).then(asList).catch(() => [] as MeetingNote[]),
   ]);
   if (!build) notFound();
 
   // Reads are open to all staff, but the backend limits build writes to a manager
   // OR the build owner (assignee). Mirror that here so non-owners don't see status
-  // controls that would 403. Admin-only actions stay gated by isAdmin below.
+  // controls that would 403. Admin-only actions stay gated by canManageBuilds below.
   const isOwner = build.assignee != null && String(build.assignee) === user.id;
-  const canManage = isAdmin || isOwner;
+  const canManage = canManageBuilds || isOwner;
 
   const tasks = build.tasks ?? [];
   const stages = build.stages ?? [];
@@ -149,7 +149,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
         {/* Assign + approve are one control: pick a member, then either just assign,
             or approve the build-out (records sign-off + notifies). Client-side so a
             missing-member click toasts instead of erroring. */}
-        {isAdmin && (
+        {canManageBuilds && (
           <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
             <AssignApprove
               buildId={id}
@@ -178,7 +178,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
           <Panel
             title="Vision blueprint"
             icon={<Sparkles className="h-4 w-4 text-pink-700" />}
-            action={isAdmin && (
+            action={canManageBuilds && (
               <div className="flex flex-wrap items-center gap-2">
                 <GenerateBriefButton buildId={id} hasBrief={hasBlueprint} />
                 {hasBlueprint && <RunQaButton buildId={id} />}
@@ -431,7 +431,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
         )}
 
         {/* ── Edit (admin) ─────────────────────────────────────────── */}
-        {isAdmin && hasBlueprint && (
+        {canManageBuilds && hasBlueprint && (
           <TabPanel id="edit" label="Edit blueprint">
             <Panel title="Edit blueprint" icon={<Sparkles className="h-4 w-4 text-pink-700" />}>
               <BlueprintEditor
@@ -461,7 +461,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
               <Panel
                 title={`Vision gaps${openGaps.length ? ` (${openGaps.length} open)` : ""}`}
                 icon={<HelpCircle className="h-4 w-4 text-pink-700" />}
-                action={isAdmin && hasBlueprint && (
+                action={canManageBuilds && hasBlueprint && (
                   <GenerateBriefButton buildId={id} hasBrief label="Apply answers & refine" />
                 )}
               >
@@ -481,7 +481,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                           <span className={`mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${g.status === "ANSWERED" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{g.status}</span>
                           {g.question}{g.answer ? ` — ${g.answer}` : ""}
                         </span>
-                        {isAdmin && (
+                        {canManageBuilds && (
                           <ConfirmDeleteButton action={deleteGap} fields={{ id: g.id, buildId: id }}
                             title="Delete gap" message="Permanently delete this gap?" />
                         )}
@@ -514,7 +514,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0"><p className="text-sm font-medium text-slate-900">{t.title}</p><p className="text-xs text-slate-400">{t.type}</p></div>
                       <div className="flex items-center gap-2">
-                        {isAdmin && <GenerateSopButton buildId={id} taskId={t.id} hasDescription={Boolean(t.description)} />}
+                        {canManageBuilds && <GenerateSopButton buildId={id} taskId={t.id} hasDescription={Boolean(t.description)} />}
                         {canManage ? (
                           <form action={updateTaskStatus} className="flex items-center gap-2">
                             <input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="buildId" value={id} />
@@ -554,7 +554,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                 <li key={c.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div><p className="text-sm font-medium text-slate-900">{c.title}</p><p className="text-xs text-slate-600">{c.description}</p>{c.impact && <p className="mt-0.5 text-xs text-slate-400">Impact: {c.impact}</p>}</div>
-                    {isAdmin ? (
+                    {canManageBuilds ? (
                       <div className="flex items-center gap-1.5">
                         <form action={setChangeRequestStatus} className="flex items-center gap-1.5">
                           <input type="hidden" name="id" value={c.id} /><input type="hidden" name="buildId" value={id} />
@@ -587,7 +587,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                 </li>
               ))}</ul>
             )}
-            {isAdmin && (
+            {canManageBuilds && (
               <form action={recordApproval} className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
                 <input type="hidden" name="buildId" value={id} />
                 <Select name="type" defaultValue="BRIEF" className="h-9">{APPROVAL_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}</Select>

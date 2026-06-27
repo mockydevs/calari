@@ -1,7 +1,7 @@
-import { Clock, MailPlus, Send, Trash2, UserCheck, Users } from "lucide-react";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { Clock, MailPlus, Send, ShieldCheck, Trash2, UserCheck, Users } from "lucide-react";
+import { requireFeature, FEATURE_KEYS, FEATURE_LABELS } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { approveUser, cancelInvite, deactivateUser, resendInvite } from "./actions";
+import { approveUser, cancelInvite, deactivateUser, resendInvite, setUserFeatures } from "./actions";
 import { InviteForm } from "./invite-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { cn, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-type DUser = { id: number; username: string; email: string; full_name: string; role: string; is_active: boolean; date_joined: string };
+type DUser = { id: number; username: string; email: string; full_name: string; role: string; is_active: boolean; date_joined: string; feature_permissions?: string[] };
 type DInvite = { id: number; name: string; email: string; role: string; expires_at: string };
 
 const ROLE_STYLES: Record<string, string> = {
@@ -24,12 +24,14 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 }
 
 export default async function TeamPage() {
-  const admin = await requireAdmin();
+  const admin = await requireFeature("team");
   const [users, invites] = await Promise.all([
     serverApi.get<DUser[] | { results: DUser[] }>("auth/users").then(asList).catch(() => [] as DUser[]),
     serverApi.get<DInvite[] | { results: DInvite[] }>("builds/team-invites").then(asList).catch(() => [] as DInvite[]),
   ]);
   const pendingUsers = users.filter((u) => !u.is_active);
+  // Only true admins/superusers may grant features.
+  const isTrueAdmin = admin.role === "ADMIN";
 
   return (
     <div className="space-y-5">
@@ -78,7 +80,7 @@ export default async function TeamPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[680px] text-sm">
                   <thead className="border-b border-slate-100 bg-slate-50/80">
-                    <tr>{["Member", "Email", "Role", "Status", "Action"].map((h) => (<th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>))}</tr>
+                    <tr>{["Member", "Email", "Role", "Status", ...(isTrueAdmin ? ["Access"] : []), "Action"].map((h) => (<th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>))}</tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {users.map((u) => (
@@ -94,6 +96,29 @@ export default async function TeamPage() {
                             {u.is_active ? "Active" : "Inactive"}
                           </span>
                         </td>
+                        {isTrueAdmin && (
+                          <td className="px-5 py-3.5">
+                            {u.role === "admin" || u.role === "superuser" ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-700"><ShieldCheck className="h-3.5 w-3.5" /> Full access</span>
+                            ) : (
+                              <details className="group">
+                                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                                  Access · {(u.feature_permissions ?? []).length}/{FEATURE_KEYS.length}
+                                </summary>
+                                <form action={setUserFeatures} className="mt-2 w-56 space-y-1.5 rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+                                  <input type="hidden" name="id" value={u.id} />
+                                  {FEATURE_KEYS.map((k) => (
+                                    <label key={k} className="flex items-center gap-2 text-xs text-slate-700">
+                                      <input type="checkbox" name={`feature_${k}`} defaultChecked={(u.feature_permissions ?? []).includes(k)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                                      {FEATURE_LABELS[k]}
+                                    </label>
+                                  ))}
+                                  <Button type="submit" size="sm" className="mt-1 w-full">Save access</Button>
+                                </form>
+                              </details>
+                            )}
+                          </td>
+                        )}
                         <td className="px-5 py-3.5">
                           {u.is_active && String(u.id) !== admin.id ? (
                             <form action={deactivateUser}><input type="hidden" name="id" value={u.id} /><Button size="sm" variant="outline">Deactivate</Button></form>

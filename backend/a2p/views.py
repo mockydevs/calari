@@ -30,8 +30,12 @@ def _is_manager(user):
 
 
 class IsManager(IsAuthenticated):
+    """Managers, or members explicitly granted the 'a2p' feature."""
     def has_permission(self, request, view):
-        return super().has_permission(request, view) and _is_manager(request.user)
+        if not super().has_permission(request, view):
+            return False
+        user = request.user
+        return _is_manager(user) or (hasattr(user, "has_feature") and user.has_feature("a2p"))
 
 
 def _notify_team(sub: A2PSubmission):

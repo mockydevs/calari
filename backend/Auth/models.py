@@ -18,6 +18,10 @@ class DashboardUser(AbstractUser):
     is_active = models.BooleanField(default=True)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
     profile_notes = models.TextField(blank=True)
+    # Per-member feature grants. Admins/superusers implicitly have every feature;
+    # for employees this list opts them into specific admin-area features (a2p,
+    # clients, builds_manage, team, ai_keys). See FEATURE_KEYS / has_feature().
+    feature_permissions = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = 'auth_dashboarduser'
@@ -32,6 +36,21 @@ class DashboardUser(AbstractUser):
     @property
     def is_superuser_role(self):
         return self.role == 'superuser' or self.is_superuser
+
+    @property
+    def is_manager(self):
+        return bool(self.is_superuser or self.role in ('superuser', 'admin'))
+
+    def has_feature(self, key):
+        """True if this user can use feature `key`. Managers have all features;
+        employees must be granted the feature explicitly."""
+        if self.is_manager:
+            return True
+        return key in (self.feature_permissions or [])
+
+
+# Feature keys an admin can grant to an individual member.
+FEATURE_KEYS = ['a2p', 'clients', 'builds_manage', 'team', 'ai_keys']
 
 
 class PasswordResetToken(models.Model):

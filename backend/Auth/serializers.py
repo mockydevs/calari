@@ -19,6 +19,7 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'full_name', 'role',
             'effective_role', 'is_active', 'is_superuser', 'job_title',
             'date_joined', 'last_login', 'last_login_ip', 'profile_notes',
+            'feature_permissions',
         ]
         read_only_fields = ['id', 'date_joined', 'last_login', 'last_login_ip']
 
@@ -116,6 +117,7 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'full_name', 'role',
             'effective_role', 'is_active', 'is_superuser', 'job_title',
             'date_joined', 'last_login', 'last_login_ip', 'profile_notes',
+            'feature_permissions',
         ]
         read_only_fields = ['id', 'date_joined', 'last_login', 'last_login_ip']
 

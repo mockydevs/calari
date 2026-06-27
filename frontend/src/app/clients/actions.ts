@@ -1,12 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { clientSchema } from "@/lib/validations";
 import { serverApi } from "@/lib/portal/server";
 
 export async function createClient(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("clients");
   const parsed = clientSchema.safeParse({
     name: formData.get("name"),
     company: formData.get("company") || undefined,
@@ -29,7 +29,7 @@ export async function createClient(formData: FormData) {
 }
 
 export async function updateClient(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("clients");
   const id = String(formData.get("id") ?? "");
   if (!id) throw new Error("Client id is required");
   const name = String(formData.get("name") ?? "").trim();
@@ -44,7 +44,7 @@ export async function updateClient(formData: FormData) {
 }
 
 export async function deleteClient(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("clients");
   const id = String(formData.get("id") ?? "");
   if (!id) throw new Error("Client id is required");
   await serverApi.del(`projects/clients/${id}`);

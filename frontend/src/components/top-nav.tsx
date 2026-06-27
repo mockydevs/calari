@@ -3,17 +3,18 @@ import { logout } from "@/lib/logout-action";
 import { serverApi } from "@/lib/portal/server";
 import { Bell, BriefcaseBusiness, KanbanSquare, LogOut, Settings, Users } from "lucide-react";
 
-export async function TopNav({ user }: { user: { id: string; name: string; role: string } }) {
+export async function TopNav({ user }: { user: { id: string; name: string; role: string; features?: string[] } }) {
   const unread = await serverApi
     .get<{ id: number }[]>("builds/notifications?read=false")
     .then((a) => (Array.isArray(a) ? a.length : 0))
     .catch(() => 0);
   const isAdmin = user.role === "ADMIN";
+  const can = (key: string) => isAdmin || (user.features ?? []).includes(key);
   const navItems = [
     { href: "/builds", label: "Builds", icon: BriefcaseBusiness, show: true },
     { href: "/builds/kanban", label: "Board", icon: KanbanSquare, show: true },
-    { href: "/clients", label: "Clients", icon: Users, show: isAdmin },
-    { href: "/settings/team", label: "Team", icon: Settings, show: isAdmin },
+    { href: "/clients", label: "Clients", icon: Users, show: can("clients") },
+    { href: "/settings/team", label: "Team", icon: Settings, show: can("team") },
   ];
 
   return (

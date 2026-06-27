@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileDown } from "lucide-react";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 export default async function A2PDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  await requireFeature("a2p");
   const { id } = await params;
   const s = await serverApi.get<A2PSubmission>(`a2p/submissions/${id}`).catch(() => null);
   if (!s) notFound();

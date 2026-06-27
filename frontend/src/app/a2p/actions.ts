@@ -2,11 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 
 export async function updateA2PSubmission(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("a2p");
   const id = String(formData.get("id") ?? "");
   if (!id) throw new Error("Submission id is required");
   const payload: Record<string, unknown> = {};
@@ -19,7 +19,7 @@ export async function updateA2PSubmission(formData: FormData) {
 }
 
 export async function deleteA2PSubmission(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("a2p");
   const id = String(formData.get("id") ?? "");
   if (!id) throw new Error("Submission id is required");
   await serverApi.del(`a2p/submissions/${id}`);

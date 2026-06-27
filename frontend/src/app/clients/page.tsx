@@ -1,5 +1,5 @@
 import { Building2, Plus, Users } from "lucide-react";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { createClient } from "./actions";
 import { ClientRow } from "./client-row";
@@ -21,7 +21,7 @@ type DjangoClient = {
 };
 
 export default async function ClientsPage() {
-  await requireAdmin();
+  await requireFeature("clients");
   // Consumes the Django backend (projects.Clients) instead of Prisma.
   const clients = await serverApi
     .get<DjangoClient[] | { results: DjangoClient[] }>("projects/clients")

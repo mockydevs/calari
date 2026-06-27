@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 
 export async function createApiKey(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("ai_keys");
   const provider = String(formData.get("provider") ?? "");
   const label = String(formData.get("label") ?? "").trim();
   const apiKey = String(formData.get("apiKey") ?? "").trim();
@@ -19,7 +19,7 @@ export async function createApiKey(formData: FormData) {
 }
 
 export async function activateApiKey(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("ai_keys");
   const id = String(formData.get("id") ?? "");
   if (!id) throw new Error("API key id is required");
   await serverApi.post(`builds/ai-keys/${id}/activate`);
@@ -27,7 +27,7 @@ export async function activateApiKey(formData: FormData) {
 }
 
 export async function deleteApiKey(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("ai_keys");
   const id = String(formData.get("id") ?? "");
   if (!id) throw new Error("API key id is required");
   await serverApi.del(`builds/ai-keys/${id}`);
@@ -35,7 +35,7 @@ export async function deleteApiKey(formData: FormData) {
 }
 
 export async function updateAiConfig(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("ai_keys");
   // Which provider + model the AI generation uses (the active key within that
   // provider is chosen separately via Activate).
   await serverApi.patch("builds/ai-config", {

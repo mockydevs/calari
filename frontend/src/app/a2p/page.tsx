@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { MessageSquare } from "lucide-react";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { formatDate } from "@/lib/utils";
 import { A2PStatusBadge, type A2PSubmission } from "./_shared";
@@ -13,7 +13,7 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 }
 
 export default async function A2PListPage() {
-  await requireAdmin();
+  await requireFeature("a2p");
   const items = await serverApi
     .get<A2PSubmission[] | { results: A2PSubmission[] }>("a2p/submissions")
     .then(asList)

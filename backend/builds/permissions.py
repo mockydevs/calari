@@ -14,6 +14,15 @@ def is_manager(user):
     )
 
 
+def can_manage_builds(user):
+    """Managers, or members granted the 'builds_manage' feature, may write to any
+    build regardless of ownership."""
+    return is_manager(user) or (
+        bool(user and user.is_authenticated)
+        and hasattr(user, "has_feature") and user.has_feature("builds_manage")
+    )
+
+
 def _owns_build(user, build):
     if build is None:
         return False
@@ -27,7 +36,7 @@ class IsManagerOrBuildOwner(BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        if request.method in SAFE_METHODS or is_manager(request.user):
+        if request.method in SAFE_METHODS or can_manage_builds(request.user):
             return True
         return _owns_build(request.user, obj)
 
@@ -40,7 +49,7 @@ class IsManagerOrBuildTaskOwner(BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        if request.method in SAFE_METHODS or is_manager(request.user):
+        if request.method in SAFE_METHODS or can_manage_builds(request.user):
             return True
         if obj.assignee_id == request.user.id:
             return True

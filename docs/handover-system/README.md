@@ -51,6 +51,37 @@ Both examples are the source text for the seed command below, so the running sys
 from them. The patterns in the playbook are also baked into `_BLUEPRINT_SYSTEM_PROMPT` (see the
 prompt snapshot) so the generator proposes them even before the library is populated.
 
+## Two generation outputs: blueprint vs build document
+
+There are now **two** things the system can generate from the same captured build:
+
+1. **Handover** (`render_handover_markdown`) — a *view of the structured blueprint*. Fast, no AI
+   call. The client-facing "what we built / how it operates" document.
+2. **Build document** (`generate_build_document`) — a long-form, **step-by-step implementation
+   guide for the assigned builder**: the 24-section format (goals → architecture → pipeline →
+   forms → automations → dashboards → ad tracking → testing/launch → timeline → client assets)
+   with **every workflow expanded into GHL builder-level steps** (exact trigger, filters,
+   actions, wait steps, if/else branches, stage moves, tags added/removed, notifications, stop
+   conditions, success metric) and per-stage operating notes. One AI call on the smartest model,
+   grounded in the blueprint + original notes + the Build-Library learning loop.
+
+`examples/events-dj-build-document.md` is a redacted gold example of output (2) — the kind of
+document a team member receives (with the original meeting notes) to go and build.
+
+**Generate it:**
+
+```bash
+# CLI — writes the doc (and optionally the original notes) to hand to a team member
+python manage.py generate_build_doc <build_id> --out build-doc.md --with-notes
+```
+
+```http
+GET /api/builds/<id>/build-document/      # returns {"markdown": "..."}
+```
+
+The GET action makes one AI call (10–30s); for the product UI, consider moving it to an async
+task + persisted field (mirroring `generate_build_brief`) as a follow-up.
+
 ## What's in `prompts/`
 
 `blueprint-system-prompt.md` is a human-readable snapshot of the live

@@ -878,6 +878,173 @@ def _critique_and_revise(draft: dict, notes_text: str, reference_text: str = "")
         return draft
 
 
+# ─── Implementation build document (long-form, step-by-step for the builder) ───
+# The blueprint (structured JSON) is the architecture; THIS turns it into the
+# implementer-facing build document a team member follows directly in GHL —
+# the 24-section format with every workflow expanded into builder-level steps.
+_BUILD_DOCUMENT_SYSTEM_PROMPT = (
+    "You are a senior GoHighLevel (GHL) CRM architect and marketing-automation strategist at "
+    "Calari Solutions. Turn the build blueprint + meeting notes you are given into a COMPLETE, "
+    "end-to-end IMPLEMENTATION BUILD DOCUMENT that a GHL implementer can follow directly inside "
+    "the workflow builder — not a summary, and not generic CRM advice. Be specific, practical, and "
+    "exhaustive; prefer completeness over brevity. Use the EXACT pipeline stage names, workflow "
+    "names, field names, tag names, calendar names and dashboard metric names from the blueprint "
+    "(invent missing ones in the same style and naming convention, and mark anything you assumed). "
+    "Respect the system-of-record split stated in the notes: GHL owns sales & marketing (capture, "
+    "pipeline, nurture, booking, follow-up, upsell, reporting, ad conversion tracking); any external "
+    "tool named as the source of truth (e.g. an event/contract/PMS system) keeps contracts, "
+    "logistics, staffing and core financials — bridge milestones back into GHL via forms/webhooks "
+    "keyed on a unique identifier (usually phone).\n\n"
+    "Output GitHub-flavored Markdown with these numbered sections, in order:\n"
+    "1. Business goals (include the target metric movement if stated)\n"
+    "2. CRM architecture (each system and what it owns; the integration map)\n"
+    "3. Pipeline stages (the ordered list)\n"
+    "4. Detailed pipeline flow (the end-to-end journey)\n"
+    "5. Contact fields & custom values needed\n6. Tags needed\n7. Lead sources\n"
+    "8. Calendar setup\n9. Forms needed\n10. Automations/workflows needed (overview list)\n"
+    "11. Trigger logic for each workflow\n12. If/then branches\n13. Entry & exit conditions\n"
+    "14. Email/SMS sequence structure (per sequence: day/step, channel, purpose)\n"
+    "15. Internal notifications\n16. External source-of-truth integration flow (forms/webhooks "
+    "that report milestones back to GHL)\n17. Payment / payment-link flow\n18. Upsell flow\n"
+    "19. Reporting dashboards (name each metric)\n20. Ad conversion tracking (which milestones fire "
+    "which events)\n21. Testing checklist\n22. Launch checklist\n23. 2–3 week implementation "
+    "timeline (Week 1/2/3)\n24. Client assets/information needed before build\n\n"
+    "THE AUTOMATION SECTION IS THE CORE — expand EVERY workflow in full implementation detail. For "
+    "each workflow use this exact structure:\n"
+    "  - Workflow name\n  - Purpose\n  - Trigger (exact GHL trigger + filters)\n  - Enrollment/"
+    "stop & re-entry rules\n  - Step-by-step actions (numbered, in builder order: create/find "
+    "contact, if/else conditions, send email/SMS with the template name, wait steps with exact "
+    "durations, update opportunity stage, add/remove tags, assign user, internal notification, "
+    "webhook/HTTP, fire ad event)\n  - Wait steps (exact durations)\n  - If/else branches (each "
+    "condition and what happens)\n  - Pipeline movement (from-stage → to-stage)\n  - Tags "
+    "added/removed\n  - Notifications sent (to whom, channel, content)\n  - Stop conditions\n"
+    "  - Success metric\n\n"
+    "For EACH pipeline stage, also document: stage name; what qualifies a lead to ENTER; what "
+    "automation happens IN the stage; what MOVES the lead to the next stage; what can go wrong; how "
+    "to REPORT on the stage.\n\n"
+    "Always include the standard Calari deliverables an expert ships even if unstated (speed-to-lead "
+    "auto-reply within ~5 min + internal alert to the ASSIGNED rep + task; unqualified vs qualified "
+    "nurtures that suppress on booking; appointment confirmation + reminders 24h/2h + no-show "
+    "recovery + reschedule flow that clears stale reminders; post-visit/post-consult review & "
+    "referral; pipeline-stage movers), and — whenever the build sends SMS — an A2P / SMS COMPLIANCE "
+    "workstream (compliant Privacy Policy + Terms with the verbatim non-sharing clause; unchecked "
+    "opt-in consent flow; Twilio brand + campaign under the Customer Care/transactional use case) "
+    "with its real failure modes called out (opt-in error 30896 → standalone compliance website "
+    "possibly needing a brand reset; toll-free numbers will NOT connect to GHL — use a local "
+    "number). Put compliance and any unknowns into the testing/launch checklists and the "
+    "client-assets section. Base everything on the blueprint and notes provided; do not contradict "
+    "them. Return ONLY the Markdown build document."
+)
+
+
+def _full_build_context(build) -> str:
+    """A complete text dump of the captured blueprint for the document generator — richer
+    than _build_state_summary (which is for deltas). Mirrors the handover anatomy."""
+    sources = list(build.contact_sources.all())
+    cals = list(build.calendars.all())
+    integ = list(build.external_integrations.all())
+    trans = list(build.transitions.all())
+    wfs = list(build.workflows.all())
+    fields = list(build.custom_fields.all())
+    tags = list(build.tags.all())
+    checklist = list(build.pre_launch_items.all())
+    tasks = list(build.tasks.all())
+    gaps = list(build.gaps.all())
+    p = [
+        f"CLIENT: {build.client.name if build.client_id else 'n/a'}",
+        f"TITLE: {build.title}",
+        f"ONE-LINE: {build.one_line_summary or 'n/a'}",
+        f"OVERVIEW: {build.overview or build.goals or 'n/a'}",
+        f"GOALS: {build.goals or 'n/a'}",
+        f"INTEGRATIONS: {build.integrations or 'none'}",
+    ]
+    if (build.maintenance_notes or "").strip():
+        p.append(f"MAINTENANCE: {build.maintenance_notes}")
+    stages = list(build.stages.all())
+    if stages:
+        p.append("PIPELINE STAGES:")
+        for st in stages:
+            mode = "auto" if st.is_automatic else "manual"
+            p.append(f"  {st.order}. {st.name} [{mode}] — {st.description} | enter: {st.entry_condition}")
+    if trans:
+        p.append("STAGE TRANSITIONS:")
+        for t in trans:
+            frm = (t.from_stage.name if t.from_stage_id else None) or t.from_label or "—"
+            to = (t.to_stage.name if t.to_stage_id else None) or t.to_label or "—"
+            p.append(f"  {frm} → {to} | trigger: {t.trigger} | {'auto' if t.is_automatic else 'manual'}")
+    if sources:
+        p.append("LEAD SOURCES:")
+        for so in sources:
+            entry = so.entry_stage.name if so.entry_stage_id else ""
+            p.append(f"  {so.label}: enters via {so.entry_mechanism}; fires {so.fires}; "
+                     f"tags {so.tags_applied}; workflow {so.handling_workflow}; → {entry}")
+    if cals:
+        p.append("CALENDARS:")
+        for c in cals:
+            into = c.books_into_stage.name if c.books_into_stage_id else ""
+            p.append(f"  {c.name} ({c.get_type_display()}): {c.purpose}; assigned {c.assigned_to}; "
+                     f"→ {into}; on booking: {c.on_booking}; reminders: {c.reminders}")
+    if integ:
+        p.append("EXTERNAL INTEGRATIONS:")
+        for ig in integ:
+            p.append(f"  {ig.name} [{ig.get_direction_display()}/{ig.get_mechanism_display()}]: "
+                     f"{ig.data_objects}; {ig.trigger_cadence}; {ig.purpose}")
+    if wfs:
+        p.append("WORKFLOWS:")
+        for w in wfs:
+            name = f"{w.code} {w.name}".strip()
+            p.append(f"  {name} [{w.category}]: trigger {w.trigger} — {w.what_it_does}")
+    if fields:
+        p.append("CUSTOM FIELDS/VALUES: " + ", ".join(
+            f"{f.key}({f.kind}{'' if f.populated else ',NEEDS VALUE'})" for f in fields))
+    if tags:
+        p.append("TAGS: " + ", ".join(f"{t.tag} ({t.meaning})" if t.meaning else t.tag for t in tags))
+    if tasks:
+        p.append("TASKS: " + "; ".join(f"{t.title} [{t.type}]" for t in tasks))
+    if checklist:
+        p.append("PRE-LAUNCH: " + "; ".join(
+            i.description + (" (optional)" if i.optional else "") for i in checklist))
+    if gaps:
+        p.append("OPEN GAPS: " + "; ".join(f"[{g.severity}] {g.question}" for g in gaps))
+    return "\n".join(p)
+
+
+def generate_build_document(build, notes_text: str = "", reference_text: str = "") -> str:
+    """Generate the long-form, step-by-step GHL implementation build document for a build.
+
+    Pulls the captured blueprint, the original meeting notes, and Build-Library reference
+    context (the learning loop), then asks the smartest model for the full 24-section build
+    doc with every workflow expanded into builder-level steps. Returns Markdown.
+    """
+    if not notes_text:
+        notes_text = "\n\n".join(
+            build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True)
+        )
+    if not reference_text:
+        try:
+            reference_text = build_reference_context(build)
+        except Exception:  # noqa: BLE001 — reference is a bonus, never block generation
+            reference_text = ""
+
+    messages = [{"role": "system", "content": _BUILD_DOCUMENT_SYSTEM_PROMPT}]
+    if reference_text.strip():
+        messages.append({"role": "system", "content": (
+            "REFERENCE — how Calari has built similar systems (Build Library). Match our naming, "
+            "structure and conventions; adapt rather than copy client-specific details:\n\n"
+            + reference_text[:KNOWLEDGE_MAX_CHARS]
+        )})
+    messages.append({"role": "user", "content": (
+        "Produce the complete implementation build document.\n\n"
+        f"BUILD BLUEPRINT (captured structure):\n{_full_build_context(build)}\n\n"
+        f"ORIGINAL MEETING NOTES:\n{notes_text[:MAX_TEXT_CHARS]}"
+    )})
+
+    doc = (_chat(messages, model=_blueprint_model(), max_tokens=16000, op="build_document") or "").strip()
+    if not doc:
+        raise RuntimeError("AI returned no build-document content")
+    return doc
+
+
 _QA_SCHEMA = {
     "type": "object",
     "additionalProperties": False,

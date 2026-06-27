@@ -13,7 +13,7 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 
 export default async function BuildsPage() {
   const user = await requireUser();
-  const isAdmin = user.role === "ADMIN";
+  const isAdmin = user.role === "ADMIN" || (user.features ?? []).includes("builds_manage");
   const builds = await serverApi
     .get<BuildRow[] | { results: BuildRow[] }>("builds/my-builds")
     .then(asList)

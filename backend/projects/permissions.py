@@ -46,12 +46,17 @@ class IsManagerOrTaskOwner(BasePermission):
 
 class IsManagerOrReadOnly(BasePermission):
     """Anyone authenticated may read; only managers may write. Used for records
-    with no per-user owner (e.g. Clients)."""
+    with no per-user owner (e.g. Clients). A view may set `write_feature` to also
+    allow members explicitly granted that feature to write."""
 
     def has_permission(self, request, view):
-        if not (request.user and request.user.is_authenticated):
+        user = request.user
+        if not (user and user.is_authenticated):
             return False
-        return request.method in SAFE_METHODS or is_manager(request.user)
+        if request.method in SAFE_METHODS or is_manager(user):
+            return True
+        feature = getattr(view, "write_feature", None)
+        return bool(feature and hasattr(user, "has_feature") and user.has_feature(feature))
 
 
 def _is_project_member(user, project):

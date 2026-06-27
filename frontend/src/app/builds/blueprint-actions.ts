@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { BLUEPRINT_SECTIONS } from "./_blueprint-config";
 
@@ -25,7 +25,7 @@ function buildPayload(resource: string, formData: FormData, opts: { create: bool
 }
 
 export async function createBlueprintItem(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const resource = String(formData.get("__resource") ?? "");
   const buildId = String(formData.get("__buildId") ?? "");
   if (!buildId) throw new Error("Build is required");
@@ -35,7 +35,7 @@ export async function createBlueprintItem(formData: FormData) {
 }
 
 export async function updateBlueprintItem(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const resource = String(formData.get("__resource") ?? "");
   const buildId = String(formData.get("__buildId") ?? "");
   const id = String(formData.get("__id") ?? "");
@@ -48,7 +48,7 @@ export async function updateBlueprintItem(formData: FormData) {
 }
 
 export async function deleteBlueprintItem(formData: FormData) {
-  await requireAdmin();
+  await requireFeature("builds_manage");
   const resource = String(formData.get("__resource") ?? "");
   const buildId = String(formData.get("__buildId") ?? "");
   const id = String(formData.get("__id") ?? "");

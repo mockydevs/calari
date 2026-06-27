@@ -292,6 +292,21 @@ class BuildViewSet(viewsets.ModelViewSet):
             markdown = "_The handover could not be rendered for this build yet._"
         return Response({"markdown": markdown})
 
+    @action(detail=True, methods=["get"], url_path="build-document")
+    def build_document(self, request, pk=None):
+        """Generate the long-form, step-by-step GHL IMPLEMENTATION build document (markdown).
+
+        Heavier than the handover (this makes one AI call) and meant for the assigned builder
+        to follow directly in GHL. Grounded in the captured blueprint + the original meeting
+        notes + the Build-Library learning loop.
+        """
+        build = self._detail_queryset().get(pk=self.get_object().pk)
+        try:
+            markdown = services.generate_build_document(build)
+        except Exception:  # noqa: BLE001 — never 500 the request; return a soft message
+            markdown = "_The build document could not be generated yet._"
+        return Response({"markdown": markdown})
+
     @action(detail=True, methods=["get"], url_path="vision-completeness")
     def vision_completeness(self, request, pk=None):
         """Score how fully the client vision is captured, by handover section."""
@@ -880,7 +895,8 @@ class AiApiKeyViewSet(viewsets.ModelViewSet):
     filterset_fields = ["provider", "active"]
 
     def create(self, request, *args, **kwargs):
-        if not _is_manager(request.user):
+        u = request.user
+        if not (_is_manager(u) or (hasattr(u, "has_feature") and u.has_feature("ai_keys"))):
             return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
         ser = self.get_serializer(data=request.data)
         ser.is_valid(raise_exception=True)
