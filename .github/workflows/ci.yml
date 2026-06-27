@@ -1,0 +1,109 @@
+name: CI
+
+# Gates every push to main + PRs. The login smoke job boots the backend with
+# prod-like settings and does a REAL login through Django — it would have caught the
+# DisallowedHost (ALLOWED_HOSTS) and SECURE_SSL_REDIRECT 301 issues before they shipped.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Prod-like: DEBUG off + USE_HTTPS on so the secure-cookie / SSL-redirect paths
+      # are exercised (a reintroduced app-level HTTPS redirect would 301 the smoke login).
+      DEBUG: "False"
+      USE_HTTPS: "True"
+      SECRET_KEY: ci-secret-key-no-dollar-signs
+      API_KEY_ENCRYPTION_SECRET: ci-encryption-secret
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # The frontend BFF reaches the backend at this host in prod; Django must allow it.
+      DJANGO_API_URL: http://backend:8000
+      DEMO_ADMIN_EMAIL: ci@example.com
+      DEMO_ADMIN_PASSWORD: cipass123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Mirror the Dockerfile: these aren't in the hash-pinned export.
+          pip install --no-cache-dir "openai>=2,<3" "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0" "sentry-sdk>=2,<3"
+      - name: Django system check
+        run: python manage.py check
+      - name: Migration drift check
+        run: python manage.py makemigrations --check --dry-run
+      - name: Migrate
+        run: python manage.py migrate --noinput
+      - name: Unit tests
+        # Advisory for now (existing suites not yet CI-verified); make this a hard gate
+        # once it's reliably green.
+        continue-on-error: true
+        run: python manage.py test Auth builds onboarding projects a2p -v1
+      - name: Login smoke test (boot + real auth)
+        run: |
+          python manage.py shell -c "import os; from django.contrib.auth import get_user_model as G; U=G(); U.objects.filter(email=os.environ['DEMO_ADMIN_EMAIL']).exists() or U.objects.create_superuser(username='ci', email=os.environ['DEMO_ADMIN_EMAIL'], password=os.environ['DEMO_ADMIN_PASSWORD'])"
+          daphne -b 127.0.0.1 -p 8000 config.asgi:application &
+          for i in $(seq 1 30); do curl -fsS -o /dev/null "http://127.0.0.1:8000/health/" && break || sleep 1; done
+          # Login with Host: backend (simulating the internal BFF call). Must be 200 —
+          # not 400 (DisallowedHost) and not 301 (app-level HTTPS redirect).
+          code=$(curl -s -o /tmp/login.json -w "%{http_code}" \
+            -X POST "http://127.0.0.1:8000/api/token/" \
+            -H "Host: backend" -H "Content-Type: application/json" \
+            -d '{"username_or_email":"ci@example.com","password":"cipass123"}')
+          echo "login status: $code"; cat /tmp/login.json || true
+          test "$code" = "200" || { echo "::error::Login smoke failed (expected 200, got $code)"; exit 1; }
+          grep -q '"ok": *true' /tmp/login.json || { echo "::error::Login response missing ok:true"; exit 1; }
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        # Advisory: there are pre-existing eslint errors (e.g. set-state-in-effect in
+        # kanban/portal-link). Clean those, then drop continue-on-error to enforce.
+        continue-on-error: true
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test -- --passWithNoTests
+      - name: Production build
+        run: npm run build
