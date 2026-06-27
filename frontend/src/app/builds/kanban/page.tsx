@@ -19,6 +19,18 @@ const COL_DOT: Record<BuildStatus, string> = {
   DELIVERED: "bg-emerald-500",
 };
 
+// Per-stage card accent: a colored left bar + matching status pill, so a card's
+// stage is readable at a glance (matches the column dot colors).
+const CARD_ACCENT: Record<BuildStatus, { bar: string; pill: string }> = {
+  DRAFT: { bar: "border-l-slate-400", pill: "bg-slate-100 text-slate-600" },
+  AI_DRAFTED: { bar: "border-l-violet-500", pill: "bg-violet-50 text-violet-700" },
+  ASSIGNED: { bar: "border-l-pink-500", pill: "bg-pink-50 text-pink-700" },
+  IN_PROGRESS: { bar: "border-l-amber-500", pill: "bg-amber-50 text-amber-700" },
+  READY_FOR_REVIEW: { bar: "border-l-indigo-500", pill: "bg-indigo-50 text-indigo-700" },
+  CHANGES_REQUESTED: { bar: "border-l-orange-500", pill: "bg-orange-50 text-orange-700" },
+  DELIVERED: { bar: "border-l-emerald-500", pill: "bg-emerald-50 text-emerald-700" },
+};
+
 export default function BuildsBoardPage() {
   const [builds, setBuilds] = React.useState<BuildRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -89,11 +101,11 @@ export default function BuildsBoardPage() {
               >
                 <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
                   <span className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${COL_DOT[status]}`} />{BUILD_STATUS_LABEL[status]}</span>
-                  <span className="text-slate-400">{cards.length}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">{cards.length}</span>
                 </div>
-                <div className="flex min-h-[60px] flex-col gap-2 p-2.5">
+                <div className="flex min-h-[72px] flex-col gap-2 p-2.5">
                   {cards.length === 0 ? (
-                    <p className="py-3 text-center text-xs text-slate-400">—</p>
+                    <p className={`rounded-md border border-dashed py-5 text-center text-[11px] transition-colors ${dragOver === status ? "border-pink-300 text-pink-500" : "border-slate-200 text-slate-300"}`}>Drop a build here</p>
                   ) : (
                     cards.map((b) => (
                       <div
@@ -103,11 +115,21 @@ export default function BuildsBoardPage() {
                           e.dataTransfer.setData("id", String(b.id));
                           e.dataTransfer.setData("from", status);
                         }}
-                        className="cursor-grab rounded-md border border-slate-200 bg-white p-2.5 shadow-sm transition-colors hover:border-pink-200"
+                        className={`cursor-grab rounded-md border border-l-[3px] border-slate-200 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${CARD_ACCENT[status].bar}`}
                       >
-                        <Link href={`/builds/${b.id}`} className="text-sm font-semibold text-slate-900 hover:text-pink-700">{b.title}</Link>
-                        <p className="mt-0.5 text-xs text-slate-500">{b.client_name || "—"}</p>
-                        {b.assignee_name && <p className="mt-1 text-[11px] text-slate-400">{b.assignee_name}</p>}
+                        <Link href={`/builds/${b.id}`} className="block text-sm font-semibold leading-snug text-slate-900 hover:text-pink-700">{b.title}</Link>
+                        <p className="mt-0.5 text-xs text-slate-500">{b.client_name || "No client"}</p>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${CARD_ACCENT[status].pill}`}>{BUILD_STATUS_LABEL[status]}</span>
+                          {b.assignee_name ? (
+                            <span className="flex items-center gap-1 text-[11px] text-slate-500">
+                              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[8px] font-bold text-slate-600">{b.assignee_name.charAt(0).toUpperCase()}</span>
+                              {b.assignee_name}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-300">Unassigned</span>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
