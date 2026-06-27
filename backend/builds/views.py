@@ -173,6 +173,16 @@ def _notify_doc_updated(build, actor, verb):
         )
 
 
+def _maybe_start_progress(build, user):
+    """Auto-advance ASSIGNED -> IN_PROGRESS the first time real work happens on a build
+    (a section reviewed, a task moved, a progress report submitted), so the status board
+    reflects work without anyone having to drag the card. No-op at any other stage."""
+    if build.status == BuildStatus.ASSIGNED:
+        build.status = BuildStatus.IN_PROGRESS
+        build.save(update_fields=["status", "updated_at"])
+        _log(build, user, "Auto-moved to In Progress — work started.")
+
+
 def _501(exc):
     return Response({"error": str(exc)}, status=http.HTTP_501_NOT_IMPLEMENTED)
 
@@ -459,6 +469,7 @@ class BuildViewSet(viewsets.ModelViewSet):
             build=build, raw_text=text, source=request.data.get("source") or "paste",
             file_url=request.data.get("file_url") or "", ai_status="processing", created_by=request.user,
         )
+        _maybe_start_progress(build, request.user)
         _log(build, request.user, "Progress report submitted for AI verification.")
         from .tasks import analyze_build_progress
         err = _dispatch_async(analyze_build_progress, build.id, report.id, request.user.id)
@@ -590,6 +601,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         if "progress_note" in request.data:
             task.progress_note = request.data["progress_note"]
         task.save()
+        _maybe_start_progress(task.build, request.user)
         _log(task.build, request.user, f'Task "{task.title}" → {task.status}.')
         actor_name = request.user.get_full_name() or request.user.username
         msg = f'{actor_name} updated task "{task.title}" to {task.status}.'
@@ -787,6 +799,7 @@ class ProgressReportViewSet(_BaseViewSet):
             build=build, raw_text=text, source="upload", file_url=file_url,
             ai_status="processing", created_by=request.user,
         )
+        _maybe_start_progress(build, request.user)
         _log(build, request.user, f'Progress report uploaded from "{filename}" for AI verification.')
         from .tasks import analyze_build_progress
         err = _dispatch_async(analyze_build_progress, build.id, report.id, request.user.id)
@@ -1057,6 +1070,8 @@ class BuildSectionReviewViewSet(_BaseViewSet):
             notify_type = "TASK_UPDATED"
             notify_user = build.creator if request.user != build.creator else build.assignee
         review.save()
+        if status in (BuildSectionReviewStatus.DONE, BuildSectionReviewStatus.BLOCKED):
+            _maybe_start_progress(build, request.user)
         _log(build, request.user, message)
         _notify(
             notify_user,
