@@ -15,6 +15,7 @@ import { AssignApprove } from "../assign-approve";
 import { NoteComposer } from "../note-composer";
 import { GapResolver } from "../gap-resolver";
 import { BuildDeleteButton, ConfirmDeleteButton } from "../build-row-actions";
+import { PortalLink } from "../portal-link";
 import { GenerateBriefButton } from "../generate-brief-button";
 import { HandoverButton } from "../handover-button";
 import { MeetingNoteUpload } from "../meeting-note-upload";
@@ -161,7 +162,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
               <Button type="submit" size="sm" variant="outline"><Link2 className="h-3.5 w-3.5" /> {build.client_portal_enabled ? "Portal enabled" : "Enable client portal"}</Button>
             </form>
             {build.client_portal_enabled && build.client_portal_token && (
-              <span className="text-xs text-slate-500">Token: <code className="rounded bg-slate-100 px-1">{build.client_portal_token}</code></span>
+              <div className="w-full"><PortalLink token={build.client_portal_token} /></div>
             )}
             <div className="ml-auto"><BuildDeleteButton id={Number(id)} title={build.title} label="Delete build" /></div>
             {hasBlueprint && build.status !== "DELIVERED" && (
