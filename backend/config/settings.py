@@ -524,3 +524,24 @@ LOGGING = {
         },
     },
 }
+
+
+# ─── Error monitoring (Sentry) — env-gated, optional ───
+# No-op unless SENTRY_DSN is set, and import-guarded so dev/CI without the package
+# (it's installed in the Docker image, not the hash-pinned requirements) still run.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+        from sentry_sdk.integrations.celery import CeleryIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[DjangoIntegration(), CeleryIntegration()],
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+            send_default_pii=False,
+            environment=os.getenv("SENTRY_ENVIRONMENT", "development" if DEBUG else "production"),
+        )
+    except Exception:  # noqa: BLE001 — never let monitoring setup break boot
+        pass

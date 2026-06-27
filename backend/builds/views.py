@@ -11,7 +11,7 @@ from django.db.models import Count, Sum, Avg, Q
 from django.utils import timezone
 
 from projects.tasks import send_notification_email
-from rest_framework import viewsets, status as http
+from rest_framework import viewsets, mixins, status as http
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -209,9 +209,11 @@ def _build_quality(build):
             else:
                 human += 1
     kept = ai - edited
-    gap_relation = getattr(build, "vision_gaps", None)
-    gaps_total = gap_relation.count() if gap_relation is not None else 0
-    gaps_resolved = gap_relation.filter(resolved=True).count() if gap_relation is not None else 0
+    # "Gaps" were folded into the tasklist as QUESTION items (the blueprint VisionGap
+    # model was removed). Resolved = answered/closed (done or dropped).
+    questions = build.action_items.filter(category="QUESTION", superseded=False)
+    gaps_total = questions.count()
+    gaps_resolved = questions.filter(status__in=["DONE", "DROPPED"]).count()
     return {
         "ai_items": ai, "edited": edited, "human_added": human, "kept": kept,
         "kept_pct": round(kept * 100 / ai) if ai else 0,
@@ -1092,7 +1094,8 @@ class BuildSectionReviewViewSet(_BaseViewSet):
 
 
 # ─── Notifications ────────────────────────────────────────────────────────────
-class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+class NotificationViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
+    """List/retrieve + mark-read + delete/clear. Always scoped to the current user."""
     serializer_class = NotificationSerializer
     permission_classes = PERMS
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -1115,6 +1118,12 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     def mark_all_read(self, request):
         self.get_queryset().filter(read=False).update(read=True)
         return Response({"ok": True})
+
+    @action(detail=False, methods=["post"], url_path="clear-read")
+    def clear_read(self, request):
+        """Delete the user's already-read notifications (keeps unread)."""
+        deleted, _ = self.get_queryset().filter(read=True).delete()
+        return Response({"ok": True, "deleted": deleted})
 
 
 # Rough USD per 1M tokens (input, output). Estimates — update as provider pricing

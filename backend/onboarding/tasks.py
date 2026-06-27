@@ -142,18 +142,31 @@ def ingest_fireflies_call(self, call_id, payload=None):
 
     ci.summary = (insight.get("summary") or "")[:8000]
     ci.insight = insight
-    ci.confidence = insight.get("confidence")
+    ci.confidence = _as_confidence(insight.get("confidence"))
     ci.ai_model = services.ai._blueprint_model()
     ci.status = CallInsightStatus.ANALYZED
     ci.save(update_fields=["summary", "insight", "confidence", "ai_model", "status", "updated_at"])
 
     # 5. Fan out.
-    _fan_out(ci, client_map, insight, settings)
+    _fan_out(ci, client_map, insight, settings, transcript_len=len(tr.get("text", "")))
     ci.status = CallInsightStatus.DISTRIBUTED
     ci.save(update_fields=["status", "updated_at"])
 
 
-def _fan_out(ci: CallInsight, m, insight: dict, settings: AutomationSettings):
+# A transcript shorter than this is too thin to trust for a client-facing post.
+_MIN_EXTERNAL_TRANSCRIPT_CHARS = 400
+
+
+def _as_confidence(value) -> float | None:
+    """Coerce the model's self-reported confidence to a 0..1 float, or None."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, f))
+
+
+def _fan_out(ci: CallInsight, m, insight: dict, settings: AutomationSettings, transcript_len: int = 0):
     # ── Slack internal (always) ──
     internal = (insight.get("internal_summary") or insight.get("summary") or "").strip()
     if m.slack_internal_channel_id and internal:
@@ -184,6 +197,10 @@ def _fan_out(ci: CallInsight, m, insight: dict, settings: AutomationSettings):
     if m.slack_external_channel_id and external:
         if not settings.external_posting_enabled:
             _emit(ci, EventTarget.SLACK_EXTERNAL, None, skip_reason="External posting disabled globally.")
+        elif transcript_len < _MIN_EXTERNAL_TRANSCRIPT_CHARS:
+            _emit(ci, EventTarget.SLACK_EXTERNAL, None,
+                  skip_reason=f"Transcript too short ({transcript_len} chars) to post to the client.")
+            _alert_ops(f"External summary held (thin transcript) for *{ci.title}* — review.")
         elif (ci.confidence or 0) < settings.confidence_threshold:
             _emit(ci, EventTarget.SLACK_EXTERNAL, None,
                   skip_reason=f"Confidence {ci.confidence} below threshold {settings.confidence_threshold}.")

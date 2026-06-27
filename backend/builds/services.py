@@ -24,11 +24,32 @@ AI_READABLE_EXTENSIONS = {".pdf", ".docx", ".txt", ".csv", ".md", ".rtf"}
 _SCRYPT_SALT = b"calari-ai-provider-keys"
 
 
-def _encryption_key() -> bytes:
-    secret = os.getenv("API_KEY_ENCRYPTION_SECRET") or settings.SECRET_KEY
-    if not secret:
-        raise RuntimeError("API_KEY_ENCRYPTION_SECRET or SECRET_KEY is required to store provider keys")
+def _derive_key(secret: str) -> bytes:
     return hashlib.scrypt(secret.encode(), salt=_SCRYPT_SALT, n=16384, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024)
+
+
+def _encryption_secrets() -> list[str]:
+    """Encryption secrets in precedence order. The first is used to ENCRYPT; all are
+    tried (in order) to DECRYPT — so rotating API_KEY_ENCRYPTION_SECRET (or SECRET_KEY)
+    doesn't orphan existing tokens. Set API_KEY_ENCRYPTION_SECRET_FALLBACKS (comma-
+    separated) to the old secret(s) during a rotation, then run `reencrypt_secrets`."""
+    out: list[str] = []
+    for s in [
+        os.getenv("API_KEY_ENCRYPTION_SECRET"),
+        *os.getenv("API_KEY_ENCRYPTION_SECRET_FALLBACKS", "").split(","),
+        settings.SECRET_KEY,  # always a fallback (legacy values encrypted with it)
+    ]:
+        s = (s or "").strip()
+        if s and s not in out:
+            out.append(s)
+    if not out:
+        raise RuntimeError("API_KEY_ENCRYPTION_SECRET or SECRET_KEY is required to store provider keys")
+    return out
+
+
+def _encryption_key() -> bytes:
+    """The primary key used to encrypt new values."""
+    return _derive_key(_encryption_secrets()[0])
 
 
 def encrypt_api_key(plaintext: str) -> tuple[str, str]:
@@ -49,7 +70,13 @@ def decrypt_api_key(encrypted: str) -> str:
     if len(parts) != 3:
         raise ValueError("Stored API key is malformed")
     iv, tag, ct = (base64.b64decode(p) for p in parts)
-    return AESGCM(_encryption_key()).decrypt(iv, ct + tag, None).decode()
+    last_err: Exception | None = None
+    for secret in _encryption_secrets():
+        try:
+            return AESGCM(_derive_key(secret)).decrypt(iv, ct + tag, None).decode()
+        except Exception as e:  # noqa: BLE001 — try the next (rotation) key
+            last_err = e
+    raise ValueError(f"Could not decrypt stored secret with any configured key: {last_err}")
 
 
 def preview_api_key(api_key: str) -> str:
@@ -225,9 +252,37 @@ def _record_ai_log(op, provider, model, usage, latency_ms, ok, error=""):
         pass
 
 
+class AiSpendCapExceeded(RuntimeError):
+    """Raised when today's AI token usage has hit the configured daily ceiling."""
+
+
+def _daily_token_cap() -> int:
+    """Daily output-token ceiling across all AI ops. 0/unset = unlimited."""
+    try:
+        return int(os.getenv("AI_DAILY_TOKEN_CAP", "0"))
+    except ValueError:
+        return 0
+
+
+def _tokens_used_today() -> int:
+    from datetime import date as _date
+    from django.db.models import Sum
+    from .models import AiGenerationLog
+    start = _date.today()
+    total = (AiGenerationLog.objects.filter(created_at__date=start)
+             .aggregate(t=Sum("total_tokens")).get("t"))
+    return int(total or 0)
+
+
 def _chat(messages, *, model: str | None = None, response_format=None, max_tokens=None, op: str = "chat") -> str:
     """One completion call routed to the active provider (OpenAI or Anthropic), with a
-    graceful fallback (retry on the known-good OpenAI model) and per-call telemetry."""
+    graceful fallback (retry on the known-good OpenAI model) and per-call telemetry.
+
+    Enforces a daily token ceiling (AI_DAILY_TOKEN_CAP) as a cost-runaway backstop."""
+    cap = _daily_token_cap()
+    if cap and _tokens_used_today() >= cap:
+        _record_ai_log(op, _active_provider(), model or "", {}, 0, False, "daily AI token cap reached")
+        raise AiSpendCapExceeded(f"Daily AI token cap ({cap}) reached — try again tomorrow or raise the cap.")
     provider = _active_provider()
     target = model or _model()
 

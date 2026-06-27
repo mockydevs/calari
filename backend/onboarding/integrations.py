@@ -9,7 +9,7 @@ import json
 
 import httpx
 
-from . import services
+from . import services, oauth
 
 _TIMEOUT = 30.0
 
@@ -22,6 +22,25 @@ def _token(provider: str) -> str:
     secret = services.get_provider_secret(provider)
     if not secret:
         raise IntegrationError(f"{provider} is not connected (add a token in Settings → Integrations).")
+    return secret
+
+
+def _looks_like_service_account(secret: str) -> bool:
+    s = (secret or "").strip()
+    return s.startswith("{") and '"private_key"' in s and '"client_email"' in s
+
+
+def _gdrive_token() -> str:
+    """Bearer token for Google. Accepts either a stored OAuth access token OR a
+    service-account JSON (minted to a short-lived token via the JWT-bearer flow)."""
+    secret = services.get_provider_secret("GDRIVE")
+    if not secret:
+        raise IntegrationError("Google Drive is not connected (add a token in Settings → Integrations).")
+    if _looks_like_service_account(secret):
+        try:
+            return oauth.service_account_access_token(json.loads(secret), oauth.PROVIDERS["GDRIVE"]["scopes"])
+        except Exception as e:  # noqa: BLE001
+            raise IntegrationError(f"Google service-account auth failed: {e}")
     return secret
 
 
@@ -133,7 +152,7 @@ def asana_delete_task(task_gid: str) -> None:
 # (Service-account JWT exchange is a later enhancement.)
 def gdocs_append(doc_id: str, text: str) -> str:
     """Append text to the end of a Google Doc; returns a marker string."""
-    token = _token("GDRIVE")
+    token = _gdrive_token()
     url = f"https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate"
     body = {"requests": [{"insertText": {"endOfSegmentLocation": {}, "text": text}}]}
     try:
@@ -153,6 +172,12 @@ def test_connection(provider: str, token: str) -> tuple[bool, str]:
     Never raises — a failure is reported as (False, reason)."""
     if not token:
         return False, "No token stored."
+    # Google may be a service-account JSON — mint a real bearer token to test it.
+    if provider == "GDRIVE" and _looks_like_service_account(token):
+        try:
+            token = oauth.service_account_access_token(json.loads(token), oauth.PROVIDERS["GDRIVE"]["scopes"])
+        except Exception as e:  # noqa: BLE001
+            return False, f"Service-account auth failed: {e}"
     auth = {"Authorization": f"Bearer {token}"}
     try:
         if provider == "SLACK":

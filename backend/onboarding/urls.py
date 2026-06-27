@@ -13,6 +13,7 @@ router.register(r"integration-events", views.IntegrationEventViewSet, basename="
 
 urlpatterns = [
     path("automation-settings/", views.automation_settings, name="automation-settings"),
+    path("dry-run/", views.dry_run, name="dry-run"),
     path("clients/<int:client_id>/upsell/", views.client_upsell, name="client-upsell"),
     path("webhooks/fireflies/", views.fireflies_webhook, name="fireflies-webhook"),
     path("oauth/<str:provider>/authorize-url/", views.oauth_authorize_url, name="oauth-authorize-url"),

@@ -7,33 +7,22 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import redirect
 from rest_framework import viewsets, status as http
 from rest_framework.decorators import api_view, permission_classes, action
-from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
+from common.permissions import IsManager, is_manager as _is_manager  # canonical shared perm
 from . import services, oauth
 from .models import (
     Connection, IntegrationMap, CallInsight, IntegrationEvent, AutomationSettings,
 )
-
-User = get_user_model()
 from .serializers import (
     ConnectionSerializer, IntegrationMapSerializer,
     CallInsightSerializer, IntegrationEventSerializer, AutomationSettingsSerializer,
 )
 
-
-def _is_manager(user) -> bool:
-    return bool(user and user.is_authenticated and (
-        user.is_superuser or getattr(user, "role", None) in ("superuser", "admin")
-    ))
-
-
-class IsManager(BasePermission):
-    """Onboarding config + credentials are admin/manager territory (secrets)."""
-    def has_permission(self, request, view):
-        return _is_manager(request.user)
+User = get_user_model()
 
 
 def _enqueue(task_fn, *args):
@@ -145,6 +134,22 @@ def client_upsell(request, client_id):
     return Response(result)
 
 
+# ─── Dry run (analyze a transcript, post nothing) ─────────────────────────────
+@api_view(["POST"])
+@permission_classes([IsManager])
+def dry_run(request):
+    """Run the AI insight on a pasted transcript WITHOUT posting anywhere — a safe
+    pre-flight to validate the model/prompt before flipping automation on."""
+    transcript = (request.data.get("transcript") or "").strip()
+    if not transcript:
+        return Response({"error": "transcript is required"}, status=http.HTTP_400_BAD_REQUEST)
+    try:
+        insight = services.analyze_call(transcript, client_name=(request.data.get("client_name") or ""))
+    except Exception as e:  # noqa: BLE001
+        return Response({"error": f"AI analysis failed: {e}"}, status=http.HTTP_502_BAD_GATEWAY)
+    return Response({"insight": insight})
+
+
 # ─── OAuth connect flows (Slack / Asana / Google) ──────────────────────────────
 def _oauth_redirect_uri(provider, request):
     base = getattr(dj_settings, "ONBOARDING_OAUTH_REDIRECT_BASE", "") or request.build_absolute_uri("/").rstrip("/")
@@ -200,7 +205,15 @@ def fireflies_webhook(request):
     """Fireflies fires here when a transcription is ready. Verify signature, extract the
     call id, enqueue ingestion, and 200 fast. Idempotency is handled in the task."""
     secret = os.getenv("FIREFLIES_WEBHOOK_SECRET", "")
-    if secret:
+    if not secret:
+        # Fail CLOSED in production: an unsigned, unauthenticated webhook could be used
+        # to trigger AI spend + client-facing posts. Only allow unsigned in DEBUG (dev).
+        if not dj_settings.DEBUG:
+            return Response(
+                {"error": "Webhook is not configured (FIREFLIES_WEBHOOK_SECRET unset)."},
+                status=http.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+    else:
         provided = request.headers.get("X-Hub-Signature-256") or request.headers.get("x-fireflies-signature") or ""
         provided = provided.split("=")[-1].strip()
         digest = hmac.new(secret.encode(), request.body, hashlib.sha256).hexdigest()

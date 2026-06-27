@@ -3,7 +3,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Bell, BriefcaseBusiness, CheckCheck, CheckCircle2, FileText,
-  Mail, MessageSquare, RefreshCw,
+  Mail, MessageSquare, RefreshCw, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/portal/api";
 import { useToast, Spinner } from "@/components/toast";
@@ -92,6 +92,21 @@ export function NotificationsClient({ initialItems, initialPrefs }: { initialIte
     if (n.link) router.push(n.link);
   }
 
+  async function deleteOne(id: number) {
+    setItems((prev) => prev.filter((n) => n.id !== id));
+    notifyChanged();
+    try { await api.del(`builds/notifications/${id}`); } catch { /* optimistic */ }
+  }
+
+  async function clearRead() {
+    const readCount = items.filter((n) => n.read).length;
+    if (!readCount) return;
+    setItems((prev) => prev.filter((n) => !n.read));
+    notifyChanged();
+    try { await api.post(`builds/notifications/clear-read`, {}); }
+    catch (err) { toast.error(err instanceof ApiError ? err.message : "Could not clear read notifications."); }
+  }
+
   async function savePrefs() {
     setSavingPrefs(true);
     try {
@@ -121,9 +136,14 @@ export function NotificationsClient({ initialItems, initialPrefs }: { initialIte
               </button>
             ))}
           </div>
-          <Button variant="outline" size="sm" onClick={markAllRead} disabled={!unread}>
-            <CheckCheck className="h-3.5 w-3.5" /> Mark all read
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={markAllRead} disabled={!unread}>
+              <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+            </Button>
+            <Button variant="outline" size="sm" onClick={clearRead} disabled={items.length === unread}>
+              <Trash2 className="h-3.5 w-3.5" /> Clear read
+            </Button>
+          </div>
         </div>
 
         <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
@@ -139,11 +159,11 @@ export function NotificationsClient({ initialItems, initialPrefs }: { initialIte
                 const spec = TYPE_ICON[n.type] ?? { icon: Bell, tint: "bg-slate-100 text-slate-600" };
                 const Icon = spec.icon;
                 return (
-                  <li key={n.id}>
+                  <li key={n.id} className={`group flex items-stretch ${!n.read ? "bg-pink-50/30" : ""}`}>
                     <button
                       type="button"
                       onClick={() => open(n)}
-                      className={`flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-pink-50/40 ${!n.read ? "bg-pink-50/30" : ""}`}
+                      className="flex flex-1 items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-pink-50/40"
                     >
                       <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${spec.tint}`}><Icon className="h-4 w-4" /></span>
                       <span className="min-w-0 flex-1">
@@ -151,6 +171,14 @@ export function NotificationsClient({ initialItems, initialPrefs }: { initialIte
                         <span className="mt-0.5 block text-xs text-slate-400">{relativeTime(n.created_at)}</span>
                       </span>
                       {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-pink-600" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteOne(n.id)}
+                      aria-label="Delete notification"
+                      className="flex w-10 shrink-0 items-center justify-center text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
+                    >
+                      <X className="h-4 w-4" />
                     </button>
                   </li>
                 );

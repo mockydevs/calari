@@ -11,6 +11,8 @@ Flow (fits the BFF/JWT setup without needing Django auth on the callback):
 
 Fireflies is API-key only (no OAuth) — not handled here.
 """
+import base64
+import json
 import os
 import time
 from urllib.parse import urlencode
@@ -131,6 +133,57 @@ def exchange_code(provider: str, code: str, redirect_uri: str) -> dict:
     if r.status_code >= 400 or not body.get("access_token"):
         raise OAuthError(f"{provider} token exchange failed: {body.get('error', r.status_code)}")
     return _normalize(provider, body)
+
+
+# ─── Google service-account (JWT-bearer) access tokens ────────────────────────
+_GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+_sa_token_cache: dict[str, tuple[str, float]] = {}  # client_email → (token, expiry epoch)
+
+
+def _b64url(raw: bytes) -> bytes:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=")
+
+
+def service_account_access_token(sa: dict, scope: str) -> str:
+    """Mint a short-lived Google access token from a service-account JSON via the
+    RS256 JWT-bearer flow (signed with `cryptography`, already a dependency). Cached
+    in-process until shortly before expiry."""
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    email = sa.get("client_email")
+    private_key = sa.get("private_key")
+    if not email or not private_key:
+        raise OAuthError("Service-account JSON is missing client_email / private_key.")
+    token_uri = sa.get("token_uri", _GOOGLE_TOKEN_URI)
+
+    now = time.time()
+    cached = _sa_token_cache.get(email)
+    if cached and cached[1] - 60 > now:
+        return cached[0]
+
+    iat = int(now)
+    exp = iat + 3600
+    header = {"alg": "RS256", "typ": "JWT"}
+    claims = {"iss": email, "scope": scope, "aud": token_uri, "iat": iat, "exp": exp}
+    signing_input = _b64url(json.dumps(header).encode()) + b"." + _b64url(json.dumps(claims).encode())
+    key = serialization.load_pem_private_key(private_key.encode(), password=None)
+    signature = key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+    assertion = (signing_input + b"." + _b64url(signature)).decode()
+
+    try:
+        r = httpx.post(token_uri, data={
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": assertion,
+        }, timeout=_TIMEOUT)
+    except httpx.HTTPError as e:
+        raise OAuthError(f"Service-account token request failed: {e}")
+    body = r.json() if r.content else {}
+    tok = body.get("access_token")
+    if not tok:
+        raise OAuthError(f"Service-account token failed: {body.get('error', r.status_code)}")
+    _sa_token_cache[email] = (tok, exp)
+    return tok
 
 
 def refresh(provider: str, refresh_token: str) -> dict:
