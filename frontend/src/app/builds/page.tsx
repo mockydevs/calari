@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { ArrowUpRight, KanbanSquare, Plus, Rows3 } from "lucide-react";
+import { KanbanSquare, Plus, Rows3 } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { BuildStatusBadge, type BuildRow } from "./_shared";
-import { BuildDeleteButton } from "./build-row-actions";
-import { formatDate } from "@/lib/utils";
+import { type BuildRow } from "./_shared";
+import { BuildsTable } from "./builds-table";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +41,8 @@ export default async function BuildsPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
-        {builds.length === 0 ? (
+      {builds.length === 0 ? (
+        <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
           <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100">
               <Rows3 className="h-5 w-5 text-slate-400" />
@@ -53,44 +52,10 @@ export default async function BuildsPage() {
               {isAdmin ? "Create your first build to get started." : "You have not been assigned any builds."}
             </p>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50/80">
-                <tr>
-                  {["Build", "Client", "Status", "Assignee", "Updated"].map((h) => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                  ))}
-                  {isAdmin && <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {builds.map((b) => (
-                  <tr key={b.id} className="group transition-colors hover:bg-pink-50/30">
-                    <td className="px-5 py-3.5">
-                      <Link href={`/builds/${b.id}`} className="inline-flex items-center gap-1 font-semibold text-slate-950 transition-colors group-hover:text-pink-700">
-                        {b.title}
-                        <ArrowUpRight className="h-3.5 w-3.5 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-pink-600" />
-                      </Link>
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-600">{b.client_name || "—"}</td>
-                    <td className="px-5 py-3.5"><BuildStatusBadge status={b.status} /></td>
-                    <td className="px-5 py-3.5 text-slate-600">{b.assignee_name || <span className="text-slate-400">Unassigned</span>}</td>
-                    <td className="px-5 py-3.5 text-slate-400">{formatDate(b.updated_at)}</td>
-                    {isAdmin && (
-                      <td className="px-5 py-3.5">
-                        <div className="flex justify-end">
-                          <BuildDeleteButton id={b.id} title={b.title} />
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <BuildsTable builds={builds} isAdmin={isAdmin} />
+      )}
     </div>
   );
 }
