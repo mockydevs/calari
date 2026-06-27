@@ -145,3 +145,48 @@ def gdocs_append(doc_id: str, text: str) -> str:
     if r.status_code >= 400:
         raise IntegrationError(f"Google Docs error {r.status_code}: {r.text[:300]}")
     return f"doc:{doc_id}"
+
+
+# ─── Connection test (cheap authenticated ping per provider) ───────────────────
+def test_connection(provider: str, token: str) -> tuple[bool, str]:
+    """Validate a token with a lightweight authenticated call. Returns (ok, detail).
+    Never raises — a failure is reported as (False, reason)."""
+    if not token:
+        return False, "No token stored."
+    auth = {"Authorization": f"Bearer {token}"}
+    try:
+        if provider == "SLACK":
+            r = httpx.post("https://slack.com/api/auth.test", headers=auth, timeout=_TIMEOUT)
+            b = r.json() if r.content else {}
+            if b.get("ok"):
+                return True, f"Connected as {b.get('user', '?')} in {b.get('team', '?')}."
+            return False, f"Slack: {b.get('error', r.status_code)}"
+
+        if provider == "ASANA":
+            r = httpx.get("https://app.asana.com/api/1.0/users/me", headers=auth, timeout=_TIMEOUT)
+            if r.status_code == 200:
+                name = ((r.json() or {}).get("data") or {}).get("name", "?")
+                return True, f"Connected as {name}."
+            return False, f"Asana error {r.status_code}: {r.text[:160]}"
+
+        if provider == "FIREFLIES":
+            r = httpx.post("https://api.fireflies.ai/graphql", headers={**auth, "Content-Type": "application/json"},
+                           json={"query": "{ user { name } }"}, timeout=_TIMEOUT)
+            b = r.json() if r.content else {}
+            if r.status_code == 200 and not b.get("errors"):
+                name = ((b.get("data") or {}).get("user") or {}).get("name", "ok")
+                return True, f"Connected ({name})."
+            err = (b.get("errors") or [{}])[0].get("message") if b.get("errors") else r.status_code
+            return False, f"Fireflies: {err}"
+
+        if provider == "GDRIVE":
+            r = httpx.get("https://www.googleapis.com/drive/v3/about",
+                          params={"fields": "user", "supportsAllDrives": "true"}, headers=auth, timeout=_TIMEOUT)
+            if r.status_code == 200:
+                email = ((r.json() or {}).get("user") or {}).get("emailAddress", "ok")
+                return True, f"Connected as {email}."
+            return False, f"Google error {r.status_code}: {r.text[:160]}"
+
+        return False, "Unknown provider."
+    except httpx.HTTPError as e:
+        return False, f"Request failed: {e}"

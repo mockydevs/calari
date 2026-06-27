@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { createConnection, activateConnection, deleteConnection, renameConnection, updateAutomationSettings } from "./actions";
+import { TestConnectionButton } from "./test-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -156,6 +157,7 @@ export default async function ConnectionsPage() {
                             <td className="px-5 py-3.5 text-slate-500">{formatDate(c.updated_at)}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex items-center gap-2">
+                                <TestConnectionButton id={c.id} />
                                 {!c.active && (
                                   <form action={activateConnection}>
                                     <input type="hidden" name="id" value={c.id} />

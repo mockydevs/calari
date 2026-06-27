@@ -51,6 +51,18 @@ class ConnectionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    @action(detail=True, methods=["post"])
+    def test(self, request, pk=None):
+        """Validate this connection's token with a lightweight authenticated ping."""
+        from . import integrations
+        conn = self.get_object()
+        try:
+            token = services.decrypt_secret(conn.encrypted_secret)
+        except Exception:  # noqa: BLE001
+            return Response({"ok": False, "detail": "Stored token could not be decrypted."})
+        ok, detail = integrations.test_connection(conn.provider, token)
+        return Response({"ok": ok, "detail": detail})
+
 
 class IntegrationMapViewSet(viewsets.ModelViewSet):
     queryset = IntegrationMap.objects.select_related("client").all()
