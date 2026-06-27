@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { updateA2PSubmission } from "../actions";
+import { updateA2PSubmission, deleteA2PSubmission } from "../actions";
+import { ConfirmDeleteButton } from "../../builds/build-row-actions";
 import { A2PStatusBadge, A2P_STATUSES, A2P_STATUS_LABEL, type A2PSubmission } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +73,8 @@ export default async function A2PDetailPage({ params }: { params: Promise<{ id: 
               </div>
               <Button type="submit" size="sm" variant="outline">Update</Button>
             </form>
+            <ConfirmDeleteButton action={deleteA2PSubmission} fields={{ id: s.id }}
+              title="Delete submission" message={`Delete the A2P submission for "${s.legal_business_name}"? This cannot be undone.`} label="Delete" />
           </div>
         </div>
       </section>

@@ -7,14 +7,14 @@ import {
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
-  addComment, createChangeRequest, createTask, enablePortal,
+  addComment, createChangeRequest, createTask, deleteChangeRequest, deleteGap, deleteTask, enablePortal,
   recordApproval, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
   updateTaskStatus, uploadDocument,
 } from "../actions";
 import { AssignApprove } from "../assign-approve";
 import { NoteComposer } from "../note-composer";
 import { GapResolver } from "../gap-resolver";
-import { BuildDeleteButton } from "../build-row-actions";
+import { BuildDeleteButton, ConfirmDeleteButton } from "../build-row-actions";
 import { GenerateBriefButton } from "../generate-brief-button";
 import { HandoverButton } from "../handover-button";
 import { MeetingNoteUpload } from "../meeting-note-upload";
@@ -475,9 +475,15 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                   <details className="mt-3 border-t border-slate-100 pt-3">
                     <summary className="cursor-pointer text-xs font-semibold text-slate-500">Resolved ({resolvedGaps.length})</summary>
                     <ul className="mt-2 space-y-1.5">{resolvedGaps.map((g) => (
-                      <li key={g.id} className="text-xs text-slate-600">
-                        <span className={`mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${g.status === "ANSWERED" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{g.status}</span>
-                        {g.question}{g.answer ? ` — ${g.answer}` : ""}
+                      <li key={g.id} className="flex items-start justify-between gap-2 text-xs text-slate-600">
+                        <span>
+                          <span className={`mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${g.status === "ANSWERED" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{g.status}</span>
+                          {g.question}{g.answer ? ` — ${g.answer}` : ""}
+                        </span>
+                        {isAdmin && (
+                          <ConfirmDeleteButton action={deleteGap} fields={{ id: g.id, buildId: id }}
+                            title="Delete gap" message="Permanently delete this gap?" />
+                        )}
                       </li>
                     ))}</ul>
                   </details>
@@ -517,6 +523,10 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                         ) : (
                           <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{TASK_STATUS_LABEL[t.status]}</span>
                         )}
+                        {canManage && (
+                          <ConfirmDeleteButton action={deleteTask} fields={{ taskId: t.id, buildId: id }}
+                            title="Delete task" message={`Delete task "${t.title}"?`} />
+                        )}
                       </div>
                     </div>
                     {t.description && (
@@ -544,11 +554,15 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                   <div className="flex items-start justify-between gap-3">
                     <div><p className="text-sm font-medium text-slate-900">{c.title}</p><p className="text-xs text-slate-600">{c.description}</p>{c.impact && <p className="mt-0.5 text-xs text-slate-400">Impact: {c.impact}</p>}</div>
                     {isAdmin ? (
-                      <form action={setChangeRequestStatus} className="flex items-center gap-1.5">
-                        <input type="hidden" name="id" value={c.id} /><input type="hidden" name="buildId" value={id} />
-                        <Select name="status" defaultValue={c.status} className="h-8 text-xs">{CHANGE_REQUEST_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</Select>
-                        <Button type="submit" size="sm" variant="outline">Save</Button>
-                      </form>
+                      <div className="flex items-center gap-1.5">
+                        <form action={setChangeRequestStatus} className="flex items-center gap-1.5">
+                          <input type="hidden" name="id" value={c.id} /><input type="hidden" name="buildId" value={id} />
+                          <Select name="status" defaultValue={c.status} className="h-8 text-xs">{CHANGE_REQUEST_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</Select>
+                          <Button type="submit" size="sm" variant="outline">Save</Button>
+                        </form>
+                        <ConfirmDeleteButton action={deleteChangeRequest} fields={{ id: c.id, buildId: id }}
+                          title="Delete change request" message={`Delete change request "${c.title}"?`} />
+                      </div>
                     ) : <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{c.status}</span>}
                   </div>
                 </li>

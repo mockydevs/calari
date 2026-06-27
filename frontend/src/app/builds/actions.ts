@@ -76,6 +76,15 @@ export async function createTask(formData: FormData) {
   revalidatePath(`/builds/${buildId}`);
 }
 
+export async function deleteTask(formData: FormData) {
+  await requireUser();
+  const taskId = String(formData.get("taskId") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  if (!taskId) throw new Error("Task is required");
+  await serverApi.del(`builds/tasks/${taskId}`);
+  revalidatePath(`/builds/${buildId}`);
+}
+
 export async function updateTaskStatus(formData: FormData) {
   await requireUser();
   const taskId = String(formData.get("taskId") ?? "");
@@ -129,6 +138,15 @@ export async function resolveGap(formData: FormData) {
   revalidatePath(`/builds/${buildId}`);
 }
 
+export async function deleteGap(formData: FormData) {
+  await requireUser();
+  const id = String(formData.get("id") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  if (!id) throw new Error("Gap is required");
+  await serverApi.del(`builds/vision-gaps/${id}`);
+  revalidatePath(`/builds/${buildId}`);
+}
+
 export async function togglePreLaunchItem(formData: FormData) {
   await requireUser();
   const id = String(formData.get("id") ?? "");
@@ -158,6 +176,15 @@ export async function setChangeRequestStatus(formData: FormData) {
   const status = String(formData.get("status") ?? "");
   if (!id || !status) throw new Error("Change request and status are required");
   await serverApi.post(`builds/change-requests/${id}/status`, { status });
+  revalidatePath(`/builds/${buildId}`);
+}
+
+export async function deleteChangeRequest(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  if (!id) throw new Error("Change request is required");
+  await serverApi.del(`builds/change-requests/${id}`);
   revalidatePath(`/builds/${buildId}`);
 }
 

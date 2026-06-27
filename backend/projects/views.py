@@ -1027,6 +1027,22 @@ def my_dashboard(request):
         project__in=my_projects_qs,
     ).select_related('project', 'user').order_by('-created_at')[:10]
 
+    # ── My builds (assigned to me, not yet delivered). Lazy import to avoid a
+    #    circular import between the projects and builds apps at module load.
+    from builds.models import Build, BuildStatus
+    my_builds_qs = Build.objects.filter(assignee=user).select_related('client').order_by('-updated_at')
+    my_open_builds = my_builds_qs.exclude(status=BuildStatus.DELIVERED).count()
+    my_builds_list = list(my_builds_qs[:10])
+
+    def fmt_build(b):
+        return {
+            'id': b.id,
+            'title': b.title,
+            'status': b.status,
+            'client_name': b.client.name if b.client_id else '',
+            'updated_at': b.updated_at,
+        }
+
     def fmt_task(t):
         return {
             'id': t.id,
@@ -1075,7 +1091,9 @@ def my_dashboard(request):
             'my_open_tasks': my_open_tasks,
             'my_overdue_tasks': my_overdue,
             'my_high_priority_tasks': my_high_priority,
+            'my_open_builds': my_open_builds,
         },
+        'my_builds': [fmt_build(b) for b in my_builds_list],
         'almost_due_tasks': [fmt_task(t) for t in almost_due_qs],
         'overdue_tasks': [fmt_task(t) for t in overdue_qs],
         'high_priority_tasks': [fmt_task(t) for t in high_priority_qs],
