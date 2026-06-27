@@ -7,9 +7,9 @@ import {
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
-  addComment, createChangeRequest, createTask, deleteChangeRequest, deleteGap, deleteTask, enablePortal,
-  recordApproval, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
-  updateTaskStatus, uploadDocument,
+  addComment, convertSectionBlockerToTask, createChangeRequest, createTask, deleteChangeRequest, deleteGap, deleteTask, enablePortal,
+  generateChangeRequestSteps, recordApproval, setBuildStatus, setChangeRequestStatus, togglePreLaunchItem,
+  requestSectionBlockerInfo, updateTaskStatus, uploadDocument,
 } from "../actions";
 import { AssignApprove } from "../assign-approve";
 import { NoteComposer } from "../note-composer";
@@ -21,14 +21,15 @@ import { BuildDocumentButton, HandoverButton } from "../handover-button";
 import { MeetingNoteUpload } from "../meeting-note-upload";
 import { RunQaButton, GenerateSopButton } from "../ai-buttons";
 import { BlueprintEditor } from "../blueprint-editor";
-import { ImplementationWorkspace } from "../implementation-workspace";
+import { ImplementationWorkspace, SectionControls } from "../implementation-workspace";
 import { Tabs, TabPanel } from "../build-tabs";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
+  CHANGE_REQUEST_STATUS_LABEL,
   CALENDAR_TYPE_LABEL, ProvBadge,
   INTEGRATION_DIRECTION_LABEL, INTEGRATION_DIRECTION_STYLE, INTEGRATION_MECHANISM_LABEL,
   TASK_STATUSES, TASK_STATUS_LABEL, TASK_TYPES, MEETING_NOTE_KIND_LABEL,
-  WORKFLOW_CATEGORY_LABEL, type BuildDetail, type MeetingNote, type Workflow,
+  WORKFLOW_CATEGORY_LABEL, type BuildDetail, type ChangeRequest, type MeetingNote, type Workflow,
 } from "../_shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,85 @@ function Panel({ title, icon, children, action }: { title: string; icon: React.R
       </div>
       <div className="p-5">{children}</div>
     </section>
+  );
+}
+
+function ChangeRequestCard({
+  change,
+  buildId,
+  canManageBuilds,
+}: {
+  change: ChangeRequest;
+  buildId: string;
+  canManageBuilds: boolean;
+}) {
+  const statusOptions = CHANGE_REQUEST_STATUSES.filter((s) => s !== "BLOCKED");
+  return (
+    <li className={`rounded-md border p-3 ${change.status === "BLOCKED" ? "border-red-200 bg-red-50" : "border-slate-200 bg-white"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-900">{change.title}</p>
+          <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{change.description}</p>
+          {change.impact && <p className="mt-1 text-xs text-slate-400">Impact: {change.impact}</p>}
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+            <span>Status: <strong>{CHANGE_REQUEST_STATUS_LABEL[change.status] ?? change.status}</strong></span>
+            {change.owner_name && <span>Owner: <strong>{change.owner_name}</strong></span>}
+            {change.due_date && <span>Due: <strong>{formatDate(change.due_date)}</strong></span>}
+          </div>
+        </div>
+        {canManageBuilds ? (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <form action={setChangeRequestStatus} className="flex items-center gap-1.5">
+              <input type="hidden" name="id" value={change.id} />
+              <input type="hidden" name="buildId" value={buildId} />
+              <Select name="status" defaultValue={change.status === "BLOCKED" ? "IN_BUILD" : change.status} className="h-8 text-xs">
+                {statusOptions.map((s) => <option key={s} value={s}>{CHANGE_REQUEST_STATUS_LABEL[s]}</option>)}
+              </Select>
+              <Button type="submit" size="sm" variant="outline">Save</Button>
+            </form>
+            <ConfirmDeleteButton action={deleteChangeRequest} fields={{ id: change.id, buildId }}
+              title="Delete change request" message={`Delete change request "${change.title}"?`} />
+          </div>
+        ) : <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{CHANGE_REQUEST_STATUS_LABEL[change.status] ?? change.status}</span>}
+      </div>
+
+      {change.status === "BLOCKED" && change.blocker_note && (
+        <div className="mt-3 rounded-md border border-red-200 bg-white/70 p-3 text-xs text-red-800">
+          <p className="font-semibold">Blocker</p>
+          <p className="mt-1 whitespace-pre-wrap">{change.blocker_note}</p>
+          {change.blocker_attachment_url && (
+            <a href={change.blocker_attachment_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex font-semibold text-red-700 underline">
+              {change.blocker_attachment_name || "View attachment"}
+            </a>
+          )}
+        </div>
+      )}
+
+      {change.implementation_steps && (
+        <details className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-700">Implementation steps</summary>
+          <pre className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{change.implementation_steps}</pre>
+        </details>
+      )}
+
+      {canManageBuilds && (
+        <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 md:grid-cols-2">
+          <form action={setChangeRequestStatus} className="space-y-2">
+            <input type="hidden" name="id" value={change.id} />
+            <input type="hidden" name="buildId" value={buildId} />
+            <input type="hidden" name="status" value="BLOCKED" />
+            <Textarea name="blockerNote" rows={2} required placeholder="Block this update: what is missing or stuck?" />
+            <input type="file" name="blockerFile" className="text-xs" />
+            <Button type="submit" size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50">Submit blocker</Button>
+          </form>
+          <form action={generateChangeRequestSteps} className="flex items-end justify-end">
+            <input type="hidden" name="id" value={change.id} />
+            <input type="hidden" name="buildId" value={buildId} />
+            <Button type="submit" size="sm" variant="outline"><Sparkles className="h-3.5 w-3.5" /> Generate steps</Button>
+          </form>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -94,6 +174,8 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   const approvals = build.approvals ?? [];
   const sectionReviews = build.section_reviews ?? [];
   const blockedSections = sectionReviews.filter((r) => r.status === "BLOCKED");
+  const clientUpdatesReview = sectionReviews.find((r) => r.section === "CLIENT_UPDATES");
+  const unresolvedClientUpdates = changeRequests.filter((c) => !["IMPLEMENTED", "REJECTED", "DEFERRED"].includes(c.status));
   const comments = build.comments ?? [];
   const documents = build.documents ?? [];
   const activities = build.activities ?? [];
@@ -272,6 +354,50 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
             </Panel>
           </TabPanel>
         )}
+
+        <TabPanel id="updates" label="New Updates" count={changeRequests.length}>
+          <Panel title="Client-added features & mid-build updates" icon={<MessageSquare className="h-4 w-4 text-pink-700" />}>
+            <div className="space-y-4">
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Use this tab when the client adds a feature or changes scope midway. Log the update as a progress/change note, let the AI extract change requests and gaps, then track implementation in the Implementation tab under “New Features & Updates.”
+              </div>
+              {unresolvedClientUpdates.length > 0 && (
+                <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
+                  {unresolvedClientUpdates.length} update{unresolvedClientUpdates.length === 1 ? "" : "s"} still need a final status before this section can be marked done.
+                </p>
+              )}
+              <SectionControls buildId={id} section="CLIENT_UPDATES" review={clientUpdatesReview} />
+
+              {changeRequests.length === 0 ? <p className="text-sm text-slate-500">No client-added features or change requests yet.</p> : (
+                <ul className="space-y-2">{changeRequests.map((c) => (
+                  <ChangeRequestCard key={c.id} change={c} buildId={id} canManageBuilds={canManageBuilds} />
+                ))}</ul>
+              )}
+
+              <form action={createChangeRequest} className="space-y-2 border-t border-slate-100 pt-3">
+                <input type="hidden" name="buildId" value={id} />
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Input name="title" required placeholder="New feature or update title" className="h-9" />
+                  <Input name="dueDate" type="datetime-local" className="h-9" />
+                </div>
+                <Textarea name="description" rows={3} required placeholder="Describe what the client added or changed…" />
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Input name="impact" placeholder="Impact, dependency, or approval needed (optional)" className="h-9" />
+                  <Select name="owner" defaultValue="" className="h-9">
+                    <option value="">Owner: build assignee</option>
+                    {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
+                  </Select>
+                </div>
+                <Button type="submit" size="sm" variant="outline"><Plus className="h-3.5 w-3.5" /> Add update</Button>
+              </form>
+
+              <div className="border-t border-slate-100 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Log unstructured update notes</p>
+                <NoteComposer buildId={id} />
+              </div>
+            </div>
+          </Panel>
+        </TabPanel>
 
         {/* ── Build-out (the named system) ─────────────────────────── */}
         {hasBlueprint && (
@@ -579,6 +705,24 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                         {r.blocker_attachment_name || "View attachment"}
                       </a>
                     )}
+                    {canManage && (
+                      <div className="mt-3 grid gap-2 border-t border-red-100 pt-3 md:grid-cols-2">
+                        <form action={requestSectionBlockerInfo} className="space-y-2">
+                          <input type="hidden" name="reviewId" value={r.id} />
+                          <input type="hidden" name="buildId" value={id} />
+                          <Textarea name="note" rows={2} required placeholder="Ask for more detail…" />
+                          <Button type="submit" size="sm" variant="outline">Request info</Button>
+                        </form>
+                        <div className="flex flex-wrap items-end justify-end gap-2">
+                          <form action={convertSectionBlockerToTask}>
+                            <input type="hidden" name="reviewId" value={r.id} />
+                            <input type="hidden" name="buildId" value={id} />
+                            <Button type="submit" size="sm" variant="outline">Convert to task</Button>
+                          </form>
+                          <SectionControls buildId={id} section={r.section} review={r} />
+                        </div>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -588,22 +732,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
           <Panel title="Change requests" icon={<MessageSquare className="h-4 w-4 text-pink-700" />}>
             {changeRequests.length === 0 ? <p className="text-sm text-slate-500">No change requests.</p> : (
               <ul className="space-y-2">{changeRequests.map((c) => (
-                <li key={c.id} className="rounded-md border border-slate-200 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div><p className="text-sm font-medium text-slate-900">{c.title}</p><p className="text-xs text-slate-600">{c.description}</p>{c.impact && <p className="mt-0.5 text-xs text-slate-400">Impact: {c.impact}</p>}</div>
-                    {canManageBuilds ? (
-                      <div className="flex items-center gap-1.5">
-                        <form action={setChangeRequestStatus} className="flex items-center gap-1.5">
-                          <input type="hidden" name="id" value={c.id} /><input type="hidden" name="buildId" value={id} />
-                          <Select name="status" defaultValue={c.status} className="h-8 text-xs">{CHANGE_REQUEST_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</Select>
-                          <Button type="submit" size="sm" variant="outline">Save</Button>
-                        </form>
-                        <ConfirmDeleteButton action={deleteChangeRequest} fields={{ id: c.id, buildId: id }}
-                          title="Delete change request" message={`Delete change request "${c.title}"?`} />
-                      </div>
-                    ) : <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{c.status}</span>}
-                  </div>
-                </li>
+                <ChangeRequestCard key={c.id} change={c} buildId={id} canManageBuilds={canManageBuilds} />
               ))}</ul>
             )}
             <form action={createChangeRequest} className="mt-3 space-y-2 border-t border-slate-100 pt-3">

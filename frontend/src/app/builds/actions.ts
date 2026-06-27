@@ -6,6 +6,28 @@ import { serverApi } from "@/lib/portal/server";
 
 type Created = { id: number };
 
+async function uploadBuildFile(buildId: string, file: File) {
+  const contentType = file.type || "application/octet-stream";
+  const presign = await serverApi.post<{ upload_url: string; public_url: string; key: string }>(
+    "builds/upload/presign",
+    { filename: file.name, content_type: contentType, size_bytes: file.size, build: Number(buildId) },
+  );
+  const put = await fetch(presign.upload_url, {
+    method: "PUT",
+    body: Buffer.from(await file.arrayBuffer()),
+    headers: { "Content-Type": contentType },
+  });
+  if (!put.ok) throw new Error("Upload to storage failed");
+  await serverApi.post("builds/upload/finalize", {
+    filename: file.name,
+    content_type: contentType,
+    key: presign.key,
+    size_bytes: file.size,
+    build: Number(buildId),
+  });
+  return { url: presign.public_url, name: file.name };
+}
+
 export async function createBuild(formData: FormData) {
   await requireFeature("builds_manage");
   const title = String(formData.get("title") ?? "").trim();
@@ -107,26 +129,9 @@ export async function updateBuildSectionReview(formData: FormData) {
   let blocker_attachment_url = "";
   let blocker_attachment_name = "";
   if (file instanceof File && file.size > 0) {
-    const contentType = file.type || "application/octet-stream";
-    const presign = await serverApi.post<{ upload_url: string; public_url: string; key: string }>(
-      "builds/upload/presign",
-      { filename: file.name, content_type: contentType },
-    );
-    const put = await fetch(presign.upload_url, {
-      method: "PUT",
-      body: Buffer.from(await file.arrayBuffer()),
-      headers: { "Content-Type": contentType },
-    });
-    if (!put.ok) throw new Error("Upload to storage failed");
-    await serverApi.post("builds/upload/finalize", {
-      filename: file.name,
-      content_type: contentType,
-      public_url: presign.public_url,
-      size_bytes: file.size,
-      build: Number(buildId),
-    });
-    blocker_attachment_url = presign.public_url;
-    blocker_attachment_name = file.name;
+    const uploaded = await uploadBuildFile(buildId, file);
+    blocker_attachment_url = uploaded.url;
+    blocker_attachment_name = uploaded.name;
   }
 
   await serverApi.post("builds/section-reviews/upsert", {
@@ -137,6 +142,25 @@ export async function updateBuildSectionReview(formData: FormData) {
     blocker_attachment_url,
     blocker_attachment_name,
   });
+  revalidatePath(`/builds/${buildId}`);
+}
+
+export async function convertSectionBlockerToTask(formData: FormData) {
+  await requireUser();
+  const reviewId = String(formData.get("reviewId") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  if (!reviewId || !buildId) throw new Error("Section blocker is required");
+  await serverApi.post(`builds/section-reviews/${reviewId}/convert-to-task`, {});
+  revalidatePath(`/builds/${buildId}`);
+}
+
+export async function requestSectionBlockerInfo(formData: FormData) {
+  await requireUser();
+  const reviewId = String(formData.get("reviewId") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  const note = String(formData.get("note") ?? "").trim();
+  if (!reviewId || !buildId || !note) throw new Error("A note is required");
+  await serverApi.post(`builds/section-reviews/${reviewId}/request-info`, { note });
   revalidatePath(`/builds/${buildId}`);
 }
 
@@ -209,8 +233,17 @@ export async function createChangeRequest(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const impact = String(formData.get("impact") ?? "").trim();
+  const dueDate = String(formData.get("dueDate") ?? "").trim();
+  const owner = String(formData.get("owner") ?? "").trim();
   if (!buildId || !title || !description) throw new Error("Title and description are required");
-  await serverApi.post("builds/change-requests", { build: Number(buildId), title, description, impact });
+  await serverApi.post("builds/change-requests", {
+    build: Number(buildId),
+    title,
+    description,
+    impact,
+    due_date: dueDate || null,
+    owner: owner ? Number(owner) : null,
+  });
   revalidatePath(`/builds/${buildId}`);
 }
 
@@ -219,8 +252,30 @@ export async function setChangeRequestStatus(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const buildId = String(formData.get("buildId") ?? "");
   const status = String(formData.get("status") ?? "");
+  const blockerNote = String(formData.get("blockerNote") ?? "").trim();
+  const file = formData.get("blockerFile");
   if (!id || !status) throw new Error("Change request and status are required");
-  await serverApi.post(`builds/change-requests/${id}/status`, { status });
+  let blocker_attachment_url = "";
+  let blocker_attachment_name = "";
+  if (file instanceof File && file.size > 0) {
+    const uploaded = await uploadBuildFile(buildId, file);
+    blocker_attachment_url = uploaded.url;
+    blocker_attachment_name = uploaded.name;
+  }
+  const body: Record<string, string> = { status };
+  if (blockerNote) body.blocker_note = blockerNote;
+  if (blocker_attachment_url) body.blocker_attachment_url = blocker_attachment_url;
+  if (blocker_attachment_name) body.blocker_attachment_name = blocker_attachment_name;
+  await serverApi.post(`builds/change-requests/${id}/status`, body);
+  revalidatePath(`/builds/${buildId}`);
+}
+
+export async function generateChangeRequestSteps(formData: FormData) {
+  await requireUser();
+  const id = String(formData.get("id") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  if (!id || !buildId) throw new Error("Change request is required");
+  await serverApi.post(`builds/change-requests/${id}/generate-steps`, {});
   revalidatePath(`/builds/${buildId}`);
 }
 
@@ -268,24 +323,6 @@ export async function uploadDocument(formData: FormData) {
   const buildId = String(formData.get("buildId") ?? "");
   const file = formData.get("file");
   if (!buildId || !(file instanceof File) || file.size === 0) throw new Error("A file is required");
-
-  const contentType = file.type || "application/octet-stream";
-  const presign = await serverApi.post<{ upload_url: string; public_url: string; key: string }>(
-    "builds/upload/presign",
-    { filename: file.name, content_type: contentType },
-  );
-  const put = await fetch(presign.upload_url, {
-    method: "PUT",
-    body: Buffer.from(await file.arrayBuffer()),
-    headers: { "Content-Type": contentType },
-  });
-  if (!put.ok) throw new Error("Upload to storage failed");
-  await serverApi.post("builds/upload/finalize", {
-    filename: file.name,
-    content_type: contentType,
-    public_url: presign.public_url,
-    size_bytes: file.size,
-    build: Number(buildId),
-  });
+  await uploadBuildFile(buildId, file);
   revalidatePath(`/builds/${buildId}`);
 }

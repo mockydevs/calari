@@ -133,6 +133,9 @@ class AIProvider(models.TextChoices):
 class ChangeRequestStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
+    IN_BUILD = "IN_BUILD", "In Build"
+    BLOCKED = "BLOCKED", "Blocked"
+    DEFERRED = "DEFERRED", "Deferred"
     REJECTED = "REJECTED", "Rejected"
     IMPLEMENTED = "IMPLEMENTED", "Implemented"
 
@@ -147,6 +150,7 @@ class ApprovalType(models.TextChoices):
 class BuildSection(models.TextChoices):
     PIPELINE = "PIPELINE", "Pipeline"
     AUTOMATIONS = "AUTOMATIONS", "Automations"
+    CLIENT_UPDATES = "CLIENT_UPDATES", "New features & updates"
     LEAD_SOURCES = "LEAD_SOURCES", "Lead sources"
     CALENDARS = "CALENDARS", "Calendars"
     INTEGRATIONS = "INTEGRATIONS", "Integrations"
@@ -504,9 +508,21 @@ class ChangeRequest(models.Model):
     status = models.CharField(max_length=16, choices=ChangeRequestStatus.choices, default=ChangeRequestStatus.PENDING)
     requester = models.CharField(max_length=255, blank=True, default="")
     due_date = models.DateTimeField(null=True, blank=True)
+    blocker_note = models.TextField(blank=True, default="")
+    blocker_attachment_url = models.URLField(max_length=1000, blank=True, default="")
+    blocker_attachment_name = models.CharField(max_length=500, blank=True, default="")
+    implementation_steps = models.TextField(blank=True, default="")
     build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="change_requests")
     owner = models.ForeignKey(USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="owned_changes")
     created_by = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="created_changes")
+    blocked_by = models.ForeignKey(
+        USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="blocked_change_requests"
+    )
+    implemented_by = models.ForeignKey(
+        USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="implemented_change_requests"
+    )
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    implemented_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -542,6 +558,7 @@ class BuildSectionReview(models.Model):
     blocker_note = models.TextField(blank=True, default="")
     blocker_attachment_url = models.URLField(max_length=1000, blank=True, default="")
     blocker_attachment_name = models.CharField(max_length=500, blank=True, default="")
+    blocker_history = models.JSONField(blank=True, default=list)
     completed_by = models.ForeignKey(
         USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="completed_build_sections"
     )

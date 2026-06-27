@@ -165,7 +165,35 @@ export interface VisionGap {
   severity: GapSeverity; status: GapStatus; answer: string;
   resolved_by_name?: string | null; created_at: string;
 }
-export interface ChangeRequest { id: number; title: string; description: string; impact: string; status: string; created_by_name?: string; created_at: string }
+export type ChangeRequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "IN_BUILD"
+  | "BLOCKED"
+  | "DEFERRED"
+  | "REJECTED"
+  | "IMPLEMENTED";
+export interface ChangeRequest {
+  id: number;
+  title: string;
+  description: string;
+  impact: string;
+  status: ChangeRequestStatus;
+  requester: string;
+  owner: number | null;
+  owner_name?: string | null;
+  due_date: string | null;
+  blocker_note: string;
+  blocker_attachment_url: string;
+  blocker_attachment_name: string;
+  blocked_by_name?: string | null;
+  implemented_by_name?: string | null;
+  blocked_at: string | null;
+  implemented_at: string | null;
+  implementation_steps: string;
+  created_by_name?: string;
+  created_at: string;
+}
 export interface Approval { id: number; type: string; note: string; approver_name?: string; created_at: string }
 export interface BuildComment { id: number; body: string; author_name?: string; created_at: string }
 export interface BuildDocument { id: number; filename: string; url: string; uploaded_by_name?: string; created_at: string }
@@ -182,6 +210,7 @@ export interface MemorySnapshot { id: number; summary: string; scope_changes: st
 export type BuildSectionKey =
   | "PIPELINE"
   | "AUTOMATIONS"
+  | "CLIENT_UPDATES"
   | "LEAD_SOURCES"
   | "CALENDARS"
   | "INTEGRATIONS"
@@ -197,6 +226,13 @@ export interface BuildSectionReview {
   blocker_note: string;
   blocker_attachment_url: string;
   blocker_attachment_name: string;
+  blocker_history: {
+    note?: string;
+    attachment_url?: string;
+    attachment_name?: string;
+    user_name?: string;
+    created_at?: string;
+  }[];
   completed_by_name?: string | null;
   blocked_by_name?: string | null;
   completed_at: string | null;
@@ -204,7 +240,23 @@ export interface BuildSectionReview {
   updated_at: string;
 }
 
-export const CHANGE_REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED", "IMPLEMENTED"] as const;
+export const CHANGE_REQUEST_STATUSES: ChangeRequestStatus[] = [
+  "PENDING",
+  "APPROVED",
+  "IN_BUILD",
+  "DEFERRED",
+  "REJECTED",
+  "IMPLEMENTED",
+];
+export const CHANGE_REQUEST_STATUS_LABEL: Record<ChangeRequestStatus, string> = {
+  PENDING: "Pending",
+  APPROVED: "Approved",
+  IN_BUILD: "In build",
+  BLOCKED: "Blocked",
+  DEFERRED: "Deferred",
+  REJECTED: "Rejected",
+  IMPLEMENTED: "Implemented",
+};
 export const APPROVAL_TYPES = ["BRIEF", "CHANGE_REQUEST", "DELIVERY", "CLIENT"] as const;
 
 export interface BuildDetail extends BuildRow {

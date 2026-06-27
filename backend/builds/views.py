@@ -18,13 +18,13 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
 from .models import (
-    Build, ContactSource, PipelineStage, ManualAction, Task, TaskDependency,
+    Build, ContactSource, PipelineStage, ManualAction, Task, TaskDependency, TaskType,
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
     TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
     ApprovalType, BuildKnowledge, AiConfig, AiGenerationLog, BuildSectionReview,
-    BuildSection, BuildSectionReviewStatus,
+    BuildSection, BuildSectionReviewStatus, ChangeRequestStatus,
 )
 from .serializers import (
     BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
@@ -38,7 +38,7 @@ from .serializers import (
     BuildSectionReviewSerializer,
 )
 from . import services
-from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner
+from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner, can_manage_builds
 
 User = get_user_model()
 PERMS = [IsAuthenticated]
@@ -47,6 +47,29 @@ PERMS = [IsAuthenticated]
 # ─── helpers ──────────────────────────────────────────────────────────────────
 def _is_manager(user):
     return bool(user and (user.is_superuser or getattr(user, "role", None) in ("superuser", "admin")))
+
+
+def _can_manage_build(user, build):
+    return bool(
+        build
+        and user
+        and user.is_authenticated
+        and (can_manage_builds(user) or build.creator_id == user.id or build.assignee_id == user.id)
+    )
+
+
+def _related_build(obj):
+    if not obj:
+        return None
+    if hasattr(obj, "build"):
+        return obj.build
+    if hasattr(obj, "task") and obj.task:
+        return obj.task.build
+    if hasattr(obj, "stage") and obj.stage:
+        return obj.stage.build
+    if hasattr(obj, "blocker") and obj.blocker:
+        return obj.blocker.build
+    return None
 
 
 def _log(build, user, message):
@@ -117,6 +140,32 @@ def _notify(user, type_, message, link, actor=None, build_name=""):
 
 def _501(exc):
     return Response({"error": str(exc)}, status=http.HTTP_501_NOT_IMPLEMENTED)
+
+
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+_ALLOWED_UPLOAD_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "text/csv",
+    "text/markdown",
+    "text/plain",
+}
+
+
+def _upload_error(filename, content_type, size_bytes=None):
+    if size_bytes is not None:
+        try:
+            if int(size_bytes) > _MAX_UPLOAD_BYTES:
+                return "File is too large. Maximum upload size is 25 MB."
+        except (TypeError, ValueError):
+            return "Invalid file size."
+    ext = (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
+    if content_type in _ALLOWED_UPLOAD_TYPES or ext in {"pdf", "docx", "txt", "csv", "md", "rtf", "jpg", "jpeg", "png", "webp"}:
+        return ""
+    return "Unsupported file type."
 
 
 # Relations whose rows carry ai_generated/locked — used for the AI-quality metric.
@@ -472,6 +521,51 @@ class _BaseViewSet(viewsets.ModelViewSet):
     permission_classes = PERMS
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
 
+    def _build_from_request_data(self, data):
+        if data.get("build"):
+            return Build.objects.filter(pk=data.get("build")).first()
+        if data.get("task"):
+            task = Task.objects.select_related("build").filter(pk=data.get("task")).first()
+            return task.build if task else None
+        if data.get("stage"):
+            stage = PipelineStage.objects.select_related("build").filter(pk=data.get("stage")).first()
+            return stage.build if stage else None
+        if data.get("blocker"):
+            task = Task.objects.select_related("build").filter(pk=data.get("blocker")).first()
+            return task.build if task else None
+        return None
+
+    def create(self, request, *args, **kwargs):
+        build = self._build_from_request_data(request.data)
+        if build and not _can_manage_build(request.user, build):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+    def _check_object_write(self, request):
+        obj = self.get_object()
+        build = _related_build(obj)
+        if build and not _can_manage_build(request.user, build):
+            return None, Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        return obj, None
+
+    def update(self, request, *args, **kwargs):
+        _, err = self._check_object_write(request)
+        if err:
+            return err
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        _, err = self._check_object_write(request)
+        if err:
+            return err
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        _, err = self._check_object_write(request)
+        if err:
+            return err
+        return super().destroy(request, *args, **kwargs)
+
 
 class ContactSourceViewSet(_BaseViewSet):
     queryset = ContactSource.objects.all()
@@ -652,10 +746,58 @@ class ChangeRequestViewSet(_BaseViewSet):
     @action(detail=True, methods=["post"], url_path="status")
     def set_status(self, request, pk=None):
         cr = self.get_object()
-        cr.status = request.data.get("status", cr.status)
-        cr.save(update_fields=["status", "updated_at"])
+        if not can_manage_builds(request.user):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        new_status = request.data.get("status", cr.status)
+        if new_status not in ChangeRequestStatus.values:
+            return Response({"error": "invalid status"}, status=http.HTTP_400_BAD_REQUEST)
+        if new_status == ChangeRequestStatus.BLOCKED and not (
+            request.data.get("blocker_note") or cr.blocker_note
+        ):
+            return Response({"error": "Blocker details are required."}, status=http.HTTP_400_BAD_REQUEST)
+        cr.status = new_status
+        update_fields = ["status", "updated_at"]
+        if "blocker_note" in request.data:
+            cr.blocker_note = (request.data.get("blocker_note") or "").strip()
+            update_fields.append("blocker_note")
+        if "blocker_attachment_url" in request.data:
+            cr.blocker_attachment_url = (request.data.get("blocker_attachment_url") or "").strip()
+            update_fields.append("blocker_attachment_url")
+        if "blocker_attachment_name" in request.data:
+            cr.blocker_attachment_name = (request.data.get("blocker_attachment_name") or "").strip()
+            update_fields.append("blocker_attachment_name")
+        if new_status == ChangeRequestStatus.BLOCKED:
+            cr.blocked_by = request.user
+            cr.blocked_at = timezone.now()
+            update_fields.extend(["blocked_by", "blocked_at"])
+        if new_status == ChangeRequestStatus.IMPLEMENTED:
+            cr.implemented_by = request.user
+            cr.implemented_at = timezone.now()
+            update_fields.extend(["implemented_by", "implemented_at"])
+        cr.save(update_fields=update_fields)
         _log(cr.build, request.user, f'Change request "{cr.title}" → {cr.status}.')
         return Response(ChangeRequestSerializer(cr).data)
+
+    @action(detail=True, methods=["post"], url_path="generate-steps")
+    def generate_steps(self, request, pk=None):
+        cr = self.get_object()
+        if not _can_manage_build(request.user, cr.build):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        try:
+            cr.implementation_steps = services.generate_change_request_steps(cr)
+        except Exception:  # noqa: BLE001
+            return Response(
+                {"error": "Could not generate implementation steps right now."},
+                status=http.HTTP_502_BAD_GATEWAY,
+            )
+        cr.save(update_fields=["implementation_steps", "updated_at"])
+        _log(cr.build, request.user, f'Implementation steps generated for "{cr.title}".')
+        return Response(ChangeRequestSerializer(cr).data)
+
+    def destroy(self, request, *args, **kwargs):
+        if not can_manage_builds(request.user):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
 
 
 class ApprovalRecordViewSet(_BaseViewSet):
@@ -687,6 +829,10 @@ class BuildSectionReviewViewSet(_BaseViewSet):
     queryset = BuildSectionReview.objects.select_related("build", "completed_by", "blocked_by").all()
     serializer_class = BuildSectionReviewSerializer
     filterset_fields = ["build", "section", "status"]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        return Response({"error": "Use /section-reviews/upsert."}, status=http.HTTP_405_METHOD_NOT_ALLOWED)
 
     @action(detail=False, methods=["post"], url_path="upsert")
     def upsert(self, request):
@@ -706,9 +852,17 @@ class BuildSectionReviewViewSet(_BaseViewSet):
         review.status = status
         section_label = BuildSection(section).label
         if status == BuildSectionReviewStatus.DONE:
-            review.blocker_note = ""
-            review.blocker_attachment_url = ""
-            review.blocker_attachment_name = ""
+            if section == BuildSection.CLIENT_UPDATES and build.change_requests.exclude(
+                status__in=[
+                    ChangeRequestStatus.IMPLEMENTED,
+                    ChangeRequestStatus.REJECTED,
+                    ChangeRequestStatus.DEFERRED,
+                ]
+            ).exists():
+                return Response(
+                    {"error": "Resolve, reject, or defer all client updates before marking this section done."},
+                    status=http.HTTP_400_BAD_REQUEST,
+                )
             review.completed_by = request.user
             review.completed_at = timezone.now()
             review.blocked_by = None
@@ -722,6 +876,17 @@ class BuildSectionReviewViewSet(_BaseViewSet):
             review.blocker_attachment_name = (request.data.get("blocker_attachment_name") or "").strip()
             review.blocked_by = request.user
             review.blocked_at = timezone.now()
+            review.blocker_history = [
+                *(review.blocker_history or []),
+                {
+                    "note": review.blocker_note,
+                    "attachment_url": review.blocker_attachment_url,
+                    "attachment_name": review.blocker_attachment_name,
+                    "user_id": request.user.id,
+                    "user_name": request.user.get_full_name() or request.user.username,
+                    "created_at": timezone.now().isoformat(),
+                },
+            ]
             review.completed_by = None
             review.completed_at = None
             message = f'{section_label} blocked: {review.blocker_note[:160]}'
@@ -748,6 +913,52 @@ class BuildSectionReviewViewSet(_BaseViewSet):
             actor=request.user,
             build_name=build.title,
         )
+        return Response(BuildSectionReviewSerializer(review).data)
+
+    @action(detail=True, methods=["post"], url_path="convert-to-task")
+    def convert_to_task(self, request, pk=None):
+        review = self.get_object()
+        if not _can_manage_build(request.user, review.build):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        if review.status != BuildSectionReviewStatus.BLOCKED or not review.blocker_note:
+            return Response({"error": "Only active blockers can be converted to tasks."}, status=http.HTTP_400_BAD_REQUEST)
+        task = Task.objects.create(
+            build=review.build,
+            assignee=review.build.assignee,
+            type=TaskType.OTHER,
+            title=f"Resolve blocker: {BuildSection(review.section).label}",
+            description=review.blocker_note,
+        )
+        _log(review.build, request.user, f'Section blocker converted to task "{task.title}".')
+        return Response(TaskSerializer(task).data, status=http.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="request-info")
+    def request_info(self, request, pk=None):
+        review = self.get_object()
+        if not _can_manage_build(request.user, review.build):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        note = (request.data.get("note") or "").strip()
+        if not note:
+            return Response({"error": "note is required"}, status=http.HTTP_400_BAD_REQUEST)
+        review.blocker_history = [
+            *(review.blocker_history or []),
+            {
+                "note": f"Admin requested more info: {note}",
+                "user_id": request.user.id,
+                "user_name": request.user.get_full_name() or request.user.username,
+                "created_at": timezone.now().isoformat(),
+            },
+        ]
+        review.save(update_fields=["blocker_history", "updated_at"])
+        _notify(
+            review.build.assignee,
+            "SECTION_BLOCKED",
+            f'Need more info on "{review.build.title}" — {BuildSection(review.section).label}.',
+            f"/builds/{review.build.id}",
+            actor=request.user,
+            build_name=review.build.title,
+        )
+        _log(review.build, request.user, f"Requested more info on {BuildSection(review.section).label} blocker.")
         return Response(BuildSectionReviewSerializer(review).data)
 
 
@@ -1088,8 +1299,22 @@ def portal_feedback(request, token):
 def upload_presign(request):
     filename = request.data.get("filename")
     content_type = request.data.get("content_type", "application/octet-stream")
+    size_bytes = request.data.get("size_bytes")
     if not filename:
         return Response({"error": "filename required"}, status=http.HTTP_400_BAD_REQUEST)
+    err = _upload_error(filename, content_type, size_bytes)
+    if err:
+        return Response({"error": err}, status=http.HTTP_400_BAD_REQUEST)
+    build = None
+    if request.data.get("build"):
+        build = Build.objects.filter(pk=request.data.get("build")).first()
+    elif request.data.get("task"):
+        task = Task.objects.select_related("build").filter(pk=request.data.get("task")).first()
+        build = task.build if task else None
+    if not build:
+        return Response({"error": "build or task is required"}, status=http.HTTP_400_BAD_REQUEST)
+    if not _can_manage_build(request.user, build):
+        return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
     try:
         return Response(services.presign_upload(filename, content_type))
     except Exception as e:  # noqa: BLE001
@@ -1102,14 +1327,30 @@ def upload_finalize(request):
     """Create a Document row after the browser PUTs the file to S3."""
     data = request.data
     filename = data.get("filename", "")
+    content_type = data.get("content_type", "")
+    size_bytes = data.get("size_bytes")
+    err = _upload_error(filename, content_type, size_bytes)
+    if err:
+        return Response({"error": err}, status=http.HTTP_400_BAD_REQUEST)
+    build = Build.objects.filter(pk=data.get("build")).first() if data.get("build") else None
+    task = Task.objects.select_related("build").filter(pk=data.get("task")).first() if data.get("task") else None
+    related_build = build or (task.build if task else None)
+    if not related_build:
+        return Response({"error": "build or task is required"}, status=http.HTTP_400_BAD_REQUEST)
+    if not _can_manage_build(request.user, related_build):
+        return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+    key = (data.get("key") or "").strip()
+    if key and not key.startswith("uploads/"):
+        return Response({"error": "Invalid upload key."}, status=http.HTTP_400_BAD_REQUEST)
+    public_url = services.public_url(key) if key else data.get("public_url", "")
     doc = Document.objects.create(
         filename=filename,
-        url=data.get("public_url", ""),
-        mime_type=data.get("content_type", ""),
-        size_bytes=data.get("size_bytes"),
-        ai_readable=services.is_ai_readable(filename, data.get("content_type", "")),
-        build_id=data.get("build") or None,
-        task_id=data.get("task") or None,
+        url=public_url,
+        mime_type=content_type,
+        size_bytes=size_bytes,
+        ai_readable=services.is_ai_readable(filename, content_type),
+        build=build,
+        task=task,
         uploader=request.user,
     )
     if doc.build:

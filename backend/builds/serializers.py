@@ -183,11 +183,13 @@ class ActivitySerializer(serializers.ModelSerializer):
 class ChangeRequestSerializer(serializers.ModelSerializer):
     owner_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    blocked_by_name = serializers.SerializerMethodField()
+    implemented_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ChangeRequest
         fields = "__all__"
-        read_only_fields = ["created_by"]
+        read_only_fields = ["created_by", "blocked_by", "implemented_by", "blocked_at", "implemented_at"]
 
     @extend_schema_field(_NULL_STR)
     def get_owner_name(self, obj):
@@ -196,6 +198,14 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
     @extend_schema_field(_NULL_STR)
     def get_created_by_name(self, obj):
         return _user_name(obj.created_by)
+
+    @extend_schema_field(_NULL_STR)
+    def get_blocked_by_name(self, obj):
+        return _user_name(obj.blocked_by)
+
+    @extend_schema_field(_NULL_STR)
+    def get_implemented_by_name(self, obj):
+        return _user_name(obj.implemented_by)
 
 
 class ApprovalRecordSerializer(serializers.ModelSerializer):

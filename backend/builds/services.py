@@ -1121,6 +1121,39 @@ def generate_task_sop(task) -> str:
     return sop
 
 
+def generate_change_request_steps(change_request) -> str:
+    """Generate implementer-facing steps for a mid-build client update."""
+    build = change_request.build
+    stages = list(build.stages.all())
+    workflows = list(build.workflows.all())
+    fields = list(build.custom_fields.all())
+    tags = list(build.tags.all())
+    context = "\n".join([
+        f"Build title: {build.title}",
+        f"Build goals: {build.goals or 'not specified'}",
+        f"Pipeline stages: {' → '.join(s.name for s in stages) or 'none'}",
+        f"Workflows: {', '.join(f'{w.code} {w.name}'.strip() for w in workflows) or 'none'}",
+        f"Custom fields/values: {', '.join(f.key for f in fields) or 'none'}",
+        f"Tags: {', '.join(t.tag for t in tags) or 'none'}",
+    ])
+    prompt = (
+        "You are a senior GoHighLevel implementation architect at Calari Solutions. "
+        "A client added or changed scope midway through an active build. Convert this update into "
+        "specific implementation steps a GHL builder can follow. Include affected workflows, fields, "
+        "tags, pipeline movement, testing, and rollback/QA notes. If information is missing, list the "
+        "exact blocker questions at the end.\n\n"
+        f"CHANGE TITLE: {change_request.title}\n"
+        f"DESCRIPTION: {change_request.description}\n"
+        f"IMPACT: {change_request.impact or 'not specified'}\n\n"
+        f"CURRENT BUILD CONTEXT:\n{context}\n\n"
+        "Return only the implementation steps in numbered Markdown."
+    )
+    steps = (_chat([{"role": "user", "content": prompt}], max_tokens=1800, op="change_request_steps") or "").strip()
+    if not steps:
+        raise RuntimeError("AI returned no change-request implementation steps")
+    return steps
+
+
 _GAP_SUGGEST_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
