@@ -22,6 +22,7 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
     { href: "/settings/profile", label: "Profile", iconName: "CircleUserRound", show: true },
     { href: "/settings/team", label: "Team", iconName: "Settings", show: can("team") },
     { href: "/settings/ai", label: "AI Keys", iconName: "KeyRound", show: can("ai_keys") },
+    { href: "/settings/connections", label: "Integrations", iconName: "Cable", show: can("ai_keys") },
   ];
 
   const initials = user.name

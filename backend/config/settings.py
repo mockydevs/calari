@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     'builds',
     'vectorstore',
     'a2p',
+    'onboarding',
 
 ]
 

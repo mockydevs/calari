@@ -5,6 +5,7 @@ import {
   Bell,
   BookOpen,
   BriefcaseBusiness,
+  Cable,
   CircleUserRound,
   FolderKanban,
   KanbanSquare,
@@ -28,6 +29,7 @@ const ICON_MAP = {
   CircleUserRound,
   BookOpen,
   MessageSquare,
+  Cable,
 } as const;
 
 export type NavIconName = keyof typeof ICON_MAP;
