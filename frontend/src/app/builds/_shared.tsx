@@ -251,6 +251,8 @@ export interface BuildDetail extends BuildRow {
   action_items?: MeetingActionItem[];
   progress_reports?: ProgressReport[];
   tasklist_status?: string;
+  build_document?: string;
+  build_document_at?: string | null;
 }
 
 export function BuildStatusBadge({ status }: { status: BuildStatus }) {

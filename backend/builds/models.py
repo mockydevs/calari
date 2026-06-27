@@ -139,6 +139,10 @@ class Build(models.Model):
     # Async state of the source-faithful meeting tasklist (separate from the
     # blueprint flow, which tracks state on the meeting note). Polled by the UI.
     tasklist_status = models.CharField(max_length=16, blank=True, default="")  # ""|processing|done|failed
+    # Persisted implementation build document (AI-generated). Stored so it survives
+    # navigation and only regenerates on explicit request — not a cache that evicts.
+    build_document = models.TextField(blank=True, default="")
+    build_document_at = models.DateTimeField(null=True, blank=True)
     client = models.ForeignKey("projects.Clients", on_delete=models.CASCADE, related_name="builds")
     creator = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="created_builds")
     assignee = models.ForeignKey(

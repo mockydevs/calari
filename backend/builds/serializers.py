@@ -299,6 +299,7 @@ class BuildSerializer(BuildListSerializer):
     class Meta(BuildListSerializer.Meta):
         fields = BuildListSerializer.Meta.fields + [
             "overview", "one_line_summary", "maintenance_notes", "tasklist_status",
+            "build_document", "build_document_at",
             "tasks", "documents", "comments", "change_requests", "approvals", "section_reviews",
             "memory_snapshots", "activities", "action_items", "progress_reports",
         ]

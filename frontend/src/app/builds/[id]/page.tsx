@@ -15,11 +15,11 @@ import { AssignApprove } from "../assign-approve";
 import { NoteComposer } from "../note-composer";
 import { BuildDeleteButton, ConfirmDeleteButton } from "../build-row-actions";
 import { PortalLink } from "../portal-link";
-import { BuildDocumentButton, ClientHandoverButton } from "../handover-button";
+import { BuilderDocPanel } from "../builder-doc";
 import { ProgressReportPanel } from "../progress-report";
 import { MeetingNoteUpload } from "../meeting-note-upload";
 import { GenerateSopButton } from "../ai-buttons";
-import { ImplementationWorkspace, SectionControls } from "../implementation-workspace";
+import { SectionControls } from "../implementation-workspace";
 import { MeetingTasklistPanel } from "../meeting-tasklist";
 import { Tabs, TabPanel } from "../build-tabs";
 import {
@@ -279,19 +279,19 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
           </Panel>
         </TabPanel>
 
-        {/* ── Implementation workspace (tasklist by GHL section) ───── */}
+        {/* ── Implementation (the persisted build document) ────────── */}
         <TabPanel id="implementation" label="Implementation">
           <Panel
-            title="Staff implementation workspace"
-            icon={<ListChecks className="h-4 w-4 text-pink-700" />}
-            action={
-              <div className="flex flex-wrap items-center gap-2">
-                <BuildDocumentButton buildId={id} title={build.title} />
-                <ClientHandoverButton buildId={id} title={build.title} />
-              </div>
-            }
+            title="Implementation build document"
+            icon={<FileText className="h-4 w-4 text-pink-700" />}
           >
-            <ImplementationWorkspace build={build} buildId={id} notes={notes} />
+            <BuilderDocPanel
+              buildId={id}
+              title={build.title}
+              initialMarkdown={build.build_document ?? ""}
+              generatedAt={build.build_document_at}
+              notes={notes}
+            />
           </Panel>
           {canManage && (
             <div className="mt-5">

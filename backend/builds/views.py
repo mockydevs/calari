@@ -373,31 +373,33 @@ class BuildViewSet(viewsets.ModelViewSet):
         done = build.tasks.filter(status="DONE").count()
         return Response({"total": total, "done": done, "percent": round(done * 100 / total) if total else 0})
 
-    @action(detail=True, methods=["post"], url_path="build-document")
+    @action(detail=True, methods=["get", "post"], url_path="build-document")
     def build_document(self, request, pk=None):
-        """Generate the long-form, step-by-step GHL IMPLEMENTATION build document (markdown).
+        """The persisted implementation build document.
 
-        Makes one AI call; meant for the assigned builder to follow directly in GHL.
-        Grounded in the captured tasklist + the original meeting notes + the Build-Library
-        learning loop.
+        GET returns the stored doc instantly (no AI). POST (re)generates it via one AI
+        call and stores it on the build, so navigating away never loses it and it only
+        regenerates when a human explicitly asks.
         """
-        build = self._detail_queryset().get(pk=self.get_object().pk)
-        cache_key = f"build-document:{build.pk}:{build.updated_at.timestamp()}"
-        cached = cache.get(cache_key)
-        if cached:
-            return Response({"markdown": cached, "cached": True})
+        build = self.get_object()
+        if request.method == "GET":
+            return Response({"markdown": build.build_document or "", "generated_at": build.build_document_at})
+
         if _ai_doc_rate_limited(request.user, build.pk, "build_document"):
             return Response(
                 {"error": "Build document generation was just requested. Try again shortly."},
                 status=http.HTTP_429_TOO_MANY_REQUESTS,
             )
+        full = self._detail_queryset().get(pk=build.pk)
         try:
-            markdown = services.generate_build_document(build)
+            markdown = services.generate_build_document(full)
         except Exception:  # noqa: BLE001 — never 500 the request; return a soft message
-            markdown = "_The build document could not be generated yet._"
-        else:
-            cache.set(cache_key, markdown, 3600)
-        return Response({"markdown": markdown})
+            return Response({"error": "The build document could not be generated yet."},
+                            status=http.HTTP_502_BAD_GATEWAY)
+        build.build_document = markdown
+        build.build_document_at = timezone.now()
+        build.save(update_fields=["build_document", "build_document_at", "updated_at"])
+        return Response({"markdown": markdown, "generated_at": build.build_document_at})
 
     @action(detail=True, methods=["post"], url_path="client-handover")
     def client_handover(self, request, pk=None):
