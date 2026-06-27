@@ -383,218 +383,6 @@ def _pobj(properties: dict) -> dict:
     })
 
 
-_BLUEPRINT_SCHEMA = _obj({
-    "overview": _str(),          # "The big idea" — the single-source-of-truth narrative
-    "oneLineSummary": _str(),    # one-sentence summary for the team
-    "goals": _str(),
-    "integrations": _arr(_str()),
-    "maintenanceNotes": _str(),  # services, env vars, cadence — empty if unknown
-    "leadSources": _arr(_pobj({
-        "type": _enum("WEBSITE", "ADS", "MANUAL", "OTHER"),
-        "label": _str(),
-        "entryMechanism": _str(),     # how it enters: form trigger, webhook, cron sync…
-        "fires": _str(),              # side effects: Meta CAPI, internal alerts, tasks…
-        "tagsApplied": _str(),        # comma-separated tags applied on entry
-        "handlingWorkflow": _str(),   # workflow code that handles it, e.g. "IN1"
-        "entryStage": _str(),         # name of the pipeline stage it lands in
-        "notes": _str(),
-    })),
-    "pipelineStages": _arr(_pobj({
-        "order": _int(),
-        "name": _str(),
-        "description": _str(),        # "what it means"
-        "entryCondition": _str(),     # "how a lead gets here"
-        "isAutomatic": _bool(),       # advances automatically on a reliable signal
-        "manualActions": _arr(_obj({"description": _str(), "owner": _str()})),
-    })),
-    "stageTransitions": _arr(_obj({
-        "fromStage": _str(),          # source stage name ("" if it's an entry)
-        "toStage": _str(),            # destination stage name
-        "trigger": _str(),            # what causes the move
-        "isAutomatic": _bool(),
-        "notes": _str(),
-    })),
-    "calendars": _arr(_pobj({          # booking objects — the conversion point
-        "name": _str(),
-        "type": _enum("ROUND_ROBIN", "COLLECTIVE", "CLASS", "SERVICE", "PERSONAL", "OTHER"),
-        "purpose": _str(),            # what it books: consult, in-person visit, demo…
-        "assignedTo": _str(),         # team members / providers
-        "booksIntoStage": _str(),     # name of the stage a booking lands in
-        "onBooking": _str(),          # what fires on booking (workflow, tags, reminders)
-        "reminders": _str(),          # reminder/confirmation cadence
-        "notes": _str(),
-    })),
-    # NOTE: must NOT be named "integrations" — that key is already the simple
-    # string list above. A duplicate key silently overwrote it, so the model
-    # returned objects under "integrations" and ", ".join(...) crashed in
-    # _persist_blueprint. These rich objects feed the Integration model.
-    "externalIntegrations": _arr(_pobj({   # external systems wired to GHL (any direction)
-        "name": _str(),               # Patient Prism, Modento, QuickBooks, custom ERP…
-        "direction": _enum("INBOUND", "OUTBOUND", "BIDIRECTIONAL"),
-        "mechanism": _enum("API", "WEBHOOK", "NATIVE", "ZAPIER", "CRON", "OTHER"),
-        "dataObjects": _str(),        # contacts, appointments, quotes, invoices, payments…
-        "purpose": _str(),
-        "triggerCadence": _str(),     # real-time, daily cron, on stage change…
-        "notes": _str(),
-    })),
-    "workflows": _arr(_pobj({
-        "code": _str(),               # e.g. "A1", "IN3", "K4"
-        "category": _enum(
-            "ACTIVE_CONVERSION", "INTAKE_ROUTING", "RECORD_KEEPING",
-            "APPOINTMENT_LIFECYCLE", "POST_VISIT", "INTERNAL_UTILITY", "OTHER",
-        ),
-        "name": _str(),
-        "trigger": _str(),
-        "whatItDoes": _str(),
-        "patientFacing": _bool(),
-    })),
-    "customFields": _arr(_obj({
-        "kind": _enum("FIELD", "VALUE"),
-        "key": _str(),
-        "description": _str(),
-        "populated": _bool(),         # False = still blank / needs a value
-    })),
-    "tags": _arr(_obj({"tag": _str(), "meaning": _str()})),
-    "preLaunchItems": _arr(_obj({"description": _str(), "optional": _bool()})),
-    "tasks": _arr(_obj({
-        "title": _str(),
-        "type": _enum("AUTOMATION", "FUNNEL", "FORM", "INTEGRATION", "OTHER"),
-        "description": _str(),
-    })),
-    # The gap-seeking output: what's missing, and the targeted question to close it.
-    "gaps": _arr(_obj({
-        "category": _enum(
-            "OVERVIEW", "STAGE", "TRANSITION", "LEAD_SOURCE", "CALENDAR",
-            "INTEGRATION", "WORKFLOW", "CUSTOM_FIELD", "TAG", "GENERAL",
-        ),
-        "question": _str(),           # the follow-up to ask the client/team
-        "rationale": _str(),          # why it matters to the build
-        "severity": _enum("high", "medium", "low"),
-    })),
-})
-
-_BLUEPRINT_SYSTEM_PROMPT = (
-    "You are THE most senior Go High Level (GHL) solutions architect at Calari Solutions — a true "
-    "expert who has shipped hundreds of GHL builds and knows the platform (pipelines, workflows, "
-    "calendars, custom fields/values, tags, triggers, the V2 API and webhooks) cold.\n\n"
-    "Your job: turn client meeting notes into a COMPLETE, READY-TO-BUILD system blueprint — the exact "
-    "structure of our end-of-build client handover — so a Calari staff member can IMPLEMENT it in GHL "
-    "without going back to the client for the obvious pieces. Think like the architect who designs the "
-    "whole system, names every part, and hands the builder a finished plan.\n\n"
-    "BUILD IT OUT IN FULL — do not just transcribe the notes:\n"
-    "- Design the ENTIRE pipeline and NAME every stage (real GHL stage names, in order).\n"
-    "- Design EVERY workflow the system needs and NAME each one with a code prefix per our convention "
-    "(A = active conversion, IN = intake/routing, REC = record-keeping, E/K = appointment lifecycle, "
-    "G = post-visit, H/X/Y/Z = internal/utility), each with its trigger and what it does. Include the "
-    "supporting automations an expert KNOWS a build needs (lead acknowledgement, speed-to-lead, "
-    "nurture, no-show/reschedule, reminders, review/referral, internal alerts) even when the notes "
-    "don't spell them out.\n"
-    "- Trace the COMPLETE movement of a contact END TO END: for every way a contact arrives (each lead "
-    "source / funnel / external party), give the entry mechanism, the stage they land in, every stage "
-    "transition and its exact trigger, the nurture that drives them to a booking, the conversion "
-    "calendar, and what happens after conversion. Leave no contact journey half-drawn.\n"
-    "- Specify the custom fields, custom values, and tags the workflows above depend on.\n"
-    "When you infer a standard piece the notes didn't state, INCLUDE it (so the build is complete), mark "
-    "that item inferred=true with a confidence level, AND record it as a low/medium-severity gap so the "
-    "admin can confirm or correct it. Items clearly stated in the notes are inferred=false. Be thorough "
-    "and specific over brief — completeness is the whole point.\n\n"
-    "PROVENANCE: for every leadSource, pipelineStage, calendar, externalIntegration and workflow, set "
-    "`inferred` (true if you supplied it from your expertise rather than the notes) and `confidence` "
-    "(high/medium/low) so reviewers know exactly what to scrutinize.\n\n"
-    "Extract:\n"
-    "- overview: a plain-English 'big idea' — the single source of truth and how leads flow through it\n"
-    "- oneLineSummary: a one-sentence summary the delivery team can repeat\n"
-    "- goals, integrations: the outcome the client wants and the tools involved\n"
-    "- leadSources: every way a contact enters, WITH mechanics — how it enters (form/webhook/cron), "
-    "what it fires (e.g. Meta CAPI, internal alert), tags applied, the handling workflow, and which "
-    "pipeline stage it lands in\n"
-    "- pipelineStages: ordered stages, each with what it means, how a lead gets here, and whether it "
-    "advances automatically or needs a manual action (list manual actions and their owner)\n"
-    "- stageTransitions: the MOVEMENT between stages — for each, the from/to stage names and the exact "
-    "trigger that causes the move (a status change, a tag, a webhook, or a manual team action)\n"
-    "- calendars: the booking object(s) where a nurtured lead CONVERTS — this is the point of "
-    "conversion in GHL. Capture what each calendar books (a sales call, a demo, or a physical visit "
-    "like a dental appointment), its type, who it's assigned to, which pipeline stage a booking lands "
-    "in, and what fires on booking (confirmation, reminders, stage move). Nurture sequences exist to "
-    "drive a booking on one of these calendars — make that journey explicit.\n"
-    "- externalIntegrations: every external system wired to GHL, in ANY direction. INBOUND tools feed contacts "
-    "into GHL (e.g. Patient Prism, Modento, a website app, an ERP); OUTBOUND flows push data out of GHL "
-    "(to an external database, accounting/ERP, or to generate quotes and invoices); BIDIRECTIONAL syncs "
-    "both ways. For each, capture the mechanism (API, webhook, native, Zapier, cron), the data objects "
-    "exchanged (contacts, appointments, quotes, invoices, payments), the trigger/cadence, and its purpose\n"
-    "- workflows: the automations to build, grouped by category, each with its trigger and what it does\n"
-    "- customFields: custom fields and custom values the system needs (mark populated=false if a value "
-    "is still missing)\n"
-    "- tags: the tag glossary\n"
-    "- preLaunchItems: checklist items, decisions, and risks to resolve before go-live\n"
-    "- tasks: concrete build tasks for a team member\n\n"
-    "GHL API AWARENESS — Calari builds run on Go High Level. GHL exposes a V2 REST API "
-    "(base https://services.leadconnectorhq.com, OAuth 2.0 or a Private Integration Token; the "
-    "legacy V1 keys reached end-of-support on 31 Dec 2025). Most of this blueprint maps onto GHL API "
-    "objects: lead sources → Contacts API + inbound webhooks; stages/transitions → Opportunities & "
-    "Pipelines API; calendars → Calendars & Events API; workflows → Workflows API; custom fields/values "
-    "and tags → their respective APIs. PREFER webhooks (50+ event types) over polling. When an "
-    "integration or workflow plainly needs the API, classify its mechanism accordingly (API / WEBHOOK / "
-    "NATIVE / ZAPIER / CRON) and, when the notes leave the API specifics unanswered, RAISE GAPS for: "
-    "(a) auth model + OAuth scopes, (b) which webhook events to subscribe to, (c) inbound vs outbound vs "
-    "bidirectional direction, (d) data objects exchanged (contacts, opportunities, appointments, "
-    "invoices, payments), (e) rate-limit risk for bulk syncs (100 req / 10s burst, 200k / day per "
-    "resource), and (f) any client still on V1 that must migrate. Do NOT invent endpoint paths — surface "
-    "the unknown as a gap.\n\n"
-    "CRITICAL — always seek the structure. The client's notes will be incomplete. For every part of the "
-    "blueprint that the notes do not pin down — especially missing stage transitions, lead-source "
-    "mechanics, ambiguous stage movement, the conversion calendar(s) the nurture drives toward, and any "
-    "external integration whose direction, mechanism, or data flow is unclear — add a 'gaps' entry with a specific, answerable follow-up "
-    "question and why it matters. Do NOT silently invent these; surface them as gaps. Only infer a "
-    "sensible minimal default when the gap is low-stakes, and still note it as a low-severity gap.\n\n"
-    "CALARI STANDARD BUILD PATTERNS — these recur across our portfolio (dental, med-spa, "
-    "recruitment, home services, auto, events). Include the ones that fit, even when the notes "
-    "don't name them, marked inferred=true with a confidence level, and emit them through the "
-    "existing schema (workflows / preLaunchItems / tasks / gaps / externalIntegrations):\n"
-    "- Speed-to-lead: an auto-reply (email + SMS) within ~5 minutes of a form fill, plus an "
-    "internal alert to the ASSIGNED owner (not all users) with the contact's name/phone and a "
-    "follow-up task.\n"
-    "- Nurture: separate sequences for unqualified (warm-up) vs qualified (push-to-book) leads; "
-    "multi-touch SMS+email cadence; suppress/exit the moment they book.\n"
-    "- Appointment lifecycle: booking confirmation, reminders (commonly 24h + 1–2h before), "
-    "no-show recovery (graduated; only mark Lost after a rebooking window), and a reschedule flow "
-    "that CLEARS stale reminders and re-queues new ones.\n"
-    "- Post-visit: review request + referral ask after completion.\n"
-    "- Lead-source routing & tagging for clean attribution; a lead-value step that reads a "
-    "budget/qualification field and sets the opportunity value.\n"
-    "- Internal ops: booking alerts to the assigned rep and a daily digest of upcoming "
-    "appointments where useful.\n"
-    "- External app sync (often BIDIRECTIONAL GHL<->client app): appointments, estimates/quotes, "
-    "invoices, and pipeline-stage status — capture under externalIntegrations.\n"
-    "- Reporting pipelines: a data source -> Google Sheet -> reporting tool (scorecards/dashboards) "
-    "on a daily sync — capture as an OUTBOUND externalIntegration and note the sync cadence/latency.\n"
-    "- Embedded AI qualification: an AI step that validates eligibility (e.g., location/state) and "
-    "routes or auto-disqualifies — capture as a workflow and flag what it decides.\n"
-    "- Hygiene an expert always sets: sticky/dedup contacts, two-way calendar sync, and correct "
-    "email sender identity (assigned-user From-name + signature, never a blank merge tag).\n\n"
-    "A2P / SMS COMPLIANCE — MANDATORY whenever ANY workflow sends SMS (it is a required "
-    "pre-launch workstream, not a nicety, and is the most common thing that blocks go-live). When "
-    "the build sends SMS, ALWAYS include:\n"
-    "- preLaunchItems for: a compliant Privacy Policy + Terms of Service; an SMS consent flow "
-    "(unchecked opt-in checkbox, optional phone field, 'consent not required to purchase', message "
-    "types, 'message & data rates may apply', STOP/HELP instructions, and the mandatory "
-    "'no mobile information will be shared with third parties for marketing' clause); and Twilio "
-    "brand + campaign registration under the Customer Care / transactional use case with sample "
-    "messages.\n"
-    "- tasks to build the consent flow and submit the brand + campaign registration.\n"
-    "- an externalIntegration for the Twilio messaging service (mechanism API/NATIVE) connected to GHL.\n"
-    "- gaps for the unknowns that cause rejections: legal business name/DBA, the public opt-in form "
-    "URL, the campaign use case, and which sending numbers to link. RAISE these known failure modes "
-    "as gaps/notes: opt-in error 30896 (reviewers can't verify opt-in — promotional content on the "
-    "main site conflicts with a transactional Customer-Care campaign, often forcing a dedicated "
-    "standalone compliance website); TOLL-FREE numbers will NOT connect to GHL (use a LOCAL number); "
-    "and a previously approved brand may need deletion/reset before a clean resubmission.\n\n"
-    "Meeting notes may include a kickoff plus later updates. Treat the earliest notes as the baseline "
-    "intent and later notes as refinements that supersede earlier details only when they clearly "
-    "conflict. Preserve unchanged context. Return only data matching the schema."
-)
-
-
 KNOWLEDGE_MAX_CHARS = 8000
 _REF_PER_DOC_CHARS = 2500
 _REF_SAME_CLIENT = 3   # how many same-client docs to include
@@ -807,88 +595,18 @@ def build_reference_context(build) -> str:
     return "\n\n".join(parts)[:KNOWLEDGE_MAX_CHARS]
 
 
-def generate_blueprint_draft(notes_text: str, reference_text: str = "", resolved_text: str = "") -> dict:
-    """Extract the full vision blueprint (handover anatomy) + gaps from meeting notes.
-
-    `reference_text` is Build Library context (how Calari builds — the learning loop);
-    `resolved_text` is answered vision-gap Q&A treated as authoritative (the gap loop).
-    """
-    messages = [{"role": "system", "content": _BLUEPRINT_SYSTEM_PROMPT}]
-    if reference_text.strip():
-        messages.append({"role": "system", "content": (
-            "REFERENCE — how Calari has built similar systems (past builds / client docs from our Build "
-            "Library). Use these to match our naming, structure, and conventions; adapt rather than copy "
-            "client-specific details that don't apply here:\n\n" + reference_text[:KNOWLEDGE_MAX_CHARS]
-        )})
-    if resolved_text.strip():
-        messages.append({"role": "system", "content": (
-            "RESOLVED QUESTIONS — the team has answered these previously-open gaps. Treat them as "
-            "AUTHORITATIVE and build them in; do not re-raise them as gaps:\n\n" + resolved_text[:6000]
-        )})
-    messages.append({"role": "user", "content": f"Client meeting notes:\n\n{notes_text[:MAX_TEXT_CHARS]}"})
-
-    raw = _chat(
-        messages,
-        model=_blueprint_model(),
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": "build_blueprint", "strict": True, "schema": _BLUEPRINT_SCHEMA},
-        },
-        op="blueprint",
-    )
-    if not raw:
-        raise RuntimeError("AI returned no content")
-    draft = json.loads(raw)
-    if _multi_pass_enabled():
-        draft = _critique_and_revise(draft, notes_text, reference_text)
-    return draft
-
-
-def _critique_and_revise(draft: dict, notes_text: str, reference_text: str = "") -> dict:
-    """Architect→critic→revise: a second pass that reviews the draft against the notes
-    and our standard patterns and returns an IMPROVED blueprint (same schema). Falls
-    back to the original draft on any error so it can never make things worse."""
-    try:
-        messages = [
-            {"role": "system", "content": _BLUEPRINT_SYSTEM_PROMPT},
-            {"role": "system", "content": (
-                "You are now the REVIEWER. You are given a DRAFT blueprint another architect produced from "
-                "the same notes. Critique it for completeness and consistency, then return an IMPROVED "
-                "blueprint in the same schema: fill missing workflows / pre-launch & A2P-SMS compliance "
-                "items, fix broken stage references and half-drawn contact journeys, and tighten naming "
-                "to our conventions. Keep everything correct from the draft — only add or fix, never drop "
-                "good content."
-            )},
-        ]
-        if reference_text.strip():
-            messages.append({"role": "system", "content": "REFERENCE:\n" + reference_text[:KNOWLEDGE_MAX_CHARS]})
-        messages.append({"role": "user", "content": (
-            f"Client meeting notes:\n\n{notes_text[:MAX_TEXT_CHARS]}\n\n"
-            f"DRAFT blueprint to improve (same schema):\n{json.dumps(draft)[:60000]}"
-        )})
-        raw = _chat(
-            messages, model=_blueprint_model(),
-            response_format={"type": "json_schema",
-                             "json_schema": {"name": "build_blueprint", "strict": True, "schema": _BLUEPRINT_SCHEMA}},
-            op="blueprint_revise",
-        )
-        return json.loads(raw) if raw else draft
-    except Exception:  # noqa: BLE001 — never let the critic pass break generation
-        logger.exception("multi-pass revise failed; using original draft")
-        return draft
-
-
 # ─── Implementation build document (long-form, step-by-step for the builder) ───
 # The blueprint (structured JSON) is the architecture; THIS turns it into the
 # implementer-facing build document a team member follows directly in GHL —
 # the 24-section format with every workflow expanded into builder-level steps.
 _BUILD_DOCUMENT_SYSTEM_PROMPT = (
     "You are a senior GoHighLevel (GHL) CRM architect and marketing-automation strategist at "
-    "Calari Solutions. Turn the build blueprint + meeting notes you are given into a COMPLETE, "
+    "Calari Solutions. Turn the captured build plan (a source-faithful tasklist of the client's "
+    "requests, grouped by GHL area) + meeting notes you are given into a COMPLETE, "
     "end-to-end IMPLEMENTATION BUILD DOCUMENT that a GHL implementer can follow directly inside "
     "the workflow builder — not a summary, and not generic CRM advice. Be specific, practical, and "
-    "exhaustive; prefer completeness over brevity. Use the EXACT pipeline stage names, workflow "
-    "names, field names, tag names, calendar names and dashboard metric names from the blueprint "
+    "exhaustive; prefer completeness over brevity. Derive the pipeline stages, workflows, fields, "
+    "tags, calendars and dashboard metrics from the captured requests and notes "
     "(invent missing ones in the same style and naming convention, and mark anything you assumed). "
     "Respect the system-of-record split stated in the notes: GHL owns sales & marketing (capture, "
     "pipeline, nurture, booking, follow-up, upsell, reporting, ad conversion tracking); any external "
@@ -932,24 +650,27 @@ _BUILD_DOCUMENT_SYSTEM_PROMPT = (
     "with its real failure modes called out (opt-in error 30896 → standalone compliance website "
     "possibly needing a brand reset; toll-free numbers will NOT connect to GHL — use a local "
     "number). Put compliance and any unknowns into the testing/launch checklists and the "
-    "client-assets section. Base everything on the blueprint and notes provided; do not contradict "
-    "them. Return ONLY the Markdown build document."
+    "client-assets section. Base everything on the captured requests and notes provided; do not "
+    "contradict them. Return ONLY the Markdown build document."
 )
 
 
+_DOC_SECTION_LABELS = {
+    "PIPELINE": "Pipeline", "AUTOMATIONS": "Automations", "CLIENT_UPDATES": "New features & updates",
+    "LEAD_SOURCES": "Lead sources", "CALENDARS": "Calendars", "INTEGRATIONS": "Integrations",
+    "FIELDS_TAGS": "Fields & tags", "FORMS_PAYMENTS": "Forms & payments",
+    "REPORTING_LAUNCH": "Reporting & launch", "": "Other / uncategorized",
+}
+
+
 def _full_build_context(build) -> str:
-    """A complete text dump of the captured blueprint for the document generator — richer
-    than _build_state_summary (which is for deltas). Mirrors the handover anatomy."""
-    sources = list(build.contact_sources.all())
-    cals = list(build.calendars.all())
-    integ = list(build.external_integrations.all())
-    trans = list(build.transitions.all())
-    wfs = list(build.workflows.all())
-    fields = list(build.custom_fields.all())
-    tags = list(build.tags.all())
-    checklist = list(build.pre_launch_items.all())
+    """A complete text dump of the captured build for the document generator: the build
+    narrative + the source-faithful meeting tasklist grouped by GHL section + open change
+    requests. Purely notes-driven — no rigid blueprint structure is assumed."""
+    items = list(build.action_items.filter(superseded=False))
     tasks = list(build.tasks.all())
-    gaps = list(build.gaps.all())
+    changes = [c for c in build.change_requests.all()
+               if c.status not in ("IMPLEMENTED", "REJECTED", "DEFERRED")]
     p = [
         f"CLIENT: {build.client.name if build.client_id else 'n/a'}",
         f"TITLE: {build.title}",
@@ -960,52 +681,29 @@ def _full_build_context(build) -> str:
     ]
     if (build.maintenance_notes or "").strip():
         p.append(f"MAINTENANCE: {build.maintenance_notes}")
-    stages = list(build.stages.all())
-    if stages:
-        p.append("PIPELINE STAGES:")
-        for st in stages:
-            mode = "auto" if st.is_automatic else "manual"
-            p.append(f"  {st.order}. {st.name} [{mode}] — {st.description} | enter: {st.entry_condition}")
-    if trans:
-        p.append("STAGE TRANSITIONS:")
-        for t in trans:
-            frm = (t.from_stage.name if t.from_stage_id else None) or t.from_label or "—"
-            to = (t.to_stage.name if t.to_stage_id else None) or t.to_label or "—"
-            p.append(f"  {frm} → {to} | trigger: {t.trigger} | {'auto' if t.is_automatic else 'manual'}")
-    if sources:
-        p.append("LEAD SOURCES:")
-        for so in sources:
-            entry = so.entry_stage.name if so.entry_stage_id else ""
-            p.append(f"  {so.label}: enters via {so.entry_mechanism}; fires {so.fires}; "
-                     f"tags {so.tags_applied}; workflow {so.handling_workflow}; → {entry}")
-    if cals:
-        p.append("CALENDARS:")
-        for c in cals:
-            into = c.books_into_stage.name if c.books_into_stage_id else ""
-            p.append(f"  {c.name} ({c.get_type_display()}): {c.purpose}; assigned {c.assigned_to}; "
-                     f"→ {into}; on booking: {c.on_booking}; reminders: {c.reminders}")
-    if integ:
-        p.append("EXTERNAL INTEGRATIONS:")
-        for ig in integ:
-            p.append(f"  {ig.name} [{ig.get_direction_display()}/{ig.get_mechanism_display()}]: "
-                     f"{ig.data_objects}; {ig.trigger_cadence}; {ig.purpose}")
-    if wfs:
-        p.append("WORKFLOWS:")
-        for w in wfs:
-            name = f"{w.code} {w.name}".strip()
-            p.append(f"  {name} [{w.category}]: trigger {w.trigger} — {w.what_it_does}")
-    if fields:
-        p.append("CUSTOM FIELDS/VALUES: " + ", ".join(
-            f"{f.key}({f.kind}{'' if f.populated else ',NEEDS VALUE'})" for f in fields))
-    if tags:
-        p.append("TAGS: " + ", ".join(f"{t.tag} ({t.meaning})" if t.meaning else t.tag for t in tags))
+    if (build.memory_summary or "").strip():
+        p.append(f"CURRENT BUILD STATE: {build.memory_summary}")
+
+    p.append("\nCAPTURED REQUESTS (verbatim from the meeting notes, grouped by GHL area):")
+    by_section = {}
+    for it in items:
+        by_section.setdefault(it.section or "", []).append(it)
+    for sec, label in _DOC_SECTION_LABELS.items():
+        group = by_section.get(sec)
+        if not group:
+            continue
+        p.append(f"{label}:")
+        for it in group:
+            detail = f" — {it.detail}" if it.detail else ""
+            p.append(f"  - [{it.category}] {it.text}{detail}")
+    if not items:
+        p.append("  (no tasklist captured yet — rely on the meeting notes below)")
+    if changes:
+        p.append("\nOPEN CHANGE REQUESTS:")
+        for c in changes:
+            p.append(f"  - {c.title}: {c.description}" + (f" (impact: {c.impact})" if c.impact else ""))
     if tasks:
-        p.append("TASKS: " + "; ".join(f"{t.title} [{t.type}]" for t in tasks))
-    if checklist:
-        p.append("PRE-LAUNCH: " + "; ".join(
-            i.description + (" (optional)" if i.optional else "") for i in checklist))
-    if gaps:
-        p.append("OPEN GAPS: " + "; ".join(f"[{g.severity}] {g.question}" for g in gaps))
+        p.append("\nWORK TASKS: " + "; ".join(f"{t.title} [{t.type}]" for t in tasks))
     return "\n".join(p)
 
 
@@ -1035,7 +733,7 @@ def generate_build_document(build, notes_text: str = "", reference_text: str = "
         )})
     messages.append({"role": "user", "content": (
         "Produce the complete implementation build document.\n\n"
-        f"BUILD BLUEPRINT (captured structure):\n{_full_build_context(build)}\n\n"
+        f"CAPTURED BUILD (notes-driven plan + tasklist):\n{_full_build_context(build)}\n\n"
         f"ORIGINAL MEETING NOTES:\n{notes_text[:MAX_TEXT_CHARS]}"
     )})
 
@@ -1068,23 +766,37 @@ _QA_SCHEMA = {
 }
 
 
-def run_brief_qa(build) -> dict:
-    stages = list(build.stages.all())
-    sources = list(build.contact_sources.all())
-    tasks = list(build.tasks.all())
-    brief = "\n".join([
-        f"Goals: {build.goals or 'not set'}",
+def _plan_summary(build) -> str:
+    """Compact, notes-driven build context: narrative + the captured tasklist grouped
+    by GHL section. Replaces the old blueprint-entity dump for SOP/QA/change steps."""
+    items = list(build.action_items.filter(superseded=False))
+    parts = [
+        f"Build: {build.title}",
+        f"Goals: {build.goals or 'not specified'}",
         f"Integrations: {build.integrations or 'none'}",
-        f"Contact sources: {', '.join(f'{s.type}:{s.label}' for s in sources) or 'none'}",
-        f"Pipeline stages ({len(stages)}): {' → '.join(s.name for s in stages)}",
-    ])
-    task_lines = "\n".join(
-        f"[{t.status}] {t.title} ({t.type}){' [AI]' if t.ai_generated else ''}" for t in tasks
-    ) or "none"
+    ]
+    if (build.memory_summary or "").strip():
+        parts.append(f"Current state: {build.memory_summary}")
+    by_section = {}
+    for it in items:
+        by_section.setdefault(it.section or "", []).append(it)
+    for sec, label in _DOC_SECTION_LABELS.items():
+        group = by_section.get(sec)
+        if group:
+            parts.append(f"{label}: " + "; ".join(it.text for it in group))
+    return "\n".join(parts)
+
+
+def run_brief_qa(build) -> dict:
+    notes = "\n\n".join(build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True))
+    items = list(build.action_items.filter(superseded=False))
+    task_lines = "\n".join(f"[{it.section or 'OTHER'}/{it.category}] {it.text}" for it in items) or "none"
     prompt = (
-        "You are a QA reviewer for an automation agency build. Compare the brief against the current "
-        "task list and flag gaps, missing items, or potential delivery risks.\n\n"
-        f"BRIEF:\n{brief}\n\nTASKS ({len(tasks)} total):\n{task_lines}\n\n"
+        "You are a QA reviewer for a GoHighLevel agency build. Compare the captured tasklist against "
+        "the original meeting notes and flag anything the client requested that is MISSING from the "
+        "tasklist, plus any delivery risks. The tasklist must faithfully cover the notes.\n\n"
+        f"CAPTURED TASKLIST ({len(items)} items):\n{task_lines}\n\n"
+        f"ORIGINAL MEETING NOTES:\n{notes[:MAX_TEXT_CHARS]}\n\n"
         "Return JSON matching the schema. Be concise and specific. Focus on meaningful gaps — not style nitpicks."
     )
     raw = _chat(
@@ -1099,14 +811,7 @@ def run_brief_qa(build) -> dict:
 
 def generate_task_sop(task) -> str:
     build = task.build
-    stages = list(build.stages.all())
-    sources = list(build.contact_sources.all())
-    context = "\n".join([
-        f"Build goals: {build.goals or 'not specified'}",
-        f"Integrations: {build.integrations or 'none listed'}",
-        f"Pipeline stages: {' → '.join(s.name for s in stages)}",
-        f"Contact sources: {', '.join(s.label for s in sources) or 'none'}",
-    ])
+    context = _plan_summary(build)
     prompt = (
         "You are a senior GHL/Zapier solutions architect at Calari Solutions.\n"
         "Write a concise, numbered step-by-step implementation guide (SOP) for the following task.\n"
@@ -1124,18 +829,7 @@ def generate_task_sop(task) -> str:
 def generate_change_request_steps(change_request) -> str:
     """Generate implementer-facing steps for a mid-build client update."""
     build = change_request.build
-    stages = list(build.stages.all())
-    workflows = list(build.workflows.all())
-    fields = list(build.custom_fields.all())
-    tags = list(build.tags.all())
-    context = "\n".join([
-        f"Build title: {build.title}",
-        f"Build goals: {build.goals or 'not specified'}",
-        f"Pipeline stages: {' → '.join(s.name for s in stages) or 'none'}",
-        f"Workflows: {', '.join(f'{w.code} {w.name}'.strip() for w in workflows) or 'none'}",
-        f"Custom fields/values: {', '.join(f.key for f in fields) or 'none'}",
-        f"Tags: {', '.join(t.tag for t in tags) or 'none'}",
-    ])
+    context = _plan_summary(build)
     prompt = (
         "You are a senior GoHighLevel implementation architect at Calari Solutions. "
         "A client added or changed scope midway through an active build. Convert this update into "
@@ -1152,52 +846,6 @@ def generate_change_request_steps(change_request) -> str:
     if not steps:
         raise RuntimeError("AI returned no change-request implementation steps")
     return steps
-
-
-_GAP_SUGGEST_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {"options": {"type": "array", "items": {"type": "string"}}},
-    "required": ["options"],
-}
-
-
-def suggest_gap_answers(build, question: str, rationale: str = "") -> list[str]:
-    """Propose 2–4 concise, expert best-practice answers to an open vision gap.
-
-    These become click-to-use options in the UI; the team can pick one and edit,
-    or type their own.
-    """
-    stages = list(build.stages.all())
-    sources = list(build.contact_sources.all())
-    context = "\n".join([
-        f"Goals: {build.goals or 'not set'}",
-        f"Integrations: {build.integrations or 'none'}",
-        f"Pipeline stages: {' → '.join(s.name for s in stages) or 'none'}",
-        f"Lead sources: {', '.join(s.label for s in sources) or 'none'}",
-    ])
-    prompt = (
-        "You are a senior Go High Level (GHL) solutions architect at Calari Solutions. A build's vision "
-        "blueprint has an OPEN gap — a question that must be resolved before delivery. Propose 2 to 4 "
-        "concise, expert ANSWER options the team could adopt as the resolution. Each option must be a "
-        "complete, specific answer (NOT another question), grounded in GHL conventions and the build "
-        "context. Prefer sensible best-practice defaults; keep each option to 1–2 sentences.\n\n"
-        f"GAP QUESTION: {question}\n"
-        f"WHY IT MATTERS: {rationale or 'n/a'}\n\n"
-        f"BUILD CONTEXT:\n{context}\n\n"
-        "Return JSON matching the schema."
-    )
-    raw = _chat(
-        [{"role": "user", "content": prompt}],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": "gap_answers", "strict": True, "schema": _GAP_SUGGEST_SCHEMA},
-        },
-        op="gap_suggest",
-    )
-    if not raw:
-        return []
-    return [o for o in (json.loads(raw).get("options") or []) if isinstance(o, str) and o.strip()][:4]
 
 
 # ─── Meeting-note naming + progress-update delta ──────────────────────────────
@@ -1226,13 +874,11 @@ def auto_note_title(build, kind: str) -> str:
 
 def _build_state_summary(build) -> str:
     """Compact snapshot of the current build, for delta comparison."""
-    stages = list(build.stages.all())
-    workflows = list(build.workflows.all())
+    items = list(build.action_items.filter(superseded=False))
     parts = [
         f"Overview: {build.overview or build.goals or 'n/a'}",
-        f"Pipeline: {' → '.join(s.name for s in stages) or 'none'}",
-        f"Workflows: {', '.join(f'{w.code} {w.name}'.strip() for w in workflows) or 'none'}",
         f"Integrations: {build.integrations or 'none'}",
+        f"Captured requests ({len(items)}): " + ("; ".join(it.text for it in items[:40]) or "none"),
     ]
     if (build.memory_summary or '').strip():
         parts.append(f"Latest known state: {build.memory_summary}")
@@ -1248,14 +894,13 @@ _PROGRESS_DELTA_SCHEMA = _obj({
         "impact": _str(),
         "requester": _str(),      # e.g. "Client", a person, or ""
     })),
-    "newQuestions": _arr(_obj({
-        "category": _enum(
-            "OVERVIEW", "STAGE", "TRANSITION", "LEAD_SOURCE", "CALENDAR",
-            "INTEGRATION", "WORKFLOW", "CUSTOM_FIELD", "TAG", "GENERAL",
+    "newQuestions": _arr(_obj({   # open items raised → captured as QUESTION tasklist items
+        "section": _enum(
+            "PIPELINE", "AUTOMATIONS", "CLIENT_UPDATES", "LEAD_SOURCES", "CALENDARS",
+            "INTEGRATIONS", "FIELDS_TAGS", "FORMS_PAYMENTS", "REPORTING_LAUNCH", "OTHER",
         ),
         "question": _str(),
         "rationale": _str(),
-        "severity": _enum("high", "medium", "low"),
     })),
 })
 
@@ -1287,122 +932,308 @@ def extract_progress_delta(build, note_text: str) -> dict:
     return json.loads(raw) if raw else {}
 
 
+# ─── Meeting tasklist (source-faithful, exhaustive capture) ───────────────────
+# A separate lens from the blueprint: the blueprint abstracts notes into an
+# architecture (and can drop literal asks); this captures EVERY requested task /
+# change / question verbatim, so staff have a checklist nothing slips out of.
+_ACTION_ITEM_CATEGORIES = ("REQUEST", "CHANGE", "QUESTION", "DECISION", "INFO")
+# GHL areas an item can belong to (mirrors models.BuildSection) + OTHER for items
+# that don't map to one. OTHER is stored as "" (uncategorized) when persisted.
+_ACTION_ITEM_SECTIONS = (
+    "PIPELINE", "AUTOMATIONS", "CLIENT_UPDATES", "LEAD_SOURCES", "CALENDARS",
+    "INTEGRATIONS", "FIELDS_TAGS", "FORMS_PAYMENTS", "REPORTING_LAUNCH", "OTHER",
+)
+
+_TASKLIST_SCHEMA = _obj({
+    "items": _arr(_obj({
+        "text": _str(),                       # the request, in the client's own words
+        "detail": _str(),                     # short clarifying context, or ""
+        "category": _enum(*_ACTION_ITEM_CATEGORIES),
+        "section": _enum(*_ACTION_ITEM_SECTIONS),  # which GHL area it belongs to
+    })),
+})
+
+_TASKLIST_RECONCILE_SCHEMA = _obj({
+    "add": _arr(_obj({                         # genuinely new items raised this meeting
+        "text": _str(),
+        "detail": _str(),
+        "category": _enum(*_ACTION_ITEM_CATEGORIES),
+        "section": _enum(*_ACTION_ITEM_SECTIONS),
+    })),
+    "modify": _arr(_obj({                       # existing items whose scope changed
+        "id": _int(),                          # id from the CURRENT LIST below
+        "text": _str(),
+        "detail": _str(),
+        "category": _enum(*_ACTION_ITEM_CATEGORIES),
+        "section": _enum(*_ACTION_ITEM_SECTIONS),
+    })),
+    "supersede": _arr(_obj({                    # existing items the client reversed/withdrew
+        "id": _int(),
+        "reason": _str(),
+    })),
+})
+
+_TASKLIST_SYSTEM_PROMPT = (
+    "You are a meticulous Go High Level (GHL) delivery analyst at Calari Solutions. Your job has two "
+    "halves and the FIRST is paramount — COMPLETENESS: read the meeting notes and capture EVERY "
+    "actionable request, change, open question, and explicit decision the client raised. This is a "
+    "faithful record of THIS client's actual words, not a summary and not a template — do NOT merge "
+    "distinct asks, do NOT omit small ones, do NOT invent requirements the client did not state, and do "
+    "NOT bend the notes to fit a standard build. Keep each item in the client's own words. One item per "
+    "distinct ask.\n\n"
+    "The SECOND half is organization: tag each captured item with the nature (category) and the GHL area "
+    "(section) it belongs to, using your knowledge of how Calari builds in GHL.\n"
+    "- category: REQUEST (a new task/feature to build), CHANGE (a change to something already in scope), "
+    "QUESTION (an open item needing an answer), DECISION (a choice the client confirmed), INFO (context "
+    "worth recording but not actionable).\n"
+    "- section: PIPELINE (stages/opportunity flow), AUTOMATIONS (workflows/sequences), CLIENT_UPDATES "
+    "(new features & updates), LEAD_SOURCES (where contacts come from), CALENDARS (booking), INTEGRATIONS "
+    "(external systems/data flow), FIELDS_TAGS (custom fields/values/tags), FORMS_PAYMENTS (forms/order "
+    "forms/payments), REPORTING_LAUNCH (dashboards/QA/go-live), or OTHER if it genuinely fits none.\n"
+    "Categorization must follow the notes — never force an item into a section it doesn't belong to. "
+    "If the notes contain nothing actionable, return an empty list."
+)
+
+
+def _tasklist_reference(reference_text: str) -> list[dict]:
+    """Optional Build-Library grounding message (how Calari builds), if available."""
+    if not (reference_text or "").strip():
+        return []
+    return [{"role": "system", "content":
+             "Reference — how Calari builds in GHL (use ONLY to categorize and phrase items well, "
+             "never to add scope the client didn't ask for):\n" + reference_text[:8000]}]
+
+
+def extract_meeting_tasklist(note_text: str, reference_text: str = "") -> dict:
+    """First-meeting extraction: pull EVERY requested task/change/question/decision
+    from the notes, verbatim and exhaustive, each tagged with category + GHL section.
+    `reference_text` is optional Build-Library context. Returns {"items": [...]}."""
+    raw = _chat(
+        [
+            {"role": "system", "content": _TASKLIST_SYSTEM_PROMPT},
+            *_tasklist_reference(reference_text),
+            {"role": "user", "content": f"Meeting notes:\n\n{note_text[:MAX_TEXT_CHARS]}\n\nReturn JSON matching the schema."},
+        ],
+        response_format={"type": "json_schema", "json_schema": {"name": "meeting_tasklist", "strict": True, "schema": _TASKLIST_SCHEMA}},
+        op="tasklist",
+    )
+    return json.loads(raw) if raw else {"items": []}
+
+
+def reconcile_meeting_tasklist(existing_items, note_text: str, reference_text: str = "") -> dict:
+    """Subsequent-meeting reconciliation: diff the new notes against the CURRENT
+    tasklist and return only the operations to apply — add (new asks), modify
+    (changed scope, referenced by id), supersede (reversed/withdrawn asks, by id).
+    Items not mentioned are kept untouched. `existing_items` is an iterable of
+    MeetingActionItem. Returns {"add": [...], "modify": [...], "supersede": [...]}."""
+    current = "\n".join(
+        f"[{it.id}] ({it.category}/{it.section or 'OTHER'}) {it.text}" + (f" — {it.detail}" if it.detail else "")
+        for it in existing_items
+    ) or "(empty)"
+    prompt = (
+        "This is a FOLLOW-UP meeting on an in-flight build. You have the CURRENT tasklist (each line "
+        "prefixed with its id) and NEW meeting notes. Diff them and return ONLY what changed:\n"
+        "- add: genuinely new asks raised this meeting that are not already on the list.\n"
+        "- modify: existing items (by id) whose scope the client changed — give the full updated text.\n"
+        "- supersede: existing items (by id) the client reversed, withdrew, or replaced — with a short reason.\n"
+        "Do NOT re-add items already on the list. Do NOT touch items the meeting did not mention. "
+        "Be exhaustive about genuinely new asks — miss nothing. Tag each add/modify with category + section.\n\n"
+        f"CURRENT TASKLIST:\n{current}\n\n"
+        f"NEW MEETING NOTES:\n{note_text[:MAX_TEXT_CHARS]}\n\n"
+        "Return JSON matching the schema."
+    )
+    raw = _chat(
+        [
+            {"role": "system", "content": _TASKLIST_SYSTEM_PROMPT},
+            *_tasklist_reference(reference_text),
+            {"role": "user", "content": prompt},
+        ],
+        response_format={"type": "json_schema", "json_schema": {"name": "tasklist_reconcile", "strict": True, "schema": _TASKLIST_RECONCILE_SCHEMA}},
+        op="tasklist_reconcile",
+    )
+    return json.loads(raw) if raw else {"add": [], "modify": [], "supersede": []}
+
+
+# ─── Progress verification (audit staff work against the tasklist) ────────────
+_PROGRESS_AUDIT_SCHEMA = _obj({
+    "items": _arr(_obj({            # only items the report actually addresses
+        "id": _int(),              # action item id from the CURRENT TASKLIST
+        "status": _enum("OPEN", "IN_PROGRESS", "DONE"),
+        "verification": _enum("VERIFIED", "NEEDS_INFO"),
+        "evidence": _str(),        # what the report demonstrated for this item
+        "note": _str(),            # pushback / what's missing or unclear (when NEEDS_INFO), else ""
+    })),
+    "newWork": _arr(_obj({          # completed work reported that's NOT already on the list
+        "text": _str(),
+        "detail": _str(),
+        "category": _enum(*_ACTION_ITEM_CATEGORIES),
+        "section": _enum(*_ACTION_ITEM_SECTIONS),
+    })),
+    "pushback": _arr(_str()),       # overall expert clarifications the staff must resolve
+    "summary": _str(),
+})
+
+_PROGRESS_AUDIT_SYSTEM_PROMPT = (
+    "You are a senior GoHighLevel (GHL) build auditor at Calari Solutions. A staff member has reported "
+    "the work they've completed on an in-flight build. Your job is CRITICAL, FACTUAL VERIFICATION — not "
+    "to take their word for it. Audit the report against the build tasklist and decide, item by item, "
+    "whether the work is genuinely and CORRECTLY built.\n\n"
+    "Be a strict expert. For every claimed element, the report must demonstrate the real mechanics, or "
+    "you mark it NEEDS_INFO with a specific question:\n"
+    "- Automation/workflow: exact trigger, the step-by-step actions, the outcome, and how it ENDS or "
+    "MERGES with other workflows (stop conditions, re-entry, hand-off).\n"
+    "- Form: its fields, where it lives (which funnel/step), and what it triggers on submit.\n"
+    "- Funnel/landing page: steps, the conversion action, and what fires next.\n"
+    "- Calendar: type, who it assigns to, what stage it books into, reminders.\n"
+    "- Field/value/tag: its exact name and what sets/uses it.\n"
+    "Mark VERIFIED only when the report shows the element is built correctly AND completely. If a claim "
+    "is vague ('set up automation A'), mark NEEDS_INFO and ask exactly what's missing. If a tasklist "
+    "item isn't mentioned in the report, OMIT it (leave it unchanged) — only return items the report "
+    "addresses. List any reported-but-uncaptured completed work under newWork. Put the build-level gaps, "
+    "risks, and missing pieces the staff must resolve under pushback. Be specific and uncompromising — "
+    "an incorrect or half-built flow breaks the whole system."
+)
+
+
+def analyze_progress_report(build, report_text: str, reference_text: str = "") -> dict:
+    """Audit a staff progress report against the build tasklist. Returns per-item
+    status + verification verdicts (with pushback), newly-reported work, and overall
+    expert clarifications. Does NOT mutate the DB — the caller applies the result."""
+    items = list(build.action_items.filter(superseded=False))
+    current = "\n".join(
+        f"[{it.id}] ({it.section or 'OTHER'}/{it.category}) {it.text}"
+        + (f" — {it.detail}" if it.detail else "")
+        + (f" [status: {it.status}]" if it.status != "OPEN" else "")
+        for it in items
+    ) or "(empty — nothing captured yet)"
+    messages = [{"role": "system", "content": _PROGRESS_AUDIT_SYSTEM_PROMPT}]
+    if (reference_text or "").strip():
+        messages.append({"role": "system", "content":
+                         "Reference — how Calari builds in GHL (use to judge correctness):\n"
+                         + reference_text[:8000]})
+    messages.append({"role": "user", "content": (
+        "Audit this progress report against the tasklist.\n\n"
+        f"BUILD TASKLIST (each line prefixed with its id):\n{current}\n\n"
+        f"STAFF PROGRESS REPORT:\n{report_text[:MAX_TEXT_CHARS]}\n\n"
+        "Return JSON matching the schema."
+    )})
+    raw = _chat(
+        messages,
+        response_format={"type": "json_schema", "json_schema": {"name": "progress_audit", "strict": True, "schema": _PROGRESS_AUDIT_SCHEMA}},
+        model=_blueprint_model(), op="progress_audit",
+    )
+    return json.loads(raw) if raw else {"items": [], "newWork": [], "pushback": [], "summary": ""}
+
+
+# ─── Client handover document (end of build, AI-written from history) ──────────
+_CLIENT_HANDOVER_SYSTEM_PROMPT = (
+    "You are a senior GoHighLevel solutions consultant at Calari Solutions writing the CLIENT-FACING "
+    "handover document for a completed build. Audience is the client (a business owner), not an "
+    "engineer — clear, confident, and benefit-led, but concrete about what was built and how to operate "
+    "it. Base it ONLY on the build's captured tasklist, meeting notes, and progress history provided; do "
+    "not invent features that weren't built. Output GitHub-flavored Markdown with these sections:\n"
+    "1. Overview — what the system does and the goal it serves\n"
+    "2. What we built — the delivered components grouped by area (pipeline, automations, calendars, "
+    "lead sources, forms/payments, integrations, fields & tags, reporting), in plain language\n"
+    "3. How leads flow through the system — the end-to-end journey\n"
+    "4. How to operate it day-to-day — what the client does vs what runs automatically\n"
+    "5. Reporting — what to watch and where\n"
+    "6. Maintenance & support — what needs occasional attention, who to contact\n"
+    "7. What's next / recommendations — sensible future improvements\n"
+    "Return ONLY the Markdown document."
+)
+
+
+def generate_client_handover(build, reference_text: str = "") -> str:
+    """Generate the client-facing handover document from the build's tasklist, notes,
+    and progress history (end of build). Returns Markdown."""
+    notes = "\n\n".join(build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True))
+    reports = build.progress_reports.order_by("created_at")
+    progress = "\n\n".join(f"[{r.created_at:%Y-%m-%d}] {r.summary or r.raw_text[:1000]}" for r in reports)
+    messages = [{"role": "system", "content": _CLIENT_HANDOVER_SYSTEM_PROMPT}]
+    messages.append({"role": "user", "content": (
+        f"CAPTURED BUILD (delivered plan):\n{_full_build_context(build)}\n\n"
+        f"PROGRESS HISTORY:\n{progress[:MAX_TEXT_CHARS] or 'n/a'}\n\n"
+        f"ORIGINAL MEETING NOTES:\n{notes[:MAX_TEXT_CHARS]}"
+    )})
+    doc = (_chat(messages, model=_blueprint_model(), max_tokens=16000, op="client_handover") or "").strip()
+    if not doc:
+        raise RuntimeError("AI returned no handover content")
+    return doc
+
+
 # ─── Handover render (blueprint → client handover markdown) ───────────────────
-_WORKFLOW_CATEGORY_LABELS = {
-    "ACTIVE_CONVERSION": "Active conversion (A)",
-    "INTAKE_ROUTING": "Intake & routing (IN)",
-    "RECORD_KEEPING": "Record-keeping (REC)",
-    "APPOINTMENT_LIFECYCLE": "Appointment lifecycle (E, K)",
-    "POST_VISIT": "Post-visit & retention (G)",
-    "INTERNAL_UTILITY": "Internal & utility (H, X, Y, Z)",
-    "OTHER": "Other",
+
+
+# ─── Meeting tasklist export ──────────────────────────────────────────────────
+_ACTION_CATEGORY_LABELS = {
+    "REQUEST": "Request", "CHANGE": "Change", "QUESTION": "Question",
+    "DECISION": "Decision", "INFO": "Info",
 }
+_ACTION_STATUS_LABELS = {
+    "OPEN": "Open", "IN_PROGRESS": "In progress", "DONE": "Done", "DROPPED": "Dropped",
+}
+# GHL-section display order + labels for the grouped checklist (mirrors BuildSection).
+_ACTION_SECTION_LABELS = [
+    ("PIPELINE", "Pipeline"),
+    ("AUTOMATIONS", "Automations"),
+    ("CLIENT_UPDATES", "New features & updates"),
+    ("LEAD_SOURCES", "Lead sources"),
+    ("CALENDARS", "Calendars"),
+    ("INTEGRATIONS", "Integrations"),
+    ("FIELDS_TAGS", "Fields & tags"),
+    ("FORMS_PAYMENTS", "Forms & payments"),
+    ("REPORTING_LAUNCH", "Reporting & launch"),
+    ("", "Other / uncategorized"),
+]
 
 
-def render_handover_markdown(build) -> str:
-    """Render a build's vision blueprint as the client-facing handover document.
-
-    The handover stops being hand-written: it is a view of the captured blueprint.
-    """
-    stages = list(build.stages.all())
-    sources = list(build.contact_sources.all())
-    calendars = list(build.calendars.all())
-    integrations = list(build.external_integrations.all())
-    transitions = list(build.transitions.all())
-    workflows = list(build.workflows.all())
-    fields = list(build.custom_fields.all())
-    tags = list(build.tags.all())
-    checklist = list(build.pre_launch_items.all())
-    out: list[str] = []
-
-    def line(s: str = ""):
-        out.append(s)
-
-    line(f"# {build.title} — System Operation & Handover")
-    line(f"\n*Client: {build.client.name if build.client_id else '—'}*")
-    if build.one_line_summary:
-        line(f"\n> {build.one_line_summary}")
-
-    line("\n## 1. The big idea\n")
-    line(build.overview or build.goals or "_Not captured yet._")
-
-    if sources:
-        line("\n## 2. Lead sources\n")
-        line("| Source | How it enters | Fires | Tags | Workflow | Entry stage |")
-        line("|---|---|---|---|---|---|")
-        for s in sources:
-            entry = s.entry_stage.name if s.entry_stage_id else ""
-            line(f"| {s.label} | {s.entry_mechanism} | {s.fires} | {s.tags_applied} | {s.handling_workflow} | {entry} |")
-
-    if stages:
-        line("\n## 3. The pipeline\n")
-        line("| # | Stage | What it means | How a lead gets here | Auto/Manual |")
-        line("|---|---|---|---|---|")
-        for st in stages:
-            mode = "Auto" if st.is_automatic else "Manual"
-            line(f"| {st.order} | {st.name} | {st.description} | {st.entry_condition} | {mode} |")
-
-    if transitions:
-        line("\n## 4. Stage movement\n")
-        line("| Transition | Trigger | Auto/Manual |")
-        line("|---|---|---|")
-        for t in transitions:
-            frm = (t.from_stage.name if t.from_stage_id else None) or t.from_label or "—"
-            to = (t.to_stage.name if t.to_stage_id else None) or t.to_label or "—"
-            mode = "Auto" if t.is_automatic else "Manual"
-            line(f"| {frm} → {to} | {t.trigger} | {mode} |")
-
-    if calendars:
-        line("\n## 5. Calendars — the conversion points\n")
-        line("| Calendar | Type | Books | Assigned to | Books into | On booking |")
-        line("|---|---|---|---|---|---|")
-        for c in calendars:
-            into = c.books_into_stage.name if c.books_into_stage_id else ""
-            line(f"| {c.name} | {c.get_type_display()} | {c.purpose} | {c.assigned_to} | {into} | {c.on_booking} |")
-
-    if integrations:
-        line("\n## 6. Integrations & data flows\n")
-        line("| System | Direction | Mechanism | Data | Cadence | Purpose |")
-        line("|---|---|---|---|---|---|")
-        for ig in integrations:
-            line(f"| {ig.name} | {ig.get_direction_display()} | {ig.get_mechanism_display()} | {ig.data_objects} | {ig.trigger_cadence} | {ig.purpose} |")
-
-    if workflows:
-        line("\n## 7. Every workflow, grouped by function\n")
-        by_cat: dict[str, list] = {}
-        for w in workflows:
-            by_cat.setdefault(w.category, []).append(w)
-        for cat, group in by_cat.items():
-            line(f"\n### {_WORKFLOW_CATEGORY_LABELS.get(cat, cat)}\n")
-            line("| Workflow | Trigger | What it does |")
-            line("|---|---|---|")
-            for w in group:
-                name = f"{w.code} — {w.name}".strip(" —")
-                line(f"| {name} | {w.trigger} | {w.what_it_does} |")
-
-    if fields or tags:
-        line("\n## 8. Custom fields, values & tags\n")
-        for kind, heading in (("FIELD", "Custom fields"), ("VALUE", "Custom values")):
-            group = [f for f in fields if f.kind == kind]
-            if group:
-                line(f"\n**{heading}:** " + ", ".join(
-                    f"`{f.key}`" + ("" if f.populated else " _(needs value)_") for f in group
-                ))
-        if tags:
-            line("\n**Tag glossary:** " + ", ".join(f"`{t.tag}`" + (f" ({t.meaning})" if t.meaning else "") for t in tags))
-
-    if build.maintenance_notes:
-        line("\n## 9. Maintenance notes\n")
-        line(build.maintenance_notes)
-
-    if checklist:
-        line("\n## 10. Pre-launch checklist\n")
-        for item in checklist:
-            box = "[x]" if item.done else "[ ]"
-            opt = " _(optional)_" if item.optional else ""
-            line(f"- {box} {item.description}{opt}")
-
+def render_tasklist_markdown(build) -> str:
+    """Render the build's reconciled tasklist as a staff checklist grouped by GHL
+    section — a purely notes-driven plan, organized into familiar GHL areas."""
+    items = [i for i in build.action_items.all() if not i.superseded]
+    out: list[str] = [f"# {build.title} — Build Tasklist"]
+    if build.client_id:
+        out.append(f"\n*Client: {build.client.name}*")
+    out.append(f"\n*{len(items)} item(s) captured from meeting notes.*\n")
+    for sec, label in _ACTION_SECTION_LABELS:
+        group = [i for i in items if (i.section or "") == sec]
+        if not group:
+            continue
+        out.append(f"\n## {label}\n")
+        for it in group:
+            box = "[x]" if it.status == "DONE" else "[ ]"
+            cat = f" `[{_ACTION_CATEGORY_LABELS.get(it.category, it.category)}]`"
+            status = "" if it.status in ("OPEN", "DONE") else f" `({_ACTION_STATUS_LABELS.get(it.status, it.status)})`"
+            tail = f" — _{it.detail}_" if it.detail else ""
+            out.append(f"- {box}{cat} {it.text}{status}{tail}")
+    superseded = [i for i in build.action_items.all() if i.superseded]
+    if superseded:
+        out.append("\n## Superseded (no longer in scope)\n")
+        for it in superseded:
+            reason = f" — {it.superseded_reason}" if it.superseded_reason else ""
+            out.append(f"- ~~{it.text}~~{reason}")
     return "\n".join(out) + "\n"
+
+
+def render_tasklist_csv(build) -> str:
+    """Render the tasklist as CSV for staff to sort/assign in a spreadsheet."""
+    import csv
+    section_labels = dict(_ACTION_SECTION_LABELS)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Section", "Category", "Item", "Detail", "Status", "Superseded", "Superseded reason"])
+    for it in build.action_items.all():
+        w.writerow([
+            section_labels.get(it.section or "", it.section),
+            _ACTION_CATEGORY_LABELS.get(it.category, it.category),
+            it.text,
+            it.detail,
+            _ACTION_STATUS_LABELS.get(it.status, it.status),
+            "yes" if it.superseded else "",
+            it.superseded_reason,
+        ])
+    return buf.getvalue()
 
 
 # ─── Document text extraction ─────────────────────────────────────────────────

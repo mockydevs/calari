@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { updateBuildSectionReview } from "./actions";
 import {
-  WORKFLOW_CATEGORY_LABEL,
+  ACTION_ITEM_CATEGORY_LABEL,
+  type ActionItemCategory,
   type BuildDetail,
   type BuildSectionKey,
   type BuildSectionReview,
+  type MeetingActionItem,
   type MeetingNote,
-  type Workflow,
 } from "./_shared";
 
 const SECTIONS: { id: BuildSectionKey; label: string; icon: React.ReactNode }[] = [
@@ -34,6 +35,13 @@ const STATUS_STYLE: Record<string, string> = {
   DONE: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   BLOCKED: "bg-red-50 text-red-700 ring-red-200",
 };
+const CATEGORY_STYLE: Record<ActionItemCategory, string> = {
+  REQUEST: "bg-pink-50 text-pink-700 ring-pink-200",
+  CHANGE: "bg-violet-50 text-violet-700 ring-violet-200",
+  QUESTION: "bg-amber-50 text-amber-700 ring-amber-200",
+  DECISION: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  INFO: "bg-slate-50 text-slate-600 ring-slate-200",
+};
 
 function SectionStatus({ review }: { review?: BuildSectionReview }) {
   const status = review?.status ?? "TODO";
@@ -45,80 +53,54 @@ function SectionStatus({ review }: { review?: BuildSectionReview }) {
   );
 }
 
-function Empty({ label }: { label: string }) {
-  return <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-500">No {label} captured yet. Check the meeting notes and raise a blocker if this is required before implementation.</p>;
+function Empty() {
+  return <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-500">Nothing captured for this section yet. Check the meeting notes and raise a blocker if this is required before implementation.</p>;
 }
 
-function WorkflowList({ workflows }: { workflows: Workflow[] }) {
-  if (workflows.length === 0) return <Empty label="automations" />;
-  const grouped = workflows.reduce<Record<string, Workflow[]>>((acc, w) => {
-    (acc[w.category] ??= []).push(w);
-    return acc;
-  }, {});
+function VerifyBadge({ item }: { item: MeetingActionItem }) {
+  if (item.verification === "VERIFIED") {
+    return <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200"><CheckCircle2 className="h-3 w-3" /> Verified</span>;
+  }
+  if (item.verification === "NEEDS_INFO") {
+    return <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200"><AlertTriangle className="h-3 w-3" /> Needs info</span>;
+  }
+  return null;
+}
+
+function ItemRow({ item }: { item: MeetingActionItem }) {
   return (
-    <div className="space-y-4">
-      {Object.entries(grouped).map(([category, group]) => (
-        <div key={category}>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{WORKFLOW_CATEGORY_LABEL[category] ?? category}</p>
-          <ul className="mt-2 space-y-2">
-            {group.map((w) => (
-              <li key={w.id} className="rounded-md border border-slate-200 p-3 text-sm">
-                <p className="font-medium text-slate-900">{[w.code, w.name].filter(Boolean).join(" - ")}</p>
-                {w.trigger && <p className="mt-1 text-xs text-slate-500"><span className="font-semibold">Trigger:</span> {w.trigger}</p>}
-                {w.what_it_does && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-600">{w.what_it_does}</p>}
-              </li>
-            ))}
-          </ul>
+    <li className="rounded-md border border-slate-200 p-3 text-sm">
+      <div className="flex items-start gap-2">
+        <span className={`mt-0.5 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${CATEGORY_STYLE[item.category]}`}>
+          {ACTION_ITEM_CATEGORY_LABEL[item.category]}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className={`font-medium text-slate-900 ${item.status === "DONE" ? "text-slate-400 line-through" : ""}`}>{item.text}</p>
+            <VerifyBadge item={item} />
+          </div>
+          {item.detail && <p className="mt-1 text-xs text-slate-600">{item.detail}</p>}
+          {item.verification === "NEEDS_INFO" && item.verification_note && (
+            <p className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+              <span className="font-semibold">AI: </span>{item.verification_note}
+            </p>
+          )}
+          {item.verification === "VERIFIED" && item.evidence && (
+            <p className="mt-1 text-[11px] text-emerald-700">✓ {item.evidence}</p>
+          )}
+          {item.introduced_in_title && <p className="mt-1 text-[11px] text-slate-400">from {item.introduced_in_title}</p>}
         </div>
-      ))}
-    </div>
+      </div>
+    </li>
   );
 }
 
-function SectionBody({ section, build, notes }: { section: BuildSectionKey; build: BuildDetail; notes: MeetingNote[] }) {
-  const stages = build.stages ?? [];
-  const transitions = build.transitions ?? [];
-  const workflows = build.workflows ?? [];
-  const sources = build.contact_sources ?? [];
-  const calendars = build.calendars ?? [];
-  const integrations = build.external_integrations ?? [];
-  const fields = build.custom_fields ?? [];
-  const tags = build.tags ?? [];
-  const tasks = build.tasks ?? [];
-  const preLaunch = build.pre_launch_items ?? [];
+function SectionBody({
+  section, build, items, notes,
+}: { section: BuildSectionKey; build: BuildDetail; items: MeetingActionItem[]; notes: MeetingNote[] }) {
+  const sectionItems = items.filter((i) => (i.section || "") === section);
   const changeRequests = build.change_requests ?? [];
   const updateNotes = notes.filter((n) => n.kind === "change_request" || n.kind === "progress");
-  const stageName = new Map(stages.map((s) => [s.id, s.name]));
-
-  if (section === "PIPELINE") {
-    return stages.length === 0 ? <Empty label="pipeline stages" /> : (
-      <div className="space-y-4">
-        <ol className="space-y-2">
-          {stages.map((s) => (
-            <li key={s.id} className="rounded-md border border-slate-200 p-3 text-sm">
-              <p className="font-medium text-slate-900">{s.order}. {s.name}</p>
-              {s.description && <p className="mt-1 text-xs text-slate-600">{s.description}</p>}
-              {s.entry_condition && <p className="mt-1 text-xs text-slate-500"><span className="font-semibold">Entry:</span> {s.entry_condition}</p>}
-            </li>
-          ))}
-        </ol>
-        {transitions.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stage movement</p>
-            <ul className="mt-2 space-y-1.5 text-sm text-slate-700">
-              {transitions.map((t) => (
-                <li key={t.id} className="rounded-md bg-slate-50 px-3 py-2">
-                  {(t.from_stage ? stageName.get(t.from_stage) : t.from_label) || "Start"} → {(t.to_stage ? stageName.get(t.to_stage) : t.to_label) || "Next"}: {t.trigger}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (section === "AUTOMATIONS") return <WorkflowList workflows={workflows} />;
 
   if (section === "CLIENT_UPDATES") {
     return (
@@ -126,6 +108,12 @@ function SectionBody({ section, build, notes }: { section: BuildSectionKey; buil
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
           Review every client-requested feature, mid-build scope update, and progress note here. Mark this section done only when approved updates have been built or explicitly deferred.
         </div>
+        {sectionItems.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Captured requests</p>
+            <ul className="mt-2 space-y-2">{sectionItems.map((i) => <ItemRow key={i.id} item={i} />)}</ul>
+          </div>
+        )}
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Change requests / new features</p>
           {changeRequests.length === 0 ? (
@@ -164,86 +152,8 @@ function SectionBody({ section, build, notes }: { section: BuildSectionKey; buil
     );
   }
 
-  if (section === "LEAD_SOURCES") {
-    return sources.length === 0 ? <Empty label="lead sources" /> : (
-      <ul className="space-y-2">
-        {sources.map((s) => (
-          <li key={s.id} className="rounded-md border border-slate-200 p-3 text-sm">
-            <p className="font-medium text-slate-900">{s.label}</p>
-            <p className="mt-1 text-xs text-slate-600">Enters via: {s.entry_mechanism || "Not specified"}</p>
-            <p className="mt-1 text-xs text-slate-500">Tags: {s.tags_applied || "None specified"} · Workflow: {s.handling_workflow || "Not specified"}</p>
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  if (section === "CALENDARS") {
-    return calendars.length === 0 ? <Empty label="calendars" /> : (
-      <ul className="space-y-2">
-        {calendars.map((c) => (
-          <li key={c.id} className="rounded-md border border-slate-200 p-3 text-sm">
-            <p className="font-medium text-slate-900">{c.name}</p>
-            {c.purpose && <p className="mt-1 text-xs text-slate-600">{c.purpose}</p>}
-            <p className="mt-1 text-xs text-slate-500">Books into: {c.books_into_stage ? stageName.get(c.books_into_stage) : "Not specified"}</p>
-            {c.reminders && <p className="mt-1 text-xs text-slate-500">Reminders: {c.reminders}</p>}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  if (section === "INTEGRATIONS") {
-    return integrations.length === 0 ? <Empty label="integrations" /> : (
-      <ul className="space-y-2">
-        {integrations.map((i) => (
-          <li key={i.id} className="rounded-md border border-slate-200 p-3 text-sm">
-            <p className="font-medium text-slate-900">{i.name}</p>
-            <p className="mt-1 text-xs text-slate-600">{i.direction} · {i.mechanism} · {i.data_objects || "Data objects not specified"}</p>
-            {i.purpose && <p className="mt-1 text-xs text-slate-500">{i.purpose}</p>}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  if (section === "FIELDS_TAGS") {
-    return fields.length === 0 && tags.length === 0 ? <Empty label="fields or tags" /> : (
-      <div className="space-y-4 text-sm">
-        {fields.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Custom fields & values</p><div className="mt-2 flex flex-wrap gap-1.5">{fields.map((f) => <span key={f.id} className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700">{f.key}</span>)}</div></div>}
-        {tags.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tags</p><div className="mt-2 flex flex-wrap gap-1.5">{tags.map((t) => <span key={t.id} className="rounded-md bg-pink-50 px-2 py-1 font-mono text-xs text-pink-700">{t.tag}</span>)}</div></div>}
-      </div>
-    );
-  }
-
-  if (section === "FORMS_PAYMENTS") {
-    const relevant = tasks.filter((t) => ["FORM", "INTEGRATION"].includes(t.type));
-    return (
-      <div className="space-y-3 text-sm">
-        <p className="rounded-md bg-slate-50 p-3 text-slate-600">
-          Verify every reporting form, payment link, source-of-truth handoff, and milestone update described in the notes. If the AI did not capture a required form/payment flow, raise a blocker with the missing fields.
-        </p>
-        {relevant.length > 0 && (
-          <ul className="space-y-2">{relevant.map((t) => (
-            <li key={t.id} className="rounded-md border border-slate-200 p-3">
-              <p className="font-medium text-slate-900">{t.title}</p>
-              {t.description && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{t.description}</p>}
-            </li>
-          ))}</ul>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3 text-sm">
-      {build.goals && <p className="rounded-md bg-slate-50 p-3 text-slate-600">{build.goals}</p>}
-      {preLaunch.length === 0 ? <Empty label="launch checklist items" /> : (
-        <ul className="space-y-2">{preLaunch.map((p) => (
-          <li key={p.id} className="rounded-md border border-slate-200 p-3 text-slate-700">{p.description}</li>
-        ))}</ul>
-      )}
-    </div>
+  return sectionItems.length === 0 ? <Empty /> : (
+    <ul className="space-y-2">{sectionItems.map((i) => <ItemRow key={i.id} item={i} />)}</ul>
   );
 }
 
@@ -301,12 +211,15 @@ export function SectionControls({ buildId, section, review }: { buildId: string;
 export function ImplementationWorkspace({ build, buildId, notes }: { build: BuildDetail; buildId: string; notes: MeetingNote[] }) {
   const [active, setActive] = React.useState<BuildSectionKey>("AUTOMATIONS");
   const reviews = new Map((build.section_reviews ?? []).map((r) => [r.section, r]));
+  const items = (build.action_items ?? []).filter((i) => !i.superseded);
+  const countFor = (id: BuildSectionKey) => items.filter((i) => (i.section || "") === id).length;
   const activeSpec = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
         {SECTIONS.map((s) => {
           const on = s.id === active;
+          const n = countFor(s.id);
           return (
             <button
               key={s.id}
@@ -316,7 +229,9 @@ export function ImplementationWorkspace({ build, buildId, notes }: { build: Buil
                 on ? "border-pink-600 text-pink-700" : "border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >
-              {s.icon}{s.label}<SectionStatus review={reviews.get(s.id)} />
+              {s.icon}{s.label}
+              {n > 0 && <span className="rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">{n}</span>}
+              <SectionStatus review={reviews.get(s.id)} />
             </button>
           );
         })}
@@ -326,14 +241,14 @@ export function ImplementationWorkspace({ build, buildId, notes }: { build: Buil
         <div className="space-y-4">
           <section className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-950">{activeSpec.icon}{activeSpec.label}</div>
-            <SectionBody section={active} build={build} notes={notes} />
+            <SectionBody section={active} build={build} items={items} notes={notes} />
           </section>
           <SectionControls buildId={buildId} section={active} review={reviews.get(active)} />
         </div>
 
         <aside className="rounded-lg border border-slate-200 bg-white p-4">
           <p className="text-sm font-semibold text-slate-950">Original meeting notes</p>
-          <p className="mt-1 text-xs text-slate-500">Use this to verify the AI procedure against the raw client context.</p>
+          <p className="mt-1 text-xs text-slate-500">Use this to verify the tasklist against the raw client context.</p>
           <div className="mt-3 max-h-[520px] space-y-3 overflow-auto pr-1">
             {notes.length === 0 ? <p className="text-sm text-slate-500">No notes attached.</p> : notes.map((n) => (
               <details key={n.id} className="rounded-md border border-slate-200 bg-slate-50 p-2" open={notes.length === 1}>

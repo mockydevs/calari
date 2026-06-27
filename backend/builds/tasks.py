@@ -1,14 +1,12 @@
 """Background tasks for the Builds domain (OpenAI brief generation, etc.)."""
 from celery import shared_task
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import models, transaction
 
 from . import services
 from .models import (
-    Build, BuildStatus, ContactSource, PipelineStage, ManualAction, Task,
-    BuildMemorySnapshot, Activity, StageTransition, Workflow, CustomField,
-    TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
-    ChangeRequest, MeetingNote,
+    Build, Task, BuildMemorySnapshot, Activity,
+    ChangeRequest, MeetingNote, MeetingActionItem, ProgressReport,
 )
 
 User = get_user_model()
@@ -83,8 +81,8 @@ def generate_task_sop(self, task_id):
 @shared_task(bind=True, max_retries=1, default_retry_delay=15)
 def apply_progress_update(self, build_id, note_id, user_id):
     """Process a follow-up/progress meeting note as a DELTA: capture scope changes
-    as ChangeRequests, new questions as gaps, log progress, and refresh the build's
-    living memory summary — WITHOUT rewriting the blueprint (review-first)."""
+    as ChangeRequests, new questions as QUESTION tasklist items, log progress, and
+    refresh the build's living memory summary (review-first)."""
     build = Build.objects.filter(pk=build_id).first()
     note = MeetingNote.objects.filter(pk=note_id).first()
     if not build or not note:
@@ -111,10 +109,17 @@ def apply_progress_update(self, build_id, note_id, user_id):
                 impact=sc.get("impact", "") or "",
                 requester=(sc.get("requester") or "Client")[:255],
             )
-        for q in questions:
-            VisionGap.objects.create(
-                build=build, category=q.get("category", "GENERAL"), question=q.get("question", ""),
-                rationale=q.get("rationale", ""), severity=q.get("severity", "medium"), created_by_ai=True,
+        # Open questions raised this meeting become QUESTION items on the tasklist
+        # (gaps were folded into the single source-faithful list).
+        q_start = (build.action_items.aggregate(m=models.Max("order")).get("m") or 0) + 1
+        for idx, q in enumerate(questions):
+            qtext = (q.get("question") or "").strip()
+            if not qtext:
+                continue
+            MeetingActionItem.objects.create(
+                build=build, text=qtext[:4000], detail=(q.get("rationale") or "").strip(),
+                category="QUESTION", section=_clean_section(q.get("section")),
+                introduced_in=note, last_changed_in=note, ai_generated=True, order=q_start + idx,
             )
         summary = (delta.get("summary") or "").strip()
         if summary:
@@ -140,224 +145,202 @@ def apply_progress_update(self, build_id, note_id, user_id):
     note.save(update_fields=["ai_output", "ai_status", "ai_model"])
 
 
-@shared_task(bind=True, max_retries=1, default_retry_delay=15)
-def generate_build_brief(self, build_id, user_id):
-    """Generate the full AI vision blueprint (handover anatomy + gaps) for a build.
+_VALID_SECTIONS = {c[0] for c in MeetingActionItem._meta.get_field("section").choices}
+_VALID_CATEGORIES = {c[0] for c in MeetingActionItem._meta.get_field("category").choices}
 
-    The OpenAI call can take 10–30s, so the view dispatches this and returns
-    immediately; progress is tracked on the latest meeting note's ai_status
-    (processing → done | failed), which the frontend polls.
+
+def _clean_section(value: str) -> str:
+    """Map an AI section value to a stored value ("OTHER"/unknown → "" uncategorized)."""
+    v = (value or "").strip().upper()
+    return v if v in _VALID_SECTIONS else ""
+
+
+def _clean_category(value: str) -> str:
+    v = (value or "").strip().upper()
+    return v if v in _VALID_CATEGORIES else "REQUEST"
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=15)
+def generate_meeting_tasklist(self, build_id, note_id, user_id):
+    """Build / re-sync the source-faithful tasklist from meeting notes.
+
+    First run extracts EVERY requested task/change/question from all notes; later runs
+    reconcile the given note against the current list (add / modify / supersede) so the
+    list stays a single living plan. Non-destructive: human-edited (locked) and
+    human-added (ai_generated=False) items are never wiped. Progress is tracked on
+    build.tasklist_status, which the frontend polls.
     """
     build = Build.objects.filter(pk=build_id).first()
     if not build:
         return
     user = User.objects.filter(pk=user_id).first()
-    latest_note = build.meeting_notes.order_by("-created_at").first()
-    notes = "\n\n".join(build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True))
-
-    # Learning loop: ground generation in the Build Library (how Calari builds).
+    note = MeetingNote.objects.filter(pk=note_id).first()
+    actor = (user.get_full_name() or user.username) if user else "system"
+    # Ground categorization/phrasing in how Calari builds (Build Library), never scope.
     reference = services.build_reference_context(build)
-    # Authoritative context: the living build-state memory (kept fresh by progress
-    # updates) + previously-answered gaps, so regeneration incorporates everything
-    # learned since kickoff instead of re-deriving or re-asking.
-    resolved_parts = []
-    if (build.memory_summary or "").strip():
-        resolved_parts.append("CURRENT BUILD STATE (kept current by progress updates):\n" + build.memory_summary)
-    answered = build.gaps.filter(status=GapStatus.ANSWERED).exclude(answer="")
-    answered_text = "\n".join(f"Q: {g.question}\nA: {g.answer}" for g in answered)
-    if answered_text:
-        resolved_parts.append("ANSWERED QUESTIONS:\n" + answered_text)
-    resolved = "\n\n".join(resolved_parts)
+
+    existing = list(build.action_items.filter(superseded=False))
+    has_any = build.action_items.exists()
 
     try:
-        draft = services.generate_blueprint_draft(notes, reference_text=reference, resolved_text=resolved)
-        # Persist inside the same guard: a persistence hiccup must mark the note
-        # "failed" (so the UI shows a clear error) instead of leaving it stuck on
-        # "processing" forever.
-        _persist_blueprint(build, draft, user)
-    except Exception:  # noqa: BLE001 — record failure so the UI can surface it
-        if latest_note:
-            latest_note.ai_status = "failed"
-            latest_note.save(update_fields=["ai_status"])
+        if has_any:
+            delta = services.reconcile_meeting_tasklist(existing, note.raw_text if note else "", reference_text=reference)
+            added, modified, dropped = _apply_tasklist_delta(build, delta, note)
+            msg = f"Tasklist re-synced: +{added} new, ~{modified} changed, ✗{dropped} superseded."
+        else:
+            notes_text = "\n\n".join(build.meeting_notes.order_by("created_at").values_list("raw_text", flat=True))
+            data = services.extract_meeting_tasklist(notes_text, reference_text=reference)
+            added = _apply_tasklist_full(build, data.get("items", []), note)
+            msg = f"Tasklist generated: {added} item(s) captured from meeting notes."
+    except Exception:  # noqa: BLE001 — surface failure so the UI doesn't hang on "processing"
+        build.tasklist_status = "failed"
+        build.save(update_fields=["tasklist_status", "updated_at"])
         return
 
-    if latest_note:
-        latest_note.ai_output = draft
-        latest_note.ai_status = "done"
-        latest_note.ai_model = services._blueprint_model()
-        latest_note.save(update_fields=["ai_output", "ai_status", "ai_model"])
-
-    # Auto self-critique: run QA right after generation so the admin sees a draft
-    # that's already been reviewed. Non-fatal — never undo a good generation.
-    try:
-        _run_qa_snapshot(build, user)
-    except Exception:  # noqa: BLE001
-        pass
+    build.tasklist_status = "done"
+    build.save(update_fields=["tasklist_status", "updated_at"])
+    Activity.objects.create(build=build, actor=actor, message=msg)
 
 
-# Public alias — the new name; `generate_build_brief` kept so existing dispatch works.
-generate_build_blueprint = generate_build_brief
-
-
-def _prov(item: dict) -> dict:
-    """Provenance flags an AI item carries into the DB (ai_generated + inferred/confidence)."""
-    conf = (item.get("confidence") or "").strip().lower()
-    return {
-        "ai_generated": True,
-        "inferred": bool(item.get("inferred")),
-        "confidence": conf if conf in ("high", "medium", "low") else "",
-    }
-
-
-def _persist_blueprint(build, draft, user):
-    """Merge a fresh AI extraction into the build NON-DESTRUCTIVELY: only AI-authored,
-    unlocked rows are replaced. Rows a human added (ai_generated=False) or edited
-    (locked=True) are preserved, so regeneration never wipes human work."""
+def _apply_tasklist_full(build, items, note):
+    """First run: replace only AI-authored, unlocked items; keep human work."""
     with transaction.atomic():
-        before = {
-            "stages": build.stages.count(), "workflows": build.workflows.count(),
-            "tasks": build.tasks.count(), "gaps": build.gaps.filter(status=GapStatus.OPEN).count(),
-        }
-        # Wipe ONLY AI-authored, unlocked rows (idempotent re-generation that
-        # preserves human additions/edits). Children (sources/calendars/transitions)
-        # first, then stages.
-        for rel in ("contact_sources", "calendars", "external_integrations",
-                    "transitions", "workflows", "custom_fields", "tags", "pre_launch_items"):
-            getattr(build, rel).filter(ai_generated=True, locked=False).delete()
-        build.stages.filter(ai_generated=True, locked=False).delete()  # cascades manual actions
-        build.tasks.filter(ai_generated=True, locked=False).delete()
-        # Refresh only AI-authored open gaps; keep ones a human has answered/dismissed.
-        build.gaps.filter(created_by_ai=True, status=GapStatus.OPEN).delete()
+        build.action_items.filter(ai_generated=True, locked=False).delete()
+        start = (build.action_items.aggregate(m=models.Max("order")).get("m") or 0) + 1
+        objs = []
+        for i, it in enumerate(items):
+            objs.append(MeetingActionItem(
+                build=build,
+                text=(it.get("text") or "").strip()[:4000],
+                detail=(it.get("detail") or "").strip(),
+                category=_clean_category(it.get("category")),
+                section=_clean_section(it.get("section")),
+                introduced_in=note,
+                ai_generated=True,
+                order=start + i,
+            ))
+        objs = [o for o in objs if o.text]
+        MeetingActionItem.objects.bulk_create(objs)
+    return len(objs)
 
-        build.overview = draft.get("overview", "") or ""
-        build.one_line_summary = draft.get("oneLineSummary", "") or ""
-        build.maintenance_notes = draft.get("maintenanceNotes", "") or ""
-        build.goals = draft.get("goals", "") or ""
-        # Defensive: integrations is a string list, but coerce in case the model
-        # returns numbers/objects so a stray type never crashes the whole persist.
-        build.integrations = ", ".join(str(x).strip() for x in (draft.get("integrations") or []) if x)
-        build.status = BuildStatus.AI_DRAFTED
-        build.save(update_fields=[
-            "overview", "one_line_summary", "maintenance_notes",
-            "goals", "integrations", "status", "updated_at",
+
+def _apply_tasklist_delta(build, delta, note):
+    """Follow-up run: apply add / modify / supersede ops by id, non-destructively."""
+    add = delta.get("add", []) or []
+    modify = delta.get("modify", []) or []
+    supersede = delta.get("supersede", []) or []
+    with transaction.atomic():
+        start = (build.action_items.aggregate(m=models.Max("order")).get("m") or 0) + 1
+        new_objs = []
+        for i, it in enumerate(add):
+            text = (it.get("text") or "").strip()[:4000]
+            if not text:
+                continue
+            new_objs.append(MeetingActionItem(
+                build=build, text=text, detail=(it.get("detail") or "").strip(),
+                category=_clean_category(it.get("category")), section=_clean_section(it.get("section")),
+                introduced_in=note, last_changed_in=note, ai_generated=True, order=start + i,
+            ))
+        MeetingActionItem.objects.bulk_create(new_objs)
+
+        modified = 0
+        for it in modify:
+            obj = build.action_items.filter(pk=it.get("id"), locked=False).first()
+            if not obj:
+                continue  # missing or human-locked — never overwrite human edits
+            obj.text = (it.get("text") or obj.text).strip()[:4000]
+            obj.detail = (it.get("detail") or "").strip()
+            obj.category = _clean_category(it.get("category"))
+            obj.section = _clean_section(it.get("section"))
+            obj.last_changed_in = note
+            obj.save(update_fields=["text", "detail", "category", "section", "last_changed_in", "updated_at"])
+            modified += 1
+
+        dropped = 0
+        for it in supersede:
+            obj = build.action_items.filter(pk=it.get("id"), superseded=False).first()
+            if not obj:
+                continue
+            obj.superseded = True
+            obj.superseded_reason = (it.get("reason") or "").strip()
+            obj.last_changed_in = note
+            obj.save(update_fields=["superseded", "superseded_reason", "last_changed_in", "updated_at"])
+            dropped += 1
+    return len(new_objs), modified, dropped
+
+
+_VALID_ITEM_STATUS = {c[0] for c in MeetingActionItem._meta.get_field("status").choices}
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=15)
+def analyze_build_progress(self, build_id, report_id, user_id):
+    """Audit a staff progress report against the tasklist: check off genuinely-done
+    items, set a Verified / Needs-info verdict per item, capture reported-but-new work,
+    and record the AI's expert pushback. Auto-applies; human-locked items are skipped.
+    Tracked on the report's ai_status (the frontend polls it)."""
+    build = Build.objects.filter(pk=build_id).first()
+    report = ProgressReport.objects.filter(pk=report_id).first()
+    if not build or not report:
+        return
+    user = User.objects.filter(pk=user_id).first()
+    actor = (user.get_full_name() or user.username) if user else "system"
+    try:
+        reference = services.build_reference_context(build)
+    except Exception:  # noqa: BLE001
+        reference = ""
+    try:
+        audit = services.analyze_progress_report(build, report.raw_text, reference_text=reference)
+    except Exception:  # noqa: BLE001 — surface failure so the UI doesn't hang
+        report.ai_status = "failed"
+        report.save(update_fields=["ai_status"])
+        return
+
+    verified = needs_info = 0
+    with transaction.atomic():
+        for it in audit.get("items", []) or []:
+            obj = build.action_items.filter(pk=it.get("id"), superseded=False, locked=False).first()
+            if not obj:
+                continue  # missing or human-locked (override wins)
+            status = (it.get("status") or "").upper()
+            if status in _VALID_ITEM_STATUS:
+                obj.status = status
+            verdict = (it.get("verification") or "").upper()
+            obj.verification = "VERIFIED" if verdict == "VERIFIED" else "NEEDS_INFO"
+            obj.evidence = (it.get("evidence") or "").strip()
+            obj.verification_note = (it.get("note") or "").strip()
+            obj.save(update_fields=["status", "verification", "evidence", "verification_note", "updated_at"])
+            if obj.verification == "VERIFIED":
+                verified += 1
+            else:
+                needs_info += 1
+
+        # Completed work the staff reported that wasn't on the list yet.
+        start = (build.action_items.aggregate(m=models.Max("order")).get("m") or 0) + 1
+        for idx, nw in enumerate(audit.get("newWork", []) or []):
+            text = (nw.get("text") or "").strip()
+            if not text:
+                continue
+            MeetingActionItem.objects.create(
+                build=build, text=text[:4000], detail=(nw.get("detail") or "").strip(),
+                category=_clean_category(nw.get("category")), section=_clean_section(nw.get("section")),
+                status="DONE", verification="VERIFIED", evidence="Reported as completed by staff.",
+                ai_generated=True, order=start + idx,
+            )
+
+        pushback = [p for p in (audit.get("pushback") or []) if (p or "").strip()]
+        report.ai_output = audit
+        report.summary = (audit.get("summary") or "").strip()
+        report.pushback = pushback
+        report.verified_count = verified
+        report.needs_info_count = needs_info
+        report.ai_status = "done"
+        report.ai_model = services._blueprint_model()
+        report.save(update_fields=[
+            "ai_output", "summary", "pushback", "verified_count", "needs_info_count",
+            "ai_status", "ai_model",
         ])
-
-        # Stages first — sources and transitions resolve to them by name.
-        for st in draft.get("pipelineStages", []):
-            stage = PipelineStage.objects.create(
-                build=build, name=st.get("name", ""), description=st.get("description", ""),
-                entry_condition=st.get("entryCondition", ""), order=st.get("order", 0),
-                is_automatic=bool(st.get("isAutomatic", True)),
-                needs_manual=bool(st.get("manualActions")), **_prov(st),
-            )
-            for ma in st.get("manualActions", []):
-                ManualAction.objects.create(stage=stage, description=ma.get("description", ""), owner=ma.get("owner", ""))
-
-        # Resolve stage names against ALL current stages (new + surviving human/locked ones).
-        stage_by_name = {s.name.strip().lower(): s for s in build.stages.all()}
-        unresolved: set[str] = set()
-
-        def resolve(name: str):
-            key = (name or "").strip().lower()
-            stage = stage_by_name.get(key)
-            if key and stage is None:
-                unresolved.add(name.strip())
-            return stage
-
-        for i, cs in enumerate(draft.get("leadSources", [])):
-            ContactSource.objects.create(
-                build=build, type=cs.get("type", "OTHER"), label=cs.get("label", ""),
-                entry_mechanism=cs.get("entryMechanism", ""), fires=cs.get("fires", ""),
-                tags_applied=cs.get("tagsApplied", ""), handling_workflow=cs.get("handlingWorkflow", ""),
-                entry_stage=resolve(cs.get("entryStage", "")), notes=cs.get("notes", ""), order=i, **_prov(cs),
-            )
-
-        for i, cal in enumerate(draft.get("calendars", [])):
-            Calendar.objects.create(
-                build=build, name=cal.get("name", ""), type=cal.get("type", "OTHER"),
-                purpose=cal.get("purpose", ""), assigned_to=cal.get("assignedTo", ""),
-                books_into_stage=resolve(cal.get("booksIntoStage", "")),
-                on_booking=cal.get("onBooking", ""), reminders=cal.get("reminders", ""),
-                notes=cal.get("notes", ""), order=i, **_prov(cal),
-            )
-
-        for i, ig in enumerate(draft.get("externalIntegrations", [])):
-            Integration.objects.create(
-                build=build, name=ig.get("name", ""), direction=ig.get("direction", "INBOUND"),
-                mechanism=ig.get("mechanism", "API"), data_objects=ig.get("dataObjects", ""),
-                purpose=ig.get("purpose", ""), trigger_cadence=ig.get("triggerCadence", ""),
-                notes=ig.get("notes", ""), order=i, **_prov(ig),
-            )
-
-        for i, tr in enumerate(draft.get("stageTransitions", [])):
-            StageTransition.objects.create(
-                build=build, from_stage=resolve(tr.get("fromStage", "")), to_stage=resolve(tr.get("toStage", "")),
-                from_label=tr.get("fromStage", ""), to_label=tr.get("toStage", ""),
-                trigger=tr.get("trigger", ""), is_automatic=bool(tr.get("isAutomatic", True)),
-                notes=tr.get("notes", ""), order=i, ai_generated=True,
-            )
-
-        for i, wf in enumerate(draft.get("workflows", [])):
-            Workflow.objects.create(
-                build=build, code=wf.get("code", ""), category=wf.get("category", "OTHER"),
-                name=wf.get("name", ""), trigger=wf.get("trigger", ""),
-                what_it_does=wf.get("whatItDoes", ""), patient_facing=bool(wf.get("patientFacing", False)),
-                order=i, **_prov(wf),
-            )
-
-        for i, cf in enumerate(draft.get("customFields", [])):
-            CustomField.objects.create(
-                build=build, kind=cf.get("kind", "FIELD"), key=cf.get("key", ""),
-                description=cf.get("description", ""), populated=bool(cf.get("populated", True)),
-                order=i, ai_generated=True,
-            )
-
-        for i, tg in enumerate(draft.get("tags", [])):
-            TagDefinition.objects.create(
-                build=build, tag=tg.get("tag", ""), meaning=tg.get("meaning", ""), order=i, ai_generated=True,
-            )
-
-        for i, pl in enumerate(draft.get("preLaunchItems", [])):
-            PreLaunchItem.objects.create(
-                build=build, description=pl.get("description", ""), optional=bool(pl.get("optional", False)),
-                order=i, ai_generated=True,
-            )
-
-        for tk in draft.get("tasks", []):
-            Task.objects.create(
-                build=build, title=tk.get("title", ""), type=tk.get("type", "OTHER"),
-                description=tk.get("description", ""), ai_generated=True,
-            )
-
-        for gp in draft.get("gaps", []):
-            VisionGap.objects.create(
-                build=build, category=gp.get("category", "GENERAL"), question=gp.get("question", ""),
-                rationale=gp.get("rationale", ""), severity=gp.get("severity", "medium"), created_by_ai=True,
-            )
-
-        # Referential validation: a transition/source/calendar that named a stage we
-        # couldn't match is a real inconsistency — surface each as a gap, not silently drop.
-        for name in sorted(unresolved):
-            VisionGap.objects.create(
-                build=build, category="STAGE", created_by_ai=True, severity="medium",
-                question=f'The stage "{name}" is referenced but not defined in the pipeline — should it be added?',
-                rationale="A lead source, calendar, or transition points at a stage that isn't in the pipeline list.",
-            )
-
-        open_gaps = build.gaps.filter(status=GapStatus.OPEN).count()
-        after = {
-            "stages": build.stages.count(), "workflows": build.workflows.count(),
-            "tasks": build.tasks.count(), "gaps": open_gaps,
-        }
-        diff = ", ".join(f"{k}: {before[k]}→{after[k]}" for k in after if before.get(k) != after[k]) or "no net change"
-        BuildMemorySnapshot.objects.create(
-            build=build, created_by=user, created_by_ai=True,
-            summary="AI vision blueprint generated.",
-            scope_changes=f"Changes — {diff}. "
-                          + (f"{open_gaps} open gap(s) flagged." if open_gaps else "No gaps flagged."),
-        )
         Activity.objects.create(
-            build=build,
-            actor=(user.get_full_name() or user.username) if user else "system",
-            message=f"AI vision blueprint generated ({open_gaps} open gap(s)).",
+            build=build, actor=actor,
+            message=f"Progress report audited: {verified} verified, {needs_info} need info"
+                    + (f", {len(pushback)} open question(s)" if pushback else "") + ".",
         )

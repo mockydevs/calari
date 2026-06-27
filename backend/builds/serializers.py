@@ -2,12 +2,11 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 
 from .models import (
-    Build, ContactSource, PipelineStage, ManualAction, Task, TaskDependency,
+    Build, Task, TaskDependency,
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
-    AiApiKey, TeamInvite, StageTransition, Workflow, CustomField, TagDefinition,
-    PreLaunchItem, VisionGap, Calendar, Integration, BuildKnowledge, AiConfig,
-    BuildSectionReview,
+    AiApiKey, TeamInvite, BuildKnowledge, AiConfig,
+    BuildSectionReview, MeetingActionItem, ProgressReport,
 )
 
 _NULL_STR = serializers.CharField(allow_null=True)
@@ -63,79 +62,6 @@ class BuildKnowledgeSerializer(serializers.ModelSerializer):
 
 
 # ─── Sub-resources ────────────────────────────────────────────────────────────
-class ContactSourceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ContactSource
-        fields = "__all__"
-
-
-class ManualActionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ManualAction
-        fields = "__all__"
-
-
-class PipelineStageSerializer(serializers.ModelSerializer):
-    manual_actions = ManualActionSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = PipelineStage
-        fields = "__all__"
-
-
-class CalendarSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Calendar
-        fields = "__all__"
-
-
-class IntegrationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Integration
-        fields = "__all__"
-
-
-class StageTransitionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = StageTransition
-        fields = "__all__"
-
-
-class WorkflowSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Workflow
-        fields = "__all__"
-
-
-class CustomFieldSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CustomField
-        fields = "__all__"
-
-
-class TagDefinitionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TagDefinition
-        fields = "__all__"
-
-
-class PreLaunchItemSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PreLaunchItem
-        fields = "__all__"
-
-
-class VisionGapSerializer(serializers.ModelSerializer):
-    resolved_by_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = VisionGap
-        fields = "__all__"
-        read_only_fields = ["created_by_ai", "resolved_by"]
-
-    @extend_schema_field(_NULL_STR)
-    def get_resolved_by_name(self, obj):
-        return _user_name(obj.resolved_by)
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -154,6 +80,40 @@ class MeetingNoteSerializer(serializers.ModelSerializer):
     class Meta:
         model = MeetingNote
         fields = "__all__"
+
+
+class MeetingActionItemSerializer(serializers.ModelSerializer):
+    introduced_in_title = serializers.SerializerMethodField()
+    last_changed_in_title = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MeetingActionItem
+        fields = "__all__"
+        read_only_fields = ["ai_generated", "introduced_in", "last_changed_in"]
+
+    @extend_schema_field(_NULL_STR)
+    def get_introduced_in_title(self, obj):
+        return obj.introduced_in.title if obj.introduced_in_id else None
+
+    @extend_schema_field(_NULL_STR)
+    def get_last_changed_in_title(self, obj):
+        return obj.last_changed_in.title if obj.last_changed_in_id else None
+
+
+class ProgressReportSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProgressReport
+        fields = "__all__"
+        read_only_fields = [
+            "created_by", "ai_status", "ai_output", "summary", "pushback",
+            "verified_count", "needs_info_count", "ai_model",
+        ]
+
+    @extend_schema_field(_NULL_STR)
+    def get_created_by_name(self, obj):
+        return _user_name(obj.created_by)
 
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -325,16 +285,6 @@ class BuildListSerializer(serializers.ModelSerializer):
 
 
 class BuildSerializer(BuildListSerializer):
-    contact_sources = ContactSourceSerializer(many=True, read_only=True)
-    calendars = CalendarSerializer(many=True, read_only=True)
-    external_integrations = IntegrationSerializer(many=True, read_only=True)
-    stages = PipelineStageSerializer(many=True, read_only=True)
-    transitions = StageTransitionSerializer(many=True, read_only=True)
-    workflows = WorkflowSerializer(many=True, read_only=True)
-    custom_fields = CustomFieldSerializer(many=True, read_only=True)
-    tags = TagDefinitionSerializer(many=True, read_only=True)
-    pre_launch_items = PreLaunchItemSerializer(many=True, read_only=True)
-    gaps = VisionGapSerializer(many=True, read_only=True)
     tasks = TaskCardSerializer(many=True, read_only=True)
     documents = DocumentSerializer(many=True, read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
@@ -343,14 +293,14 @@ class BuildSerializer(BuildListSerializer):
     section_reviews = BuildSectionReviewSerializer(many=True, read_only=True)
     memory_snapshots = BuildMemorySnapshotSerializer(many=True, read_only=True)
     activities = ActivitySerializer(many=True, read_only=True)
+    action_items = MeetingActionItemSerializer(many=True, read_only=True)
+    progress_reports = ProgressReportSerializer(many=True, read_only=True)
 
     class Meta(BuildListSerializer.Meta):
         fields = BuildListSerializer.Meta.fields + [
-            "overview", "one_line_summary", "maintenance_notes",
-            "contact_sources", "calendars", "external_integrations", "stages", "transitions",
-            "workflows", "custom_fields", "tags", "pre_launch_items", "gaps", "tasks",
-            "documents", "comments", "change_requests", "approvals", "section_reviews",
-            "memory_snapshots", "activities",
+            "overview", "one_line_summary", "maintenance_notes", "tasklist_status",
+            "tasks", "documents", "comments", "change_requests", "approvals", "section_reviews",
+            "memory_snapshots", "activities", "action_items", "progress_reports",
         ]
 
 

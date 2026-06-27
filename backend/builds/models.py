@@ -35,54 +35,6 @@ class TaskStatus(models.TextChoices):
     DONE = "DONE", "Done"
 
 
-class ContactSourceType(models.TextChoices):
-    WEBSITE = "WEBSITE", "Website"
-    ADS = "ADS", "Ads"
-    MANUAL = "MANUAL", "Manual"
-    OTHER = "OTHER", "Other"
-
-
-class WorkflowCategory(models.TextChoices):
-    """Mirrors the handover's name-prefix grouping (A / IN / REC / E,K / G / H,X,Y,Z)."""
-    ACTIVE_CONVERSION = "ACTIVE_CONVERSION", "Active conversion (A)"
-    INTAKE_ROUTING = "INTAKE_ROUTING", "Intake & routing (IN)"
-    RECORD_KEEPING = "RECORD_KEEPING", "Record-keeping (REC)"
-    APPOINTMENT_LIFECYCLE = "APPOINTMENT_LIFECYCLE", "Appointment lifecycle (E, K)"
-    POST_VISIT = "POST_VISIT", "Post-visit & retention (G)"
-    INTERNAL_UTILITY = "INTERNAL_UTILITY", "Internal & utility (H, X, Y, Z)"
-    OTHER = "OTHER", "Other"
-
-
-class CustomFieldKind(models.TextChoices):
-    FIELD = "FIELD", "Custom field"
-    VALUE = "VALUE", "Custom value"
-
-
-class CalendarType(models.TextChoices):
-    """GHL calendar types — the booking object that converts a nurtured lead."""
-    ROUND_ROBIN = "ROUND_ROBIN", "Round robin"
-    COLLECTIVE = "COLLECTIVE", "Collective"
-    CLASS = "CLASS", "Class / group"
-    SERVICE = "SERVICE", "Service"
-    PERSONAL = "PERSONAL", "Personal"
-    OTHER = "OTHER", "Other"
-
-
-class IntegrationDirection(models.TextChoices):
-    INBOUND = "INBOUND", "Inbound (into GHL)"
-    OUTBOUND = "OUTBOUND", "Outbound (out of GHL)"
-    BIDIRECTIONAL = "BIDIRECTIONAL", "Bidirectional"
-
-
-class IntegrationMechanism(models.TextChoices):
-    API = "API", "API"
-    WEBHOOK = "WEBHOOK", "Webhook"
-    NATIVE = "NATIVE", "Native integration"
-    ZAPIER = "ZAPIER", "Zapier / Make"
-    CRON = "CRON", "Scheduled sync (cron)"
-    OTHER = "OTHER", "Other"
-
-
 class MeetingNoteKind(models.TextChoices):
     """What a meeting note represents — drives its auto-title and how it's used.
     KICKOFF/MEETING feed full blueprint (re)generation; PROGRESS/CHANGE_REQUEST run
@@ -94,30 +46,36 @@ class MeetingNoteKind(models.TextChoices):
     OTHER = "other", "Other"
 
 
-class GapCategory(models.TextChoices):
-    """Which part of the vision a gap relates to — drives where the AI probes."""
-    OVERVIEW = "OVERVIEW", "Overview / big idea"
-    STAGE = "STAGE", "Pipeline stage"
-    TRANSITION = "TRANSITION", "Stage movement"
-    LEAD_SOURCE = "LEAD_SOURCE", "Lead source"
-    CALENDAR = "CALENDAR", "Calendar / booking"
-    INTEGRATION = "INTEGRATION", "Integration / data flow"
-    WORKFLOW = "WORKFLOW", "Workflow"
-    CUSTOM_FIELD = "CUSTOM_FIELD", "Custom field / value"
-    TAG = "TAG", "Tag"
-    GENERAL = "GENERAL", "General"
+class ActionItemCategory(models.TextChoices):
+    """What a captured meeting item is — kept literal so nothing the client said is
+    re-interpreted away. Drives grouping in the staff tasklist."""
+    REQUEST = "REQUEST", "Request / task"
+    CHANGE = "CHANGE", "Change to existing scope"
+    QUESTION = "QUESTION", "Open question"
+    DECISION = "DECISION", "Decision made"
+    INFO = "INFO", "Info / note"
 
 
-class GapSeverity(models.TextChoices):
-    HIGH = "high", "High"
-    MEDIUM = "medium", "Medium"
-    LOW = "low", "Low"
-
-
-class GapStatus(models.TextChoices):
+class ActionItemStatus(models.TextChoices):
     OPEN = "OPEN", "Open"
-    ANSWERED = "ANSWERED", "Answered"
-    DISMISSED = "DISMISSED", "Dismissed"
+    IN_PROGRESS = "IN_PROGRESS", "In Progress"
+    DONE = "DONE", "Done"
+    DROPPED = "DROPPED", "Dropped"
+
+
+class ActionItemVerification(models.TextChoices):
+    """How confident we are that an item was actually & correctly built, based on the
+    AI's strict audit of staff progress reports."""
+    UNVERIFIED = "UNVERIFIED", "Unverified"     # not yet reviewed against a progress report
+    VERIFIED = "VERIFIED", "Verified"           # report demonstrated a correct, complete build
+    NEEDS_INFO = "NEEDS_INFO", "Needs info"     # AI pushed back — missing/unclear/incorrect
+
+
+class ProgressReportStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    PROCESSING = "processing", "Processing"
+    DONE = "done", "Done"
+    FAILED = "failed", "Failed"
 
 
 class AIProvider(models.TextChoices):
@@ -178,6 +136,9 @@ class Build(models.Model):
     # Rolling "build memory" — current-state summary kept fresh by progress updates
     # so the build never loses early context as meeting history grows.
     memory_summary = models.TextField(blank=True, default="")
+    # Async state of the source-faithful meeting tasklist (separate from the
+    # blueprint flow, which tracks state on the meeting note). Polled by the UI.
+    tasklist_status = models.CharField(max_length=16, blank=True, default="")  # ""|processing|done|failed
     client = models.ForeignKey("projects.Clients", on_delete=models.CASCADE, related_name="builds")
     creator = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="created_builds")
     assignee = models.ForeignKey(
@@ -194,222 +155,6 @@ class Build(models.Model):
 
     def __str__(self):
         return self.title
-
-
-class BlueprintItemMixin(models.Model):
-    """Provenance + regeneration controls shared by every AI-extractable blueprint
-    item. `ai_generated` marks AI-authored rows (so regeneration only wipes those);
-    `locked` protects a row from being wiped on regenerate (set when a human edits
-    it). `inferred`/`confidence` record whether the AI inferred the item vs. read it
-    from the notes, and how sure it is — for reviewer trust."""
-    ai_generated = models.BooleanField(default=False)
-    locked = models.BooleanField(default=False)
-    inferred = models.BooleanField(default=False)
-    confidence = models.CharField(max_length=8, blank=True, default="")  # high|medium|low|""
-
-    class Meta:
-        abstract = True
-
-
-class PipelineStage(BlueprintItemMixin):
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, default="")     # "what it means"
-    entry_condition = models.TextField(blank=True, default="")  # "how a lead gets here"
-    order = models.IntegerField(default=0)
-    needs_manual = models.BooleanField(default=False)
-    is_automatic = models.BooleanField(default=True)  # auto-advances on a reliable signal
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="stages")
-
-    class Meta:
-        ordering = ["order"]
-
-    def __str__(self):
-        return self.name
-
-
-class ContactSource(BlueprintItemMixin):
-    type = models.CharField(max_length=16, choices=ContactSourceType.choices, default=ContactSourceType.OTHER)
-    label = models.CharField(max_length=255)
-    # ── Lead-source mechanics (how it enters the pipeline) ──
-    entry_mechanism = models.TextField(blank=True, default="")    # form trigger, webhook, cron sync, etc.
-    fires = models.TextField(blank=True, default="")             # side effects fired (Meta CAPI, alerts…)
-    tags_applied = models.CharField(max_length=500, blank=True, default="")
-    handling_workflow = models.CharField(max_length=255, blank=True, default="")  # e.g. "IN1"
-    entry_stage = models.ForeignKey(
-        PipelineStage, on_delete=models.SET_NULL, null=True, blank=True, related_name="entry_sources"
-    )
-    notes = models.TextField(blank=True, default="")
-    order = models.IntegerField(default=0)
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="contact_sources")
-
-    class Meta:
-        ordering = ["order"]
-
-
-class ManualAction(models.Model):
-    description = models.TextField()
-    owner = models.CharField(max_length=255, blank=True, default="")
-    stage = models.ForeignKey(PipelineStage, on_delete=models.CASCADE, related_name="manual_actions")
-
-
-class Calendar(BlueprintItemMixin):
-    """A GHL calendar — the booking object where a nurtured lead converts.
-
-    Nurture sequences (Workflow category ACTIVE_CONVERSION) push contacts toward
-    booking on one of these; a booking is typically the conversion event that moves
-    the opportunity into an "Appointment Booked"-style stage.
-    """
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="calendars")
-    name = models.CharField(max_length=255)
-    type = models.CharField(max_length=16, choices=CalendarType.choices, default=CalendarType.OTHER)
-    purpose = models.TextField(blank=True, default="")          # what it books: consult, in-person visit, demo…
-    booking_url = models.CharField(max_length=1000, blank=True, default="")
-    assigned_to = models.CharField(max_length=500, blank=True, default="")  # team members / providers
-    # The conversion wiring: where a booking lands and what it fires.
-    books_into_stage = models.ForeignKey(
-        PipelineStage, on_delete=models.SET_NULL, null=True, blank=True, related_name="booking_calendars"
-    )
-    on_booking = models.TextField(blank=True, default="")       # what happens on booking (workflow, tags, reminders)
-    reminders = models.TextField(blank=True, default="")        # reminder/confirmation cadence
-    notes = models.TextField(blank=True, default="")
-    order = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ["order"]
-
-    def __str__(self):
-        return self.name
-
-
-class Integration(BlueprintItemMixin):
-    """An external system wired to GHL — inbound, outbound, or bidirectional.
-
-    Covers the full data-flow picture beyond lead entry: tools that feed contacts
-    in (Patient Prism, Modento, web apps), and where GHL pushes data out (ERP,
-    external DB, quotes, invoices, accounting).
-    """
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="external_integrations")
-    name = models.CharField(max_length=255)                     # Patient Prism, Modento, QuickBooks, custom ERP…
-    direction = models.CharField(
-        max_length=16, choices=IntegrationDirection.choices, default=IntegrationDirection.INBOUND
-    )
-    mechanism = models.CharField(
-        max_length=16, choices=IntegrationMechanism.choices, default=IntegrationMechanism.API
-    )
-    data_objects = models.CharField(max_length=500, blank=True, default="")  # contacts, appointments, quotes, invoices…
-    purpose = models.TextField(blank=True, default="")
-    trigger_cadence = models.CharField(max_length=255, blank=True, default="")  # real-time, daily cron, on stage change
-    endpoint = models.CharField(max_length=1000, blank=True, default="")        # URL/service (no secrets)
-    notes = models.TextField(blank=True, default="")
-    order = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ["order"]
-
-    def __str__(self):
-        return self.name
-
-
-class StageTransition(BlueprintItemMixin):
-    """An edge between stages — the movement that keeps the build true to the vision."""
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="transitions")
-    from_stage = models.ForeignKey(
-        PipelineStage, on_delete=models.CASCADE, null=True, blank=True, related_name="transitions_out"
-    )
-    to_stage = models.ForeignKey(
-        PipelineStage, on_delete=models.CASCADE, null=True, blank=True, related_name="transitions_in"
-    )
-    # Free-text labels preserved even if a stage can't be resolved (AI gives names).
-    from_label = models.CharField(max_length=255, blank=True, default="")
-    to_label = models.CharField(max_length=255, blank=True, default="")
-    trigger = models.TextField()  # what causes the move
-    is_automatic = models.BooleanField(default=True)
-    notes = models.TextField(blank=True, default="")
-    order = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ["order"]
-
-
-class Workflow(BlueprintItemMixin):
-    """An automation/workflow in the delivered system (handover §5)."""
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="workflows")
-    code = models.CharField(max_length=32, blank=True, default="")  # e.g. "A1", "IN3", "K4"
-    category = models.CharField(
-        max_length=32, choices=WorkflowCategory.choices, default=WorkflowCategory.OTHER
-    )
-    name = models.CharField(max_length=255)
-    trigger = models.CharField(max_length=500, blank=True, default="")
-    what_it_does = models.TextField(blank=True, default="")
-    patient_facing = models.BooleanField(default=False)
-    order = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ["category", "order", "code"]
-
-    def __str__(self):
-        return f"{self.code} {self.name}".strip()
-
-
-class CustomField(BlueprintItemMixin):
-    """A custom field or custom value the system relies on (handover §6)."""
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="custom_fields")
-    kind = models.CharField(max_length=8, choices=CustomFieldKind.choices, default=CustomFieldKind.FIELD)
-    key = models.CharField(max_length=255)
-    description = models.TextField(blank=True, default="")
-    populated = models.BooleanField(default=True)  # False = still needs a value (a gap)
-    order = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ["kind", "order", "key"]
-
-
-class TagDefinition(BlueprintItemMixin):
-    """An entry in the tag glossary (handover §6)."""
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="tags")
-    tag = models.CharField(max_length=255)
-    meaning = models.CharField(max_length=500, blank=True, default="")
-    order = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ["order", "tag"]
-
-
-class PreLaunchItem(BlueprintItemMixin):
-    """A pre-launch checklist line (handover §8)."""
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="pre_launch_items")
-    description = models.TextField()
-    optional = models.BooleanField(default=False)
-    done = models.BooleanField(default=False)
-    order = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ["order"]
-
-
-class VisionGap(models.Model):
-    """A piece of the vision the AI couldn't pin down — with a targeted follow-up question.
-
-    This is what makes the AI "always seek the structure": after each pass it records
-    what's missing so the team (or the next round of notes) can close it.
-    """
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="gaps")
-    category = models.CharField(max_length=16, choices=GapCategory.choices, default=GapCategory.GENERAL)
-    question = models.TextField()           # the targeted follow-up to ask the client/team
-    rationale = models.TextField(blank=True, default="")  # why this matters to the build
-    severity = models.CharField(max_length=8, choices=GapSeverity.choices, default=GapSeverity.MEDIUM)
-    status = models.CharField(max_length=12, choices=GapStatus.choices, default=GapStatus.OPEN)
-    answer = models.TextField(blank=True, default="")
-    created_by_ai = models.BooleanField(default=True)
-    resolved_by = models.ForeignKey(
-        USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolved_gaps"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["status", "-severity", "created_at"]
-        indexes = [models.Index(fields=["build", "status"])]
 
 
 class Task(models.Model):
@@ -478,6 +223,82 @@ class MeetingNote(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+
+
+class MeetingActionItem(models.Model):
+    """A single requested task / change / question captured VERBATIM from a meeting
+    note. Unlike the blueprint Task (which is abstracted from the vision and can drop
+    detail), this is a faithful, exhaustive record of what the client actually asked —
+    one living list per build, reconciled across meetings so nothing is ever lost.
+
+    Provenance mirrors BlueprintItemMixin: `ai_generated` marks AI-authored rows and
+    `locked` protects a row from re-sync (set when a human edits it), so re-running
+    extraction never wipes human work."""
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="action_items")
+    text = models.TextField()  # the request, in the client's words
+    detail = models.TextField(blank=True, default="")  # short clarifying context
+    category = models.CharField(
+        max_length=16, choices=ActionItemCategory.choices, default=ActionItemCategory.REQUEST
+    )
+    # Which GHL area this item belongs to — the primary grouping. Lets us organize a
+    # purely notes-driven plan into familiar GHL sections WITHOUT forcing the build
+    # into a rigid pre-defined architecture. Blank = not yet categorized.
+    section = models.CharField(max_length=20, choices=BuildSection.choices, blank=True, default="")
+    status = models.CharField(
+        max_length=16, choices=ActionItemStatus.choices, default=ActionItemStatus.OPEN
+    )
+    # Which meeting first surfaced this item, and which one last changed it.
+    introduced_in = models.ForeignKey(
+        MeetingNote, on_delete=models.SET_NULL, null=True, blank=True, related_name="introduced_action_items"
+    )
+    last_changed_in = models.ForeignKey(
+        MeetingNote, on_delete=models.SET_NULL, null=True, blank=True, related_name="changed_action_items"
+    )
+    # Reversed / withdrawn asks are kept (not deleted) for an audit trail.
+    superseded = models.BooleanField(default=False)
+    superseded_reason = models.TextField(blank=True, default="")
+    # ── Build verification (driven by AI audit of staff progress reports) ──
+    verification = models.CharField(
+        max_length=12, choices=ActionItemVerification.choices, default=ActionItemVerification.UNVERIFIED
+    )
+    evidence = models.TextField(blank=True, default="")        # what the report showed for this item
+    verification_note = models.TextField(blank=True, default="")  # AI pushback / clarification needed
+    ai_generated = models.BooleanField(default=False)
+    locked = models.BooleanField(default=False)  # protect from re-sync wipe (set on human edit)
+    order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "created_at"]
+        indexes = [models.Index(fields=["build", "superseded"])]
+
+    def __str__(self):
+        return self.text[:80]
+
+
+class ProgressReport(models.Model):
+    """A staff progress report (pasted or uploaded) covering work done over part of a
+    build. The AI audits it against the tasklist — checking off genuinely-completed
+    items and pushing back on anything missing, incomplete, or incorrectly built."""
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="progress_reports")
+    source = models.CharField(max_length=32, default="paste")  # paste | upload
+    raw_text = models.TextField()
+    file_url = models.URLField(max_length=1000, blank=True, default="")
+    ai_status = models.CharField(
+        max_length=16, choices=ProgressReportStatus.choices, default=ProgressReportStatus.PENDING
+    )
+    ai_output = models.JSONField(null=True, blank=True)  # full audit result
+    summary = models.TextField(blank=True, default="")   # AI's headline summary
+    pushback = models.JSONField(default=list, blank=True)  # list of expert clarification asks
+    verified_count = models.IntegerField(default=0)
+    needs_info_count = models.IntegerField(default=0)
+    ai_model = models.CharField(max_length=64, blank=True, default="")
+    created_by = models.ForeignKey(USER, on_delete=models.SET_NULL, null=True, related_name="build_progress_reports")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 class Comment(models.Model):

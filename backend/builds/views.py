@@ -1,3 +1,4 @@
+import re
 import secrets
 from datetime import date
 
@@ -18,24 +19,23 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
 from .models import (
-    Build, ContactSource, PipelineStage, ManualAction, Task, TaskDependency, TaskType,
+    Build, Task, TaskDependency, TaskType,
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
-    AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
-    TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
+    AiApiKey, TeamInvite, BuildStatus,
     ApprovalType, BuildKnowledge, AiConfig, AiGenerationLog, BuildSectionReview,
-    BuildSection, BuildSectionReviewStatus, ChangeRequestStatus,
+    BuildSection, BuildSectionReviewStatus, ChangeRequestStatus, MeetingActionItem,
+    ProgressReport,
 )
 from .serializers import (
-    BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
-    ManualActionSerializer, TaskSerializer, TaskCardSerializer, TaskDependencySerializer,
+    BuildSerializer, BuildListSerializer,
+    TaskSerializer, TaskCardSerializer, TaskDependencySerializer,
     DocumentSerializer, MeetingNoteSerializer, CommentSerializer, ActivitySerializer,
     ChangeRequestSerializer, ApprovalRecordSerializer, BuildMemorySnapshotSerializer,
     ClientPortalFeedbackSerializer, NotificationSerializer, NotificationPreferenceSerializer,
-    AiApiKeySerializer, TeamInviteSerializer, StageTransitionSerializer, WorkflowSerializer,
-    CustomFieldSerializer, TagDefinitionSerializer, PreLaunchItemSerializer, VisionGapSerializer,
-    CalendarSerializer, IntegrationSerializer, BuildKnowledgeSerializer, AiConfigSerializer,
-    BuildSectionReviewSerializer,
+    AiApiKeySerializer, TeamInviteSerializer,
+    BuildKnowledgeSerializer, AiConfigSerializer,
+    BuildSectionReviewSerializer, MeetingActionItemSerializer, ProgressReportSerializer,
 )
 from . import services
 from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner, can_manage_builds
@@ -169,15 +169,12 @@ def _upload_error(filename, content_type, size_bytes=None):
 
 
 # Relations whose rows carry ai_generated/locked — used for the AI-quality metric.
-_QUALITY_RELATIONS = (
-    "stages", "workflows", "contact_sources", "calendars", "external_integrations",
-    "transitions", "custom_fields", "tags", "pre_launch_items", "tasks",
-)
+_QUALITY_RELATIONS = ("action_items", "tasks")
 
 
 def _build_quality(build):
-    """AI-acceptance metric (edit-distance proxy): how much of the AI's build-out
-    survived to approval unedited. Lower edits over time = the AI getting smarter."""
+    """AI-acceptance metric (edit-distance proxy): how much of the AI's captured
+    tasklist survived to approval unedited. Lower edits over time = AI getting smarter."""
     ai = edited = human = 0
     for rel in _QUALITY_RELATIONS:
         for obj in getattr(build, rel).all():
@@ -191,8 +188,8 @@ def _build_quality(build):
     return {
         "ai_items": ai, "edited": edited, "human_added": human, "kept": kept,
         "kept_pct": round(kept * 100 / ai) if ai else 0,
-        "gaps_total": build.gaps.count(),
-        "gaps_resolved": build.gaps.exclude(status=GapStatus.OPEN).count(),
+        "items_total": build.action_items.count(),
+        "items_superseded": build.action_items.filter(superseded=True).count(),
     }
 
 
@@ -215,13 +212,12 @@ def _dispatch_async(task_fn, *args):
 # so we only load them for `retrieve` (and the generate-brief response), never
 # for list/mutating actions which otherwise paid the full prefetch cost.
 _DETAIL_PREFETCH = (
-    "contact_sources__entry_stage", "calendars__books_into_stage", "external_integrations",
-    "stages__manual_actions", "transitions",
-    "workflows", "custom_fields", "tags", "pre_launch_items", "gaps",
     "tasks__assignee", "documents__uploader", "comments__author",
     "change_requests__owner", "change_requests__created_by",
     "approvals__approver", "section_reviews__completed_by", "section_reviews__blocked_by",
     "memory_snapshots__created_by", "activities",
+    "action_items__introduced_in", "action_items__last_changed_in",
+    "progress_reports__created_by",
 )
 
 
@@ -338,23 +334,13 @@ class BuildViewSet(viewsets.ModelViewSet):
         done = build.tasks.filter(status="DONE").count()
         return Response({"total": total, "done": done, "percent": round(done * 100 / total) if total else 0})
 
-    @action(detail=True, methods=["get"])
-    def handover(self, request, pk=None):
-        """Render the captured vision blueprint as the client handover document (markdown)."""
-        build = self._detail_queryset().get(pk=self.get_object().pk)
-        try:
-            markdown = services.render_handover_markdown(build)
-        except Exception:  # noqa: BLE001 — never 500 the preview; return a soft message
-            markdown = "_The handover could not be rendered for this build yet._"
-        return Response({"markdown": markdown})
-
     @action(detail=True, methods=["get"], url_path="build-document")
     def build_document(self, request, pk=None):
         """Generate the long-form, step-by-step GHL IMPLEMENTATION build document (markdown).
 
-        Heavier than the handover (this makes one AI call) and meant for the assigned builder
-        to follow directly in GHL. Grounded in the captured blueprint + the original meeting
-        notes + the Build-Library learning loop.
+        Makes one AI call; meant for the assigned builder to follow directly in GHL.
+        Grounded in the captured tasklist + the original meeting notes + the Build-Library
+        learning loop.
         """
         build = self._detail_queryset().get(pk=self.get_object().pk)
         try:
@@ -363,55 +349,45 @@ class BuildViewSet(viewsets.ModelViewSet):
             markdown = "_The build document could not be generated yet._"
         return Response({"markdown": markdown})
 
-    @action(detail=True, methods=["get"], url_path="vision-completeness")
-    def vision_completeness(self, request, pk=None):
-        """Score how fully the client vision is captured, by handover section."""
-        build = self.get_object()
-        sections = {
-            "overview": bool(build.overview),
-            "lead_sources": build.contact_sources.exists(),
-            "calendars": build.calendars.exists(),
-            "integrations": build.external_integrations.exists(),
-            "stages": build.stages.exists(),
-            "transitions": build.transitions.exists(),
-            "workflows": build.workflows.exists(),
-            "custom_fields": build.custom_fields.exists(),
-            "tags": build.tags.exists(),
-        }
-        captured = sum(1 for v in sections.values() if v)
-        return Response({
-            "sections": sections,
-            "captured": captured,
-            "total": len(sections),
-            "percent": round(captured * 100 / len(sections)),
-            "open_gaps": build.gaps.filter(status=GapStatus.OPEN).count(),
-        })
+    @action(detail=True, methods=["get"], url_path="client-handover")
+    def client_handover(self, request, pk=None):
+        """Generate the CLIENT-FACING handover document (markdown) from the build's
+        tasklist, meeting notes, and progress history. Meant for end-of-build delivery."""
+        build = self._detail_queryset().get(pk=self.get_object().pk)
+        try:
+            markdown = services.generate_client_handover(build)
+        except Exception:  # noqa: BLE001
+            markdown = "_The client handover could not be generated yet._"
+        return Response({"markdown": markdown})
 
-    @action(detail=True, methods=["post"], url_path="generate-brief")
-    def generate_brief(self, request, pk=None):
+    @action(detail=True, methods=["post"], url_path="report-progress")
+    def report_progress(self, request, pk=None):
+        """Staff submit a progress report (paste or uploaded-doc text). The AI audits it
+        against the tasklist off the request path; the UI polls the report's ai_status."""
         build = self.get_object()
-        if not build.meeting_notes.exists():
-            return Response({"error": "Add meeting notes before generating a brief."}, status=http.HTTP_400_BAD_REQUEST)
-        # Mark the latest note processing (the frontend polls ai_status), then run
-        # the slow OpenAI call off the request path via Celery.
-        latest_note = build.meeting_notes.order_by("-created_at").first()
-        if latest_note:
-            latest_note.ai_status = "processing"
-            latest_note.save(update_fields=["ai_status"])
-        from .tasks import generate_build_brief
-        err = _dispatch_async(generate_build_brief, build.id, request.user.id)
+        text = (request.data.get("raw_text") or "").strip()
+        if not text:
+            return Response({"error": "Add the progress report text or upload a document."},
+                            status=http.HTTP_400_BAD_REQUEST)
+        report = ProgressReport.objects.create(
+            build=build, raw_text=text, source=request.data.get("source") or "paste",
+            file_url=request.data.get("file_url") or "", ai_status="processing", created_by=request.user,
+        )
+        _log(build, request.user, "Progress report submitted for AI verification.")
+        from .tasks import analyze_build_progress
+        err = _dispatch_async(analyze_build_progress, build.id, report.id, request.user.id)
         if err:
-            if latest_note:  # don't leave the UI stuck on "processing"
-                latest_note.ai_status = "failed"
-                latest_note.save(update_fields=["ai_status"])
+            report.ai_status = "failed"
+            report.save(update_fields=["ai_status"])
             return err
-        return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
+        return Response({"status": "processing", "report": ProgressReportSerializer(report).data},
+                        status=http.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["post"], url_path="progress-update")
     def progress_update(self, request, pk=None):
         """Log a follow-up/progress meeting as a DELTA: captures scope changes
-        (→ change requests), new questions (→ gaps), progress, and refreshes the
-        build's living memory — without rewriting the blueprint."""
+        (→ change requests), new questions (→ QUESTION tasklist items), progress, and
+        refreshes the build's living memory."""
         build = self.get_object()
         text = (request.data.get("raw_text") or "").strip()
         if not text:
@@ -439,6 +415,37 @@ class BuildViewSet(viewsets.ModelViewSet):
         from .tasks import run_build_qa
         return _dispatch_async(run_build_qa, build.id, request.user.id) or \
             Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"], url_path="generate-tasklist")
+    def generate_tasklist(self, request, pk=None):
+        """Build / re-sync the source-faithful meeting tasklist. First run extracts
+        every requested item from all notes; later runs reconcile the latest note
+        against the current list. Tracked on build.tasklist_status (UI polls it)."""
+        build = self.get_object()
+        if not build.meeting_notes.exists():
+            return Response({"error": "Add meeting notes before generating the tasklist."}, status=http.HTTP_400_BAD_REQUEST)
+        latest_note = build.meeting_notes.order_by("-created_at").first()
+        build.tasklist_status = "processing"
+        build.save(update_fields=["tasklist_status", "updated_at"])
+        from .tasks import generate_meeting_tasklist
+        err = _dispatch_async(generate_meeting_tasklist, build.id, latest_note.id if latest_note else None, request.user.id)
+        if err:  # don't leave the UI stuck on "processing"
+            build.tasklist_status = "failed"
+            build.save(update_fields=["tasklist_status", "updated_at"])
+            return err
+        return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["get"], url_path="tasklist-export")
+    def tasklist_export(self, request, pk=None):
+        """Return the tasklist as markdown (default) or CSV for staff download."""
+        build = self._detail_queryset().get(pk=self.get_object().pk)
+        fmt = (request.query_params.get("format") or "md").lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", (build.title or "build").lower()).strip("-") or "build"
+        if fmt == "csv":
+            return Response({"format": "csv", "filename": f"{slug}-tasklist.csv",
+                             "content": services.render_tasklist_csv(build)})
+        return Response({"format": "md", "filename": f"{slug}-tasklist.md",
+                         "content": services.render_tasklist_markdown(build)})
 
 
 @api_view(["GET"])
@@ -527,9 +534,6 @@ class _BaseViewSet(viewsets.ModelViewSet):
         if data.get("task"):
             task = Task.objects.select_related("build").filter(pk=data.get("task")).first()
             return task.build if task else None
-        if data.get("stage"):
-            stage = PipelineStage.objects.select_related("build").filter(pk=data.get("stage")).first()
-            return stage.build if stage else None
         if data.get("blocker"):
             task = Task.objects.select_related("build").filter(pk=data.get("blocker")).first()
             return task.build if task else None
@@ -567,22 +571,30 @@ class _BaseViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class ContactSourceViewSet(_BaseViewSet):
-    queryset = ContactSource.objects.all()
-    serializer_class = ContactSourceSerializer
-    filterset_fields = ["build", "type"]
+class MeetingActionItemViewSet(_BaseViewSet):
+    """The source-faithful meeting tasklist. Manual create/edit is allowed; any human
+    edit locks the row so AI re-sync never overwrites it."""
+    queryset = MeetingActionItem.objects.select_related("build", "introduced_in", "last_changed_in").all()
+    serializer_class = MeetingActionItemSerializer
+    filterset_fields = ["build", "section", "category", "status", "superseded"]
+    ordering_fields = ["order", "created_at"]
+    ordering = ["order", "created_at"]
 
+    def perform_create(self, serializer):
+        item = serializer.save()
+        _log(item.build, self.request.user, "Tasklist item added.")
 
-class PipelineStageViewSet(_BaseViewSet):
-    queryset = PipelineStage.objects.prefetch_related("manual_actions").all()
-    serializer_class = PipelineStageSerializer
-    filterset_fields = ["build"]
+    def perform_update(self, serializer):
+        # A human touched it — protect from AI re-sync wipe.
+        serializer.save(locked=True)
 
-
-class ManualActionViewSet(_BaseViewSet):
-    queryset = ManualAction.objects.all()
-    serializer_class = ManualActionSerializer
-    filterset_fields = ["stage"]
+    @action(detail=True, methods=["post"], url_path="status")
+    def set_status(self, request, pk=None):
+        item = self.get_object()
+        item.status = request.data.get("status", item.status)
+        item.locked = True
+        item.save(update_fields=["status", "locked", "updated_at"])
+        return Response(MeetingActionItemSerializer(item).data)
 
 
 class MeetingNoteViewSet(_BaseViewSet):
@@ -642,6 +654,61 @@ class MeetingNoteViewSet(_BaseViewSet):
         note.save(update_fields=["title"])
         _log(build, request.user, f'{note.title} uploaded from "{filename}".')
         return Response(MeetingNoteSerializer(note).data, status=http.HTTP_201_CREATED)
+
+
+class ProgressReportViewSet(_BaseViewSet):
+    """Staff progress reports + their AI audit history. New reports are created via
+    POST builds/{id}/report-progress (paste) or the `upload` action (document)."""
+    queryset = ProgressReport.objects.select_related("build", "created_by").all()
+    serializer_class = ProgressReportSerializer
+    filterset_fields = ["build", "ai_status"]
+    ordering_fields = ["created_at"]
+    ordering = ["-created_at"]
+
+    @action(detail=False, methods=["post"], url_path="upload",
+            parser_classes=[MultiPartParser, FormParser])
+    def upload(self, request):
+        """Upload a progress document; its text is extracted and audited against the tasklist."""
+        build = Build.objects.filter(pk=request.data.get("build")).first()
+        if not build:
+            return Response({"error": "build is required"}, status=http.HTTP_400_BAD_REQUEST)
+        if not _can_manage_build(request.user, build):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"error": "file is required"}, status=http.HTTP_400_BAD_REQUEST)
+        filename = file.name
+        content_type = getattr(file, "content_type", "") or ""
+        if not services.is_ai_readable(filename, content_type):
+            return Response({"error": "Unsupported file type. Upload a PDF, DOCX, TXT, CSV, MD, or RTF file."},
+                            status=http.HTTP_400_BAD_REQUEST)
+        raw = file.read()
+        try:
+            text = services.extract_text(raw, filename, content_type)
+        except Exception as e:  # noqa: BLE001
+            return Response({"error": f"Could not read the document: {e}"}, status=http.HTTP_400_BAD_REQUEST)
+        if not text.strip():
+            return Response({"error": "No readable text was found in that document."}, status=http.HTTP_400_BAD_REQUEST)
+        file_url = ""
+        try:
+            from django.core.files.storage import default_storage
+            from django.core.files.base import ContentFile
+            key = default_storage.save(f"progress_reports/{secrets.token_urlsafe(8)}_{filename}", ContentFile(raw))
+            file_url = default_storage.url(key)
+        except Exception:  # noqa: BLE001 — storage optional; never block the report
+            pass
+        report = ProgressReport.objects.create(
+            build=build, raw_text=text, source="upload", file_url=file_url,
+            ai_status="processing", created_by=request.user,
+        )
+        _log(build, request.user, f'Progress report uploaded from "{filename}" for AI verification.')
+        from .tasks import analyze_build_progress
+        err = _dispatch_async(analyze_build_progress, build.id, report.id, request.user.id)
+        if err:
+            report.ai_status = "failed"
+            report.save(update_fields=["ai_status"])
+            return err
+        return Response(ProgressReportSerializer(report).data, status=http.HTTP_201_CREATED)
 
 
 class BuildKnowledgeViewSet(_BaseViewSet):
@@ -963,87 +1030,6 @@ class BuildSectionReviewViewSet(_BaseViewSet):
 
 
 # ─── Vision blueprint sub-resources ───────────────────────────────────────────
-class CalendarViewSet(_BaseViewSet):
-    queryset = Calendar.objects.all()
-    serializer_class = CalendarSerializer
-    filterset_fields = ["build", "type", "books_into_stage"]
-    ordering = ["order"]
-
-
-class IntegrationViewSet(_BaseViewSet):
-    queryset = Integration.objects.all()
-    serializer_class = IntegrationSerializer
-    filterset_fields = ["build", "direction", "mechanism"]
-    ordering = ["order"]
-
-
-class StageTransitionViewSet(_BaseViewSet):
-    queryset = StageTransition.objects.all()
-    serializer_class = StageTransitionSerializer
-    filterset_fields = ["build", "from_stage", "to_stage"]
-    ordering = ["order"]
-
-
-class WorkflowViewSet(_BaseViewSet):
-    queryset = Workflow.objects.all()
-    serializer_class = WorkflowSerializer
-    filterset_fields = ["build", "category", "patient_facing"]
-    ordering = ["category", "order"]
-
-
-class CustomFieldViewSet(_BaseViewSet):
-    queryset = CustomField.objects.all()
-    serializer_class = CustomFieldSerializer
-    filterset_fields = ["build", "kind", "populated"]
-    ordering = ["kind", "order"]
-
-
-class TagDefinitionViewSet(_BaseViewSet):
-    queryset = TagDefinition.objects.all()
-    serializer_class = TagDefinitionSerializer
-    filterset_fields = ["build"]
-    ordering = ["order"]
-
-
-class PreLaunchItemViewSet(_BaseViewSet):
-    queryset = PreLaunchItem.objects.all()
-    serializer_class = PreLaunchItemSerializer
-    filterset_fields = ["build", "done", "optional"]
-    ordering = ["order"]
-
-
-class VisionGapViewSet(_BaseViewSet):
-    queryset = VisionGap.objects.select_related("resolved_by").all()
-    serializer_class = VisionGapSerializer
-    filterset_fields = ["build", "status", "category", "severity"]
-    ordering = ["status", "created_at"]
-
-    @action(detail=True, methods=["post"])
-    def suggest(self, request, pk=None):
-        """AI-suggested answer options for an open gap — the team picks one or edits."""
-        gap = self.get_object()
-        try:
-            options = services.suggest_gap_answers(gap.build, gap.question, gap.rationale)
-        except Exception:  # noqa: BLE001 — never 500 the suggest button
-            return Response(
-                {"error": "Could not generate suggestions right now. Type an answer instead."},
-                status=http.HTTP_502_BAD_GATEWAY,
-            )
-        return Response({"options": options})
-
-    @action(detail=True, methods=["post"])
-    def resolve(self, request, pk=None):
-        """Answer or dismiss a gap the AI flagged, closing the loop on the vision."""
-        gap = self.get_object()
-        new_status = request.data.get("status", GapStatus.ANSWERED)
-        if new_status not in GapStatus.values:
-            return Response({"error": "invalid status"}, status=http.HTTP_400_BAD_REQUEST)
-        gap.status = new_status
-        gap.answer = request.data.get("answer", gap.answer)
-        gap.resolved_by = request.user
-        gap.save(update_fields=["status", "answer", "resolved_by", "updated_at"])
-        _log(gap.build, request.user, f"Vision gap {new_status.lower()}: {gap.question[:80]}")
-        return Response(VisionGapSerializer(gap).data)
 
 
 # ─── Notifications ────────────────────────────────────────────────────────────
@@ -1275,7 +1261,8 @@ def portal_build(request, token):
         "status": build.status,
         "goals": build.goals,
         "integrations": build.integrations,
-        "stages": PipelineStageSerializer(build.stages.all(), many=True).data,
+        "action_items": MeetingActionItemSerializer(
+            build.action_items.filter(superseded=False), many=True).data,
         "tasks": TaskCardSerializer(build.tasks.all(), many=True).data,
     })
 
