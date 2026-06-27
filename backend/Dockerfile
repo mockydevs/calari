@@ -41,6 +41,9 @@ COPY . .
 
 EXPOSE 8000
 
-# Apply migrations, run Celery worker + beat in the background, and serve the
-# ASGI app with Daphne (required for Channels websockets) in the foreground.
-CMD bash -c "python manage.py migrate --noinput && python manage.py migrate vectorstore --database=vectors --noinput || true; python manage.py seed_build_library || true; (celery -A config worker --loglevel=info &) && (celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler &) && daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+# Apply migrations (blocking — schema must exist before serving), then start
+# Daphne immediately. The Build Library seed is idempotent data population, not a
+# readiness requirement, so it runs in the BACKGROUND off the boot path — keeping
+# it inline delayed Daphne and slowed every deploy's readiness. Celery worker +
+# beat run in the background; Daphne (Channels websockets) is the foreground PID 1.
+CMD bash -c "python manage.py migrate --noinput && python manage.py migrate vectorstore --database=vectors --noinput || true; (python manage.py seed_build_library || true &); (celery -A config worker --loglevel=info &) && (celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler &) && daphne -b 0.0.0.0 -p 8000 config.asgi:application"
