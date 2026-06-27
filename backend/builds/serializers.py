@@ -7,6 +7,7 @@ from .models import (
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, StageTransition, Workflow, CustomField, TagDefinition,
     PreLaunchItem, VisionGap, Calendar, Integration, BuildKnowledge, AiConfig,
+    BuildSectionReview,
 )
 
 _NULL_STR = serializers.CharField(allow_null=True)
@@ -210,6 +211,26 @@ class ApprovalRecordSerializer(serializers.ModelSerializer):
         return _user_name(obj.approver)
 
 
+class BuildSectionReviewSerializer(serializers.ModelSerializer):
+    completed_by_name = serializers.SerializerMethodField()
+    blocked_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BuildSectionReview
+        fields = "__all__"
+        read_only_fields = [
+            "completed_by", "blocked_by", "completed_at", "blocked_at", "updated_at",
+        ]
+
+    @extend_schema_field(_NULL_STR)
+    def get_completed_by_name(self, obj):
+        return _user_name(obj.completed_by)
+
+    @extend_schema_field(_NULL_STR)
+    def get_blocked_by_name(self, obj):
+        return _user_name(obj.blocked_by)
+
+
 class BuildMemorySnapshotSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
 
@@ -309,6 +330,7 @@ class BuildSerializer(BuildListSerializer):
     comments = CommentSerializer(many=True, read_only=True)
     change_requests = ChangeRequestSerializer(many=True, read_only=True)
     approvals = ApprovalRecordSerializer(many=True, read_only=True)
+    section_reviews = BuildSectionReviewSerializer(many=True, read_only=True)
     memory_snapshots = BuildMemorySnapshotSerializer(many=True, read_only=True)
     activities = ActivitySerializer(many=True, read_only=True)
 
@@ -317,7 +339,8 @@ class BuildSerializer(BuildListSerializer):
             "overview", "one_line_summary", "maintenance_notes",
             "contact_sources", "calendars", "external_integrations", "stages", "transitions",
             "workflows", "custom_fields", "tags", "pre_launch_items", "gaps", "tasks",
-            "documents", "comments", "change_requests", "approvals", "memory_snapshots", "activities",
+            "documents", "comments", "change_requests", "approvals", "section_reviews",
+            "memory_snapshots", "activities",
         ]
 
 

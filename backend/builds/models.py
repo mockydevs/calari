@@ -144,6 +144,23 @@ class ApprovalType(models.TextChoices):
     CLIENT = "CLIENT", "Client"
 
 
+class BuildSection(models.TextChoices):
+    PIPELINE = "PIPELINE", "Pipeline"
+    AUTOMATIONS = "AUTOMATIONS", "Automations"
+    LEAD_SOURCES = "LEAD_SOURCES", "Lead sources"
+    CALENDARS = "CALENDARS", "Calendars"
+    INTEGRATIONS = "INTEGRATIONS", "Integrations"
+    FIELDS_TAGS = "FIELDS_TAGS", "Fields & tags"
+    FORMS_PAYMENTS = "FORMS_PAYMENTS", "Forms & payments"
+    REPORTING_LAUNCH = "REPORTING_LAUNCH", "Reporting & launch"
+
+
+class BuildSectionReviewStatus(models.TextChoices):
+    TODO = "TODO", "To do"
+    DONE = "DONE", "Done"
+    BLOCKED = "BLOCKED", "Blocked"
+
+
 # ─── Core ─────────────────────────────────────────────────────────────────────
 class Build(models.Model):
     title = models.CharField(max_length=500)
@@ -508,6 +525,39 @@ class ApprovalRecord(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["build", "type"])]
+
+
+class BuildSectionReview(models.Model):
+    """Staff implementation status for a major blueprint section.
+
+    This lets the assigned builder work section-by-section (Automations, Pipeline,
+    etc.) without flattening everything into one task list. Blockers are routed
+    back to the build admin with the exact section context.
+    """
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="section_reviews")
+    section = models.CharField(max_length=32, choices=BuildSection.choices)
+    status = models.CharField(
+        max_length=16, choices=BuildSectionReviewStatus.choices, default=BuildSectionReviewStatus.TODO
+    )
+    blocker_note = models.TextField(blank=True, default="")
+    blocker_attachment_url = models.URLField(max_length=1000, blank=True, default="")
+    blocker_attachment_name = models.CharField(max_length=500, blank=True, default="")
+    completed_by = models.ForeignKey(
+        USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="completed_build_sections"
+    )
+    blocked_by = models.ForeignKey(
+        USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="blocked_build_sections"
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["section"]
+        constraints = [
+            models.UniqueConstraint(fields=["build", "section"], name="unique_build_section_review"),
+        ]
+        indexes = [models.Index(fields=["build", "status"])]
 
 
 class BuildMemorySnapshot(models.Model):

@@ -95,6 +95,51 @@ export async function updateTaskStatus(formData: FormData) {
   revalidatePath(`/builds/${buildId}`);
 }
 
+export async function updateBuildSectionReview(formData: FormData) {
+  await requireUser();
+  const buildId = String(formData.get("buildId") ?? "");
+  const section = String(formData.get("section") ?? "");
+  const status = String(formData.get("status") ?? "");
+  const blockerNote = String(formData.get("blockerNote") ?? "").trim();
+  const file = formData.get("blockerFile");
+  if (!buildId || !section || !status) throw new Error("Build, section, and status are required");
+
+  let blocker_attachment_url = "";
+  let blocker_attachment_name = "";
+  if (file instanceof File && file.size > 0) {
+    const contentType = file.type || "application/octet-stream";
+    const presign = await serverApi.post<{ upload_url: string; public_url: string; key: string }>(
+      "builds/upload/presign",
+      { filename: file.name, content_type: contentType },
+    );
+    const put = await fetch(presign.upload_url, {
+      method: "PUT",
+      body: Buffer.from(await file.arrayBuffer()),
+      headers: { "Content-Type": contentType },
+    });
+    if (!put.ok) throw new Error("Upload to storage failed");
+    await serverApi.post("builds/upload/finalize", {
+      filename: file.name,
+      content_type: contentType,
+      public_url: presign.public_url,
+      size_bytes: file.size,
+      build: Number(buildId),
+    });
+    blocker_attachment_url = presign.public_url;
+    blocker_attachment_name = file.name;
+  }
+
+  await serverApi.post("builds/section-reviews/upsert", {
+    build: Number(buildId),
+    section,
+    status,
+    blocker_note: blockerNote,
+    blocker_attachment_url,
+    blocker_attachment_name,
+  });
+  revalidatePath(`/builds/${buildId}`);
+}
+
 // ─── AI brief + meeting notes ────────────────────────────────────────────────
 export async function addMeetingNote(formData: FormData) {
   await requireUser();

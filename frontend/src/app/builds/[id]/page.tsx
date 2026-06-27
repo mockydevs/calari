@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft, ArrowRight, CalendarClock, FileText, GitBranch, Link2, MessageSquare, Plug,
+  AlertTriangle, ArrowLeft, ArrowRight, CalendarClock, FileText, GitBranch, Link2, MessageSquare, Plug,
   Plus, ShieldCheck, Sparkles, Tag, Workflow as WorkflowIcon, ListChecks, HelpCircle,
 } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
@@ -17,10 +17,11 @@ import { GapResolver } from "../gap-resolver";
 import { BuildDeleteButton, ConfirmDeleteButton } from "../build-row-actions";
 import { PortalLink } from "../portal-link";
 import { GenerateBriefButton } from "../generate-brief-button";
-import { HandoverButton } from "../handover-button";
+import { BuildDocumentButton, HandoverButton } from "../handover-button";
 import { MeetingNoteUpload } from "../meeting-note-upload";
 import { RunQaButton, GenerateSopButton } from "../ai-buttons";
 import { BlueprintEditor } from "../blueprint-editor";
+import { ImplementationWorkspace } from "../implementation-workspace";
 import { Tabs, TabPanel } from "../build-tabs";
 import {
   APPROVAL_TYPES, BUILD_STATUSES, BUILD_STATUS_LABEL, BuildStatusBadge, CHANGE_REQUEST_STATUSES,
@@ -91,6 +92,8 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   const resolvedGaps = gaps.filter((g) => g.status !== "OPEN");
   const changeRequests = build.change_requests ?? [];
   const approvals = build.approvals ?? [];
+  const sectionReviews = build.section_reviews ?? [];
+  const blockedSections = sectionReviews.filter((r) => r.status === "BLOCKED");
   const comments = build.comments ?? [];
   const documents = build.documents ?? [];
   const activities = build.activities ?? [];
@@ -256,6 +259,19 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
             </div>
           </Panel>
         </TabPanel>
+
+        {/* ── Build-out (the named system) ─────────────────────────── */}
+        {hasBlueprint && (
+          <TabPanel id="implementation" label="Implementation">
+            <Panel
+              title="Staff implementation workspace"
+              icon={<ListChecks className="h-4 w-4 text-pink-700" />}
+              action={<BuildDocumentButton buildId={id} title={build.title} />}
+            >
+              <ImplementationWorkspace build={build} buildId={id} notes={notes} />
+            </Panel>
+          </TabPanel>
+        )}
 
         {/* ── Build-out (the named system) ─────────────────────────── */}
         {hasBlueprint && (
@@ -548,6 +564,27 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
 
         {/* ── Activity (collaboration) ─────────────────────────────── */}
         <TabPanel id="activity" label="Activity">
+          {blockedSections.length > 0 && (
+            <Panel title="Section blockers" icon={<AlertTriangle className="h-4 w-4 text-red-600" />}>
+              <ul className="space-y-2">
+                {blockedSections.map((r) => (
+                  <li key={r.id} className="rounded-md border border-red-200 bg-red-50 p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold text-red-800">{r.section.replace(/_/g, " ")}</p>
+                      <span className="text-xs text-red-600">{r.blocked_by_name || "Staff"} · {r.blocked_at ? formatDate(r.blocked_at) : "Blocked"}</span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-red-800">{r.blocker_note}</p>
+                    {r.blocker_attachment_url && (
+                      <a href={r.blocker_attachment_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-red-700 underline">
+                        {r.blocker_attachment_name || "View attachment"}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+
           <Panel title="Change requests" icon={<MessageSquare className="h-4 w-4 text-pink-700" />}>
             {changeRequests.length === 0 ? <p className="text-sm text-slate-500">No change requests.</p> : (
               <ul className="space-y-2">{changeRequests.map((c) => (

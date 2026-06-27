@@ -23,7 +23,8 @@ from .models import (
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildStatus, StageTransition, Workflow, CustomField,
     TagDefinition, PreLaunchItem, VisionGap, GapStatus, Calendar, Integration,
-    ApprovalType, BuildKnowledge, AiConfig, AiGenerationLog,
+    ApprovalType, BuildKnowledge, AiConfig, AiGenerationLog, BuildSectionReview,
+    BuildSection, BuildSectionReviewStatus,
 )
 from .serializers import (
     BuildSerializer, BuildListSerializer, ContactSourceSerializer, PipelineStageSerializer,
@@ -34,6 +35,7 @@ from .serializers import (
     AiApiKeySerializer, TeamInviteSerializer, StageTransitionSerializer, WorkflowSerializer,
     CustomFieldSerializer, TagDefinitionSerializer, PreLaunchItemSerializer, VisionGapSerializer,
     CalendarSerializer, IntegrationSerializer, BuildKnowledgeSerializer, AiConfigSerializer,
+    BuildSectionReviewSerializer,
 )
 from . import services
 from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner
@@ -64,6 +66,8 @@ _PREF_MAP = {
     "READY_FOR_REVIEW": "ready_for_review",
     "CHANGES_REQUESTED": "ready_for_review",
     "DOCUMENT_UPLOADED": "document_uploaded",
+    "SECTION_BLOCKED": "change_requests",
+    "SECTION_DONE": "task_updated",
 }
 # Map builds notification types onto the email template's event_type styles.
 _EMAIL_EVENT_MAP = {
@@ -75,6 +79,8 @@ _EMAIL_EVENT_MAP = {
     "CHANGE_REQUEST": "blocker_added",
     "NEW_COMMENT": "comment_added",
     "DOCUMENT_UPLOADED": "comment_added",
+    "SECTION_BLOCKED": "blocker_added",
+    "SECTION_DONE": "task_status_changed",
 }
 
 
@@ -165,7 +171,8 @@ _DETAIL_PREFETCH = (
     "workflows", "custom_fields", "tags", "pre_launch_items", "gaps",
     "tasks__assignee", "documents__uploader", "comments__author",
     "change_requests__owner", "change_requests__created_by",
-    "approvals__approver", "memory_snapshots__created_by", "activities",
+    "approvals__approver", "section_reviews__completed_by", "section_reviews__blocked_by",
+    "memory_snapshots__created_by", "activities",
 )
 
 
@@ -674,6 +681,74 @@ class TaskDependencyViewSet(_BaseViewSet):
     queryset = TaskDependency.objects.all()
     serializer_class = TaskDependencySerializer
     filterset_fields = ["blocker", "blocked"]
+
+
+class BuildSectionReviewViewSet(_BaseViewSet):
+    queryset = BuildSectionReview.objects.select_related("build", "completed_by", "blocked_by").all()
+    serializer_class = BuildSectionReviewSerializer
+    filterset_fields = ["build", "section", "status"]
+
+    @action(detail=False, methods=["post"], url_path="upsert")
+    def upsert(self, request):
+        build = Build.objects.select_related("creator", "assignee").filter(pk=request.data.get("build")).first()
+        section = request.data.get("section")
+        status = request.data.get("status")
+        if not build or section not in BuildSection.values:
+            return Response({"error": "Valid build and section are required."}, status=http.HTTP_400_BAD_REQUEST)
+        if status not in BuildSectionReviewStatus.values:
+            return Response({"error": "Valid status is required."}, status=http.HTTP_400_BAD_REQUEST)
+        if not (_is_manager(request.user) or build.creator_id == request.user.id or build.assignee_id == request.user.id):
+            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
+        if status == BuildSectionReviewStatus.BLOCKED and not (request.data.get("blocker_note") or "").strip():
+            return Response({"error": "Blocker details are required."}, status=http.HTTP_400_BAD_REQUEST)
+
+        review, _ = BuildSectionReview.objects.get_or_create(build=build, section=section)
+        review.status = status
+        section_label = BuildSection(section).label
+        if status == BuildSectionReviewStatus.DONE:
+            review.blocker_note = ""
+            review.blocker_attachment_url = ""
+            review.blocker_attachment_name = ""
+            review.completed_by = request.user
+            review.completed_at = timezone.now()
+            review.blocked_by = None
+            review.blocked_at = None
+            message = f'{section_label} marked done.'
+            notify_type = "SECTION_DONE"
+            notify_user = build.creator if request.user != build.creator else build.assignee
+        elif status == BuildSectionReviewStatus.BLOCKED:
+            review.blocker_note = (request.data.get("blocker_note") or "").strip()
+            review.blocker_attachment_url = (request.data.get("blocker_attachment_url") or "").strip()
+            review.blocker_attachment_name = (request.data.get("blocker_attachment_name") or "").strip()
+            review.blocked_by = request.user
+            review.blocked_at = timezone.now()
+            review.completed_by = None
+            review.completed_at = None
+            message = f'{section_label} blocked: {review.blocker_note[:160]}'
+            notify_type = "SECTION_BLOCKED"
+            notify_user = build.creator if request.user != build.creator else build.assignee
+        else:
+            review.blocker_note = ""
+            review.blocker_attachment_url = ""
+            review.blocker_attachment_name = ""
+            review.completed_by = None
+            review.completed_at = None
+            review.blocked_by = None
+            review.blocked_at = None
+            message = f'{section_label} reset to to do.'
+            notify_type = "TASK_UPDATED"
+            notify_user = build.creator if request.user != build.creator else build.assignee
+        review.save()
+        _log(build, request.user, message)
+        _notify(
+            notify_user,
+            notify_type,
+            f'"{build.title}" — {message}',
+            f"/builds/{build.id}",
+            actor=request.user,
+            build_name=build.title,
+        )
+        return Response(BuildSectionReviewSerializer(review).data)
 
 
 # ─── Vision blueprint sub-resources ───────────────────────────────────────────

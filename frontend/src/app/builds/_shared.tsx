@@ -179,6 +179,30 @@ export const MEETING_NOTE_KIND_LABEL: Record<string, string> = {
   change_request: "Client-requested update", other: "Note",
 };
 export interface MemorySnapshot { id: number; summary: string; scope_changes: string; created_by_name?: string; created_by_ai: boolean; created_at: string }
+export type BuildSectionKey =
+  | "PIPELINE"
+  | "AUTOMATIONS"
+  | "LEAD_SOURCES"
+  | "CALENDARS"
+  | "INTEGRATIONS"
+  | "FIELDS_TAGS"
+  | "FORMS_PAYMENTS"
+  | "REPORTING_LAUNCH";
+export type BuildSectionReviewStatus = "TODO" | "DONE" | "BLOCKED";
+export interface BuildSectionReview {
+  id: number;
+  build: number;
+  section: BuildSectionKey;
+  status: BuildSectionReviewStatus;
+  blocker_note: string;
+  blocker_attachment_url: string;
+  blocker_attachment_name: string;
+  completed_by_name?: string | null;
+  blocked_by_name?: string | null;
+  completed_at: string | null;
+  blocked_at: string | null;
+  updated_at: string;
+}
 
 export const CHANGE_REQUEST_STATUSES = ["PENDING", "APPROVED", "REJECTED", "IMPLEMENTED"] as const;
 export const APPROVAL_TYPES = ["BRIEF", "CHANGE_REQUEST", "DELIVERY", "CLIENT"] as const;
@@ -207,6 +231,7 @@ export interface BuildDetail extends BuildRow {
   comments?: BuildComment[];
   change_requests?: ChangeRequest[];
   approvals?: Approval[];
+  section_reviews?: BuildSectionReview[];
   activities?: BuildActivity[];
   memory_snapshots?: MemorySnapshot[];
 }
