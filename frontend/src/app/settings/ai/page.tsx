@@ -1,7 +1,7 @@
 import { Bot, CheckCircle2, KeyRound, Plus, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { createApiKey, activateApiKey, deleteApiKey, updateAiConfig } from "./actions";
+import { createApiKey, activateApiKey, deleteApiKey, renameApiKey, updateAiConfig } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -239,6 +239,14 @@ export default async function AiSettingsPage() {
                                     <Button size="sm" variant="outline">Activate</Button>
                                   </form>
                                 )}
+                                <details className="relative">
+                                  <summary className="inline-flex h-8 cursor-pointer list-none items-center rounded-md border border-slate-200 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Rename</summary>
+                                  <form action={renameApiKey} className="absolute right-0 z-10 mt-1 flex w-60 items-center gap-1.5 rounded-md border border-slate-200 bg-white p-2 shadow-md">
+                                    <input type="hidden" name="id" value={key.id} />
+                                    <input name="label" defaultValue={key.label} className="h-8 w-full rounded-md border border-slate-200 px-2 text-sm outline-none focus:border-pink-400" />
+                                    <Button type="submit" size="sm">Save</Button>
+                                  </form>
+                                </details>
                                 <form action={deleteApiKey}>
                                   <input type="hidden" name="id" value={key.id} />
                                   <button

@@ -5,6 +5,8 @@ import { Upload } from "lucide-react";
 import { api, ApiError } from "@/lib/portal/api";
 import { useToast, Spinner } from "@/components/toast";
 
+const MAX_UPLOAD_MB = 25;
+
 /** Multipart upload to a Django FileField endpoint (project-files / task-files). */
 export function FileUpload({ endpoint, fkField, fkValue }: { endpoint: string; fkField: string; fkValue: number | string }) {
   const router = useRouter();
@@ -15,6 +17,11 @@ export function FileUpload({ endpoint, fkField, fkValue }: { endpoint: string; f
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      toast.error(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is ${MAX_UPLOAD_MB} MB.`, "File too large");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     try {
       const fd = new FormData();
@@ -43,6 +50,7 @@ export function FileUpload({ endpoint, fkField, fkValue }: { endpoint: string; f
       >
         {busy ? <Spinner className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />} {busy ? "Uploading…" : "Upload file"}
       </button>
+      <span className="ml-2 text-xs text-slate-400">Max {MAX_UPLOAD_MB} MB</span>
     </>
   );
 }

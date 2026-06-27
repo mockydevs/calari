@@ -34,6 +34,17 @@ export async function deleteApiKey(formData: FormData) {
   revalidatePath("/settings/ai");
 }
 
+export async function renameApiKey(formData: FormData) {
+  await requireFeature("ai_keys");
+  const id = String(formData.get("id") ?? "");
+  const label = String(formData.get("label") ?? "").trim();
+  if (!id || !label) throw new Error("Label is required");
+  // Only the label is editable — the secret itself is never re-shown; rotate by
+  // adding a new key and deleting the old one.
+  await serverApi.patch(`builds/ai-keys/${id}`, { label });
+  revalidatePath("/settings/ai");
+}
+
 export async function updateAiConfig(formData: FormData) {
   await requireFeature("ai_keys");
   // Which provider + model the AI generation uses (the active key within that
