@@ -64,6 +64,38 @@ def remove_knowledge_chunks(knowledge_id):
     services.delete_knowledge_chunks(knowledge_id)
 
 
+@shared_task
+def notify_due_builds():
+    """Daily SLA watcher: notify the assignee (and creator) about builds that are overdue
+    or due within 2 days. Skips delivered builds. Nothing watched due dates before —
+    builds just sat past their due_date silently."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from .views import _notify          # lazy import — avoids an import cycle
+    from .models import BuildStatus
+
+    now = timezone.now()
+    soon = now + timedelta(days=2)
+    active = (Build.objects.filter(due_date__isnull=False)
+              .exclude(status=BuildStatus.DELIVERED)
+              .select_related("assignee", "creator"))
+
+    overdue = list(active.filter(due_date__lt=now))
+    upcoming = list(active.filter(due_date__gte=now, due_date__lte=soon))
+
+    for b in overdue:
+        days = max(1, (now - b.due_date).days)
+        msg = f'Build "{b.title}" is overdue by {days} day{"s" if days != 1 else ""}.'
+        _notify(b.assignee, "BUILD_OVERDUE", msg, f"/builds/{b.id}", build_name=b.title)
+        if b.creator_id and b.creator_id != b.assignee_id:
+            _notify(b.creator, "BUILD_OVERDUE", msg, f"/builds/{b.id}", build_name=b.title)
+    for b in upcoming:
+        msg = f'Build "{b.title}" is due {b.due_date.strftime("%b %d")}.'
+        _notify(b.assignee, "BUILD_DUE_SOON", msg, f"/builds/{b.id}", build_name=b.title)
+
+    return {"overdue": len(overdue), "due_soon": len(upcoming)}
+
+
 @shared_task(bind=True, max_retries=1, default_retry_delay=20)
 def enrich_knowledge(self, knowledge_id):
     """AI-enrich a Build Library doc on upload: fill the retrieval summary + structured

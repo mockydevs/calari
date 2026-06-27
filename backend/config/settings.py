@@ -452,6 +452,17 @@ CHANNEL_LAYERS = {
 
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
 
+# Periodic tasks. DatabaseScheduler syncs these into django_celery_beat's tables on beat
+# startup, so they run without manual admin setup. Times are in CELERY_TIMEZONE.
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    "notify-due-builds": {
+        "task": "builds.tasks.notify_due_builds",
+        "schedule": crontab(hour=7, minute=0),  # daily 07:00 — SLA watcher (overdue / due-soon)
+    },
+}
+
 CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 # When no Celery worker is running (typical in dev), run tasks in-process so
