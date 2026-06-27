@@ -920,10 +920,13 @@ class TeamInviteViewSet(viewsets.ModelViewSet):
             token_hash=hashlib.sha256(token.encode()).hexdigest(),
             expires_at=timezone.now() + timezone.timedelta(days=7),
         )
+        self._send_invite_email(invite, token)
+
+    def _send_invite_email(self, invite, token):
+        """Email the signup link via Celery so the API response never blocks on SMTP."""
         frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
         signup_url = f"{frontend}/signup/{token}"
         inviter = self.request.user.get_full_name() or self.request.user.username
-        # Dispatch via Celery so the API response doesn't block on SMTP.
         try:
             send_notification_email.delay(
                 recipient_email=invite.email,
@@ -941,6 +944,21 @@ class TeamInviteViewSet(viewsets.ModelViewSet):
             )
         except Exception:
             pass
+
+    @action(detail=True, methods=["post"], url_path="resend")
+    def resend(self, request, pk=None):
+        """Re-issue a fresh token + 7-day expiry and re-send the invite email.
+        Rotating the token invalidates any previously emailed link."""
+        import hashlib
+        invite = self.get_object()
+        if invite.accepted_at:
+            return Response({"detail": "This invite was already accepted."}, status=http.HTTP_400_BAD_REQUEST)
+        token = secrets.token_urlsafe(24)
+        invite.token_hash = hashlib.sha256(token.encode()).hexdigest()
+        invite.expires_at = timezone.now() + timezone.timedelta(days=7)
+        invite.save(update_fields=["token_hash", "expires_at"])
+        self._send_invite_email(invite, token)
+        return Response({"ok": True})
 
 
 # ─── Public client portal (token-based, no auth) ──────────────────────────────

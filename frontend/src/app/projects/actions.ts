@@ -111,6 +111,16 @@ export async function resolveBlocker(formData: FormData) {
   revalidatePath(`/projects/${projectId}`);
 }
 
+export async function updateBlocker(formData: FormData) {
+  await requireUser();
+  const id = str(formData.get("id"));
+  const projectId = str(formData.get("projectId"));
+  const description = str(formData.get("description"));
+  if (!id || !description) throw new Error("Blocker description is required");
+  await serverApi.patch(`projects/project-blockers/${id}`, { description });
+  revalidatePath(`/projects/${projectId}`);
+}
+
 // ─── Contacts ────────────────────────────────────────────────────────────────
 export async function addContact(formData: FormData) {
   await requireUser();
@@ -119,6 +129,21 @@ export async function addContact(formData: FormData) {
   if (!projectId || !name) throw new Error("Contact name is required");
   await serverApi.post("projects/project-contacts", {
     project: Number(projectId),
+    name,
+    email: str(formData.get("email")),
+    phone_number: str(formData.get("phone_number")),
+    role: str(formData.get("role")),
+  });
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function updateContact(formData: FormData) {
+  await requireUser();
+  const id = str(formData.get("id"));
+  const projectId = str(formData.get("projectId"));
+  const name = str(formData.get("name"));
+  if (!id || !name) throw new Error("Contact name is required");
+  await serverApi.patch(`projects/project-contacts/${id}`, {
     name,
     email: str(formData.get("email")),
     phone_number: str(formData.get("phone_number")),

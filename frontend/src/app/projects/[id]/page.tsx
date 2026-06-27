@@ -11,9 +11,10 @@ import {
 import { ProjectFormButton, type Option } from "../project-form";
 import { ProjectDeleteButton } from "../project-delete-button";
 import { FileUpload } from "../file-upload";
+import { ContactItem, BlockerItem } from "../contact-blocker-edit";
 import {
-  addBlocker, addCoAssignment, addContact, addMilestone, completeMilestone, deleteContact,
-  deleteMilestone, removeCoAssignment, resolveBlocker,
+  addBlocker, addCoAssignment, addContact, addMilestone, completeMilestone,
+  deleteMilestone, removeCoAssignment,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -180,20 +181,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             ) : (
               <ul className="divide-y divide-slate-100">
                 {project.contacts!.map((c) => (
-                  <li key={c.id} className="flex items-start justify-between gap-2 py-2 text-sm">
-                    <div>
-                      <span className="font-medium text-slate-800">{c.name}</span>
-                      {c.role && <span className="text-slate-500"> · {c.role}</span>}
-                      <span className="block text-xs text-slate-400">{c.email}{c.phone_number ? ` · ${c.phone_number}` : ""}</span>
-                    </div>
-                    {isAdmin && (
-                      <form action={deleteContact}>
-                        <input type="hidden" name="id" value={c.id} />
-                        <input type="hidden" name="projectId" value={id} />
-                        <button className={iconBtn} aria-label="Delete contact"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </form>
-                    )}
-                  </li>
+                  <ContactItem key={c.id} contact={c} projectId={id} isAdmin={isAdmin} />
                 ))}
               </ul>
             )}
@@ -233,14 +221,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             ) : (
               <ul className="space-y-2">
                 {project.blockers!.filter((b) => !b.resolved).map((b) => (
-                  <li key={b.id} className="flex items-start justify-between gap-2 rounded-md bg-red-50 p-2.5 text-sm text-red-800">
-                    <span>{b.description}</span>
-                    <form action={resolveBlocker}>
-                      <input type="hidden" name="id" value={b.id} />
-                      <input type="hidden" name="projectId" value={id} />
-                      <button className="shrink-0 rounded px-1.5 text-xs font-semibold text-red-700 hover:bg-red-100" aria-label="Resolve blocker">Resolve</button>
-                    </form>
-                  </li>
+                  <BlockerItem key={b.id} blocker={b} projectId={id} />
                 ))}
               </ul>
             )}

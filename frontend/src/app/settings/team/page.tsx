@@ -1,7 +1,7 @@
-import { Clock, MailPlus, Trash2, UserCheck, Users } from "lucide-react";
+import { Clock, MailPlus, Send, Trash2, UserCheck, Users } from "lucide-react";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { approveUser, cancelInvite, deactivateUser } from "./actions";
+import { approveUser, cancelInvite, deactivateUser, resendInvite } from "./actions";
 import { InviteForm } from "./invite-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -131,10 +131,16 @@ export default async function TeamPage() {
                         <td className="px-5 py-3.5 capitalize text-slate-600">{inv.role}</td>
                         <td className="px-5 py-3.5 text-slate-500">{formatDate(inv.expires_at)}</td>
                         <td className="px-5 py-3.5">
-                          <form action={cancelInvite}>
-                            <input type="hidden" name="id" value={inv.id} />
-                            <button className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600" aria-label="Cancel invite"><Trash2 className="h-4 w-4" /></button>
-                          </form>
+                          <div className="flex items-center gap-1">
+                            <form action={resendInvite}>
+                              <input type="hidden" name="id" value={inv.id} />
+                              <button className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-pink-700 transition-colors hover:bg-pink-50" aria-label="Resend invite"><Send className="h-3.5 w-3.5" /> Resend</button>
+                            </form>
+                            <form action={cancelInvite}>
+                              <input type="hidden" name="id" value={inv.id} />
+                              <button className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600" aria-label="Cancel invite"><Trash2 className="h-4 w-4" /></button>
+                            </form>
+                          </div>
                         </td>
                       </tr>
                     ))}

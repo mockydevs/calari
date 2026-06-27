@@ -39,3 +39,12 @@ export async function cancelInvite(formData: FormData) {
   await serverApi.del(`builds/team-invites/${id}`);
   revalidatePath("/settings/team");
 }
+
+export async function resendInvite(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) throw new Error("Invite id is required");
+  // Rotates the token + 7-day expiry and re-emails the signup link.
+  await serverApi.post(`builds/team-invites/${id}/resend`, {});
+  revalidatePath("/settings/team");
+}
