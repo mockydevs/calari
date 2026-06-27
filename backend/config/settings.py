@@ -102,6 +102,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',  # required by vectorstore's HnswIndex (postgres.E005)
 
     'channels',
     'corsheaders',
@@ -358,7 +359,14 @@ SIMPLE_JWT = {
 
 SESSION_COOKIE_SECURE = str_to_bool(os.getenv("SESSION_COOKIE_SECURE", str((not DEBUG and not IS_TESTING)).lower()))
 CSRF_COOKIE_SECURE = str_to_bool(os.getenv("CSRF_COOKIE_SECURE", str((not DEBUG and not IS_TESTING)).lower()))
-SECURE_SSL_REDIRECT = str_to_bool(os.getenv("SECURE_SSL_REDIRECT", str((not DEBUG and not IS_TESTING)).lower()))
+# Behind Coolify/Traefik, TLS terminates at the edge and the proxy forwards plain HTTP
+# (X-Forwarded-Proto tells us the original scheme). Trust that header so request.is_secure()
+# is correct for proxied HTTPS traffic.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# App-level HTTP->HTTPS redirect MUST default OFF here: the edge already enforces HTTPS,
+# and internal service-to-service calls (the frontend BFF -> http://backend:8000) carry no
+# X-Forwarded-Proto, so an app redirect 301s every internal request and breaks login/API.
+SECURE_SSL_REDIRECT = str_to_bool(os.getenv("SECURE_SSL_REDIRECT", "False"))
 SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000" if (not DEBUG and not IS_TESTING) else "0"))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = str_to_bool(os.getenv("SECURE_HSTS_INCLUDE_SUBDOMAINS", "True"))
 SECURE_HSTS_PRELOAD = str_to_bool(os.getenv("SECURE_HSTS_PRELOAD", str((not DEBUG and not IS_TESTING)).lower()))
