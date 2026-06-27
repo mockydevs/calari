@@ -42,6 +42,12 @@ export default async function ClientsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
         <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
+          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+              <Users className="h-4 w-4 text-pink-700" /> All clients
+            </h2>
+            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">{clients.length}</span>
+          </div>
           {clients.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100">
@@ -53,15 +59,10 @@ export default async function ClientsPage() {
               </p>
             </div>
           ) : (
-            <div className="text-sm">
-              <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <span>Name</span><span>Company</span><span>Email</span><span className="text-right">Actions</span>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {clients.map((client) => (
-                  <ClientRow key={client.id} client={client} />
-                ))}
-              </div>
+            <div className="divide-y divide-slate-100">
+              {clients.map((client) => (
+                <ClientRow key={client.id} client={client} />
+              ))}
             </div>
           )}
         </div>
