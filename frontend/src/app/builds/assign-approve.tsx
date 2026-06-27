@@ -38,6 +38,12 @@ export function AssignApprove({
       );
       return;
     }
+    // Re-assigning to the current assignee is a no-op — say so instead of calling the server.
+    if (kind === "assign" && assignee === defaultAssigneeId) {
+      const name = members.find((m) => String(m.id) === assignee)?.name ?? "That member";
+      toast.info(`${name} is already assigned to this build.`);
+      return;
+    }
     setMode(kind);
     start(async () => {
       try {

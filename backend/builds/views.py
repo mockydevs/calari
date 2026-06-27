@@ -162,6 +162,17 @@ def _notify(user, type_, message, link, actor=None, build_name=""):
         pass  # never let email failures break the request
 
 
+def _notify_doc_updated(build, actor, verb):
+    """Tell the assigned staff member their build document changed (so they don't work
+    off a stale copy). Skipped when there's no assignee or they made the change."""
+    if build.assignee_id and build.assignee_id != getattr(actor, "id", None):
+        _notify(
+            build.assignee, "DOCUMENT_UPLOADED",
+            f"Implementation build document {verb} for {build.title}.",
+            f"/builds/{build.id}", actor=actor, build_name=build.title,
+        )
+
+
 def _501(exc):
     return Response({"error": str(exc)}, status=http.HTTP_501_NOT_IMPLEMENTED)
 
@@ -393,6 +404,7 @@ class BuildViewSet(viewsets.ModelViewSet):
             build.build_document_at = timezone.now()
             build.save(update_fields=["build_document", "build_document_at", "updated_at"])
             _log(build, request.user, "Build document edited.")
+            _notify_doc_updated(build, request.user, "edited")
             return Response({"markdown": build.build_document, "generated_at": build.build_document_at})
 
         if _ai_doc_rate_limited(request.user, build.pk, "build_document"):
@@ -409,6 +421,7 @@ class BuildViewSet(viewsets.ModelViewSet):
         build.build_document = markdown
         build.build_document_at = timezone.now()
         build.save(update_fields=["build_document", "build_document_at", "updated_at"])
+        _notify_doc_updated(build, request.user, "regenerated")
         return Response({"markdown": markdown, "generated_at": build.build_document_at})
 
     @action(detail=True, methods=["post"], url_path="client-handover")
