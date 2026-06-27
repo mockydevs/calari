@@ -58,6 +58,7 @@ from .serializers import (
 from .tasks import send_notification_email
 from .permissions import (
     IsManagerOrProjectMember, IsManagerOrTaskOwner, IsManagerOrReadOnly,
+    IsManagerOrRelatedProjectMember, IsManagerOrRelatedTaskOwner,
 )
 
 # Use IsAuthenticated always (security-first; DEBUG open-access removed)
@@ -304,7 +305,7 @@ def project_progress(request, pk):
 class ProjectFilesViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = ProjectFiles.objects.select_related('project', 'uploaded_by').all()
     serializer_class = ProjectFilesSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedProjectMember]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['project', 'uploaded_by']
     search_fields = ['file_name', 'project__name']
@@ -330,7 +331,7 @@ class ProjectFilesViewSet(FileUploadMixin, viewsets.ModelViewSet):
 class ProjectContactPersonViewSet(viewsets.ModelViewSet):
     queryset = ProjectContactPerson.objects.select_related('project').all()
     serializer_class = ProjectContactPersonSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedProjectMember]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['project']
     search_fields = ['name', 'email', 'role', 'project__name']
@@ -352,7 +353,7 @@ class ProjectContactPersonViewSet(viewsets.ModelViewSet):
 class ProjectBlockersViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = projectBlockers.objects.select_related('project', 'reported_by', 'resolved_by').all()
     serializer_class = ProjectBlockersSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedProjectMember]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['project', 'resolved', 'reported_by', 'resolved_by']
     search_fields = ['description', 'project__name', 'reported_by__username']
@@ -407,7 +408,7 @@ class ProjectBlockersViewSet(FileUploadMixin, viewsets.ModelViewSet):
 class ProjectCoAssignmentViewSet(viewsets.ModelViewSet):
     queryset = ProjectCoAssignment.objects.select_related('project', 'user', 'assigned_by').all()
     serializer_class = ProjectCoAssignmentSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedProjectMember]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['project', 'user', 'role']
     search_fields = ['user__username', 'user__full_name', 'project__name']
@@ -455,7 +456,7 @@ class ProjectCoAssignmentViewSet(viewsets.ModelViewSet):
 class ProjectMilestoneViewSet(viewsets.ModelViewSet):
     queryset = ProjectMilestone.objects.select_related('project', 'created_by').all()
     serializer_class = ProjectMilestoneSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedProjectMember]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['project', 'completed']
     search_fields = ['name', 'project__name']
@@ -675,7 +676,7 @@ class TasksViewSet(viewsets.ModelViewSet):
 class TaskFilesViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = TaskFiles.objects.select_related('task', 'uploaded_by').all()
     serializer_class = TaskFilesSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedTaskOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['task', 'uploaded_by']
     search_fields = ['file_name', 'task__name']
@@ -701,7 +702,7 @@ class TaskFilesViewSet(FileUploadMixin, viewsets.ModelViewSet):
 class TaskBlockersViewSet(FileUploadMixin, viewsets.ModelViewSet):
     queryset = TaskBlockers.objects.select_related('task', 'reported_by', 'resolved_by').all()
     serializer_class = TaskBlockersSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedTaskOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['task', 'resolved', 'reported_by']
     search_fields = ['description', 'task__name']
@@ -755,7 +756,7 @@ class TaskBlockersViewSet(FileUploadMixin, viewsets.ModelViewSet):
 class TaskCommentViewSet(viewsets.ModelViewSet):
     queryset = TaskComment.objects.select_related('task', 'author').all()
     serializer_class = TaskCommentSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedTaskOwner]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['task', 'author']
     ordering_fields = ['created_at']
@@ -796,7 +797,7 @@ class TaskCommentViewSet(viewsets.ModelViewSet):
 class TaskChecklistViewSet(viewsets.ModelViewSet):
     queryset = TaskChecklist.objects.select_related('task', 'completed_by').all()
     serializer_class = TaskChecklistSerializer
-    permission_classes = _PERMISSIONS
+    permission_classes = [IsManagerOrRelatedTaskOwner]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['task', 'completed']
     ordering_fields = ['order', 'id']

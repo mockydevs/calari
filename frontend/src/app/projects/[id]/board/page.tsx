@@ -53,11 +53,13 @@ export default function ProjectBoardPage() {
   }, [id]);
 
   React.useEffect(() => {
-    void load();
-    // Assignee options (admins only; members get an empty list — that's fine).
-    api.get<UserOpt[] | { results: UserOpt[] }>("auth/users")
-      .then((r) => setUsers(Array.isArray(r) ? r : r.results ?? []))
-      .catch(() => setUsers([]));
+    queueMicrotask(() => {
+      void load();
+      // Assignee options (admins only; members get an empty list — that's fine).
+      api.get<UserOpt[] | { results: UserOpt[] }>("auth/users")
+        .then((r) => setUsers(Array.isArray(r) ? r : r.results ?? []))
+        .catch(() => setUsers([]));
+    });
   }, [load]);
 
   async function createTask(e: React.FormEvent<HTMLFormElement>) {

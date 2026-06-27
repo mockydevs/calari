@@ -443,6 +443,9 @@ class NotificationPreference(models.Model):
     change_requests = models.BooleanField(default=True)
     ready_for_review = models.BooleanField(default=True)
     document_uploaded = models.BooleanField(default=True)
+    # Master switch for email alerts (the per-type flags above gate the in-app item;
+    # this additionally gates whether an email is sent). On by default.
+    email_notifications = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

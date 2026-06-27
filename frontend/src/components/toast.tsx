@@ -111,8 +111,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         });
       },
     };
-    // `id` referenced inside confirm is created by show(); the closure captures it after assignment.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, dismiss]);
 
   return (

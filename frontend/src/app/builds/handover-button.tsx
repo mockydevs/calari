@@ -28,7 +28,7 @@ function MarkdownDocButton({
     if (markdown !== null) { setMarkdown(null); return; }
     setBusy(true);
     try {
-      const res = await api.get<{ markdown: string }>(`builds/builds/${buildId}/${endpoint}`);
+      const res = await api.post<{ markdown: string }>(`builds/builds/${buildId}/${endpoint}`, {});
       setMarkdown(res.markdown || `_${fallback}_`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not load the document.");

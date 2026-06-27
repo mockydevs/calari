@@ -16,6 +16,26 @@ def is_manager(user):
     )
 
 
+def has_feature(user, key):
+    return bool(user and user.is_authenticated and hasattr(user, "has_feature") and user.has_feature(key))
+
+
+def can_manage_project(user, project):
+    return is_manager(user) or _is_project_member(user, project)
+
+
+def can_manage_task(user, task):
+    if task is None:
+        return False
+    uid = user.id
+    return (
+        is_manager(user)
+        or task.assigned_to_id == uid
+        or task.created_by_id == uid
+        or _is_project_member(user, task.project)
+    )
+
+
 class IsManagerOrProjectMember(BasePermission):
     """Project writes require a manager, the assignee, or a co-assignee."""
 
@@ -56,7 +76,51 @@ class IsManagerOrReadOnly(BasePermission):
         if request.method in SAFE_METHODS or is_manager(user):
             return True
         feature = getattr(view, "write_feature", None)
-        return bool(feature and hasattr(user, "has_feature") and user.has_feature(feature))
+        return bool(feature and has_feature(user, feature))
+
+
+class IsManagerOrRelatedProjectMember(BasePermission):
+    """Project child writes require a manager, project assignee, or co-assignee."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        project_id = request.data.get("project")
+        if not project_id:
+            return True
+        from .models import Projects
+        project = Projects.objects.filter(pk=project_id).first()
+        return can_manage_project(user, project)
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
+        return can_manage_project(request.user, _project_for_object(obj))
+
+
+class IsManagerOrRelatedTaskOwner(BasePermission):
+    """Task child writes require a manager, task owner, or project member."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        task_id = request.data.get("task")
+        if not task_id:
+            return True
+        from .models import Tasks
+        task = Tasks.objects.select_related("project").filter(pk=task_id).first()
+        return can_manage_task(user, task)
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
+        return can_manage_task(request.user, _task_for_object(obj))
 
 
 def _is_project_member(user, project):
@@ -65,3 +129,17 @@ def _is_project_member(user, project):
     if project.assigned_to_id == user.id:
         return True
     return project.co_assignments.filter(user_id=user.id).exists()
+
+
+def _project_for_object(obj):
+    if hasattr(obj, "project"):
+        return obj.project
+    if hasattr(obj, "task") and obj.task:
+        return obj.task.project
+    return None
+
+
+def _task_for_object(obj):
+    if hasattr(obj, "task"):
+        return obj.task
+    return None

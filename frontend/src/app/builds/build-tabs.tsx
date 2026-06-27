@@ -5,7 +5,8 @@ import * as React from "react";
 type PanelProps = { id: string; label: string; count?: number; children: React.ReactNode };
 
 /** Marker only — actual rendering is controlled by <Tabs>. */
-export function TabPanel(_props: PanelProps) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function TabPanel(_: PanelProps) {
   return null;
 }
 

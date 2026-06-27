@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { List, Plus } from "lucide-react";
+import { List } from "lucide-react";
 import { api } from "@/lib/portal/api";
 import { BUILD_STATUSES, BUILD_STATUS_LABEL, type BuildRow, type BuildStatus } from "../_shared";
 
@@ -34,7 +34,9 @@ export default function BuildsBoardPage() {
     }
   }, []);
   React.useEffect(() => {
-    void load();
+    queueMicrotask(() => {
+      void load();
+    });
   }, [load]);
 
   async function move(id: number, from: BuildStatus, to: BuildStatus) {

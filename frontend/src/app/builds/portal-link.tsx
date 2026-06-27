@@ -7,11 +7,9 @@ import { Copy, ExternalLink, Check } from "lucide-react";
  * whatever host the staff member is on. */
 export function PortalLink({ token }: { token: string }) {
   const [copied, setCopied] = React.useState(false);
-  const [url, setUrl] = React.useState(`/portal/${token}`);
-
-  React.useEffect(() => {
-    setUrl(`${window.location.origin}/portal/${token}`);
-  }, [token]);
+  const [url] = React.useState(() =>
+    typeof window === "undefined" ? `/portal/${token}` : `${window.location.origin}/portal/${token}`,
+  );
 
   async function copy() {
     try {

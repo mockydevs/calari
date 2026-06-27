@@ -28,7 +28,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     if (!STRIP.has(key.toLowerCase())) fwd.set(key, value);
   });
 
-  let { access, refresh } = await getTokens();
+  const tokens = await getTokens();
+  let access = tokens.access;
+  const refresh = tokens.refresh;
 
   const doFetch = (token?: string) =>
     fetch(target, {

@@ -4,6 +4,7 @@ from datetime import date
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Count, Sum, Avg, Q
@@ -49,6 +50,24 @@ def _is_manager(user):
     return bool(user and (user.is_superuser or getattr(user, "role", None) in ("superuser", "admin")))
 
 
+def _has_feature(user, feature):
+    return bool(user and user.is_authenticated and hasattr(user, "has_feature") and user.has_feature(feature))
+
+
+def _can_manage_ai_keys(user):
+    return _is_manager(user) or _has_feature(user, "ai_keys")
+
+
+class IsManagerPermission(IsAuthenticated):
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and _is_manager(request.user)
+
+
+class IsAiKeyManager(IsAuthenticated):
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and _can_manage_ai_keys(request.user)
+
+
 def _can_manage_build(user, build):
     return bool(
         build
@@ -91,6 +110,7 @@ _PREF_MAP = {
     "DOCUMENT_UPLOADED": "document_uploaded",
     "SECTION_BLOCKED": "change_requests",
     "SECTION_DONE": "task_updated",
+    "NEW_COMMENT": "document_uploaded",
 }
 # Map builds notification types onto the email template's event_type styles.
 _EMAIL_EVENT_MAP = {
@@ -101,6 +121,7 @@ _EMAIL_EVENT_MAP = {
     "CHANGES_REQUESTED": "project_status_changed",
     "CHANGE_REQUEST": "blocker_added",
     "NEW_COMMENT": "comment_added",
+    "MEETING_NOTE_ADDED": "comment_added",
     "DOCUMENT_UPLOADED": "comment_added",
     "SECTION_BLOCKED": "blocker_added",
     "SECTION_DONE": "task_status_changed",
@@ -108,7 +129,8 @@ _EMAIL_EVENT_MAP = {
 
 
 def _notify(user, type_, message, link, actor=None, build_name=""):
-    """Create an in-app notification AND send a templated email, honoring prefs."""
+    """Create an in-app notification AND (unless the user muted email) send a templated
+    email, honoring per-type + email preferences."""
     if not user:
         return
     pref = getattr(user, "notification_preference", None)
@@ -118,6 +140,8 @@ def _notify(user, type_, message, link, actor=None, build_name=""):
 
     if not getattr(user, "email", None):
         return
+    if pref and not getattr(pref, "email_notifications", True):
+        return  # user muted email alerts (in-app notification still created above)
     frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
     try:
         send_notification_email.delay(
@@ -185,12 +209,25 @@ def _build_quality(build):
             else:
                 human += 1
     kept = ai - edited
+    gap_relation = getattr(build, "vision_gaps", None)
+    gaps_total = gap_relation.count() if gap_relation is not None else 0
+    gaps_resolved = gap_relation.filter(resolved=True).count() if gap_relation is not None else 0
     return {
         "ai_items": ai, "edited": edited, "human_added": human, "kept": kept,
         "kept_pct": round(kept * 100 / ai) if ai else 0,
         "items_total": build.action_items.count(),
         "items_superseded": build.action_items.filter(superseded=True).count(),
+        "gaps_total": gaps_total,
+        "gaps_resolved": gaps_resolved,
     }
+
+
+def _ai_doc_rate_limited(user, build_id, op, *, window=60):
+    key = f"ai-doc-rate:{op}:{build_id}:{user.id}"
+    if cache.get(key):
+        return True
+    cache.set(key, True, window)
+    return False
 
 
 def _dispatch_async(task_fn, *args):
@@ -334,7 +371,7 @@ class BuildViewSet(viewsets.ModelViewSet):
         done = build.tasks.filter(status="DONE").count()
         return Response({"total": total, "done": done, "percent": round(done * 100 / total) if total else 0})
 
-    @action(detail=True, methods=["get"], url_path="build-document")
+    @action(detail=True, methods=["post"], url_path="build-document")
     def build_document(self, request, pk=None):
         """Generate the long-form, step-by-step GHL IMPLEMENTATION build document (markdown).
 
@@ -343,21 +380,43 @@ class BuildViewSet(viewsets.ModelViewSet):
         learning loop.
         """
         build = self._detail_queryset().get(pk=self.get_object().pk)
+        cache_key = f"build-document:{build.pk}:{build.updated_at.timestamp()}"
+        cached = cache.get(cache_key)
+        if cached:
+            return Response({"markdown": cached, "cached": True})
+        if _ai_doc_rate_limited(request.user, build.pk, "build_document"):
+            return Response(
+                {"error": "Build document generation was just requested. Try again shortly."},
+                status=http.HTTP_429_TOO_MANY_REQUESTS,
+            )
         try:
             markdown = services.generate_build_document(build)
         except Exception:  # noqa: BLE001 — never 500 the request; return a soft message
             markdown = "_The build document could not be generated yet._"
+        else:
+            cache.set(cache_key, markdown, 3600)
         return Response({"markdown": markdown})
 
-    @action(detail=True, methods=["get"], url_path="client-handover")
+    @action(detail=True, methods=["post"], url_path="client-handover")
     def client_handover(self, request, pk=None):
         """Generate the CLIENT-FACING handover document (markdown) from the build's
         tasklist, meeting notes, and progress history. Meant for end-of-build delivery."""
         build = self._detail_queryset().get(pk=self.get_object().pk)
+        cache_key = f"client-handover:{build.pk}:{build.updated_at.timestamp()}"
+        cached = cache.get(cache_key)
+        if cached:
+            return Response({"markdown": cached, "cached": True})
+        if _ai_doc_rate_limited(request.user, build.pk, "client_handover"):
+            return Response(
+                {"error": "Client handover generation was just requested. Try again shortly."},
+                status=http.HTTP_429_TOO_MANY_REQUESTS,
+            )
         try:
             markdown = services.generate_client_handover(build)
         except Exception:  # noqa: BLE001
             markdown = "_The client handover could not be generated yet._"
+        else:
+            cache.set(cache_key, markdown, 3600)
         return Response({"markdown": markdown})
 
     @action(detail=True, methods=["post"], url_path="report-progress")
@@ -1162,14 +1221,11 @@ def notification_preferences(request):
 class AiApiKeyViewSet(viewsets.ModelViewSet):
     queryset = AiApiKey.objects.all()
     serializer_class = AiApiKeySerializer
-    permission_classes = PERMS
+    permission_classes = [IsAiKeyManager]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["provider", "active"]
 
     def create(self, request, *args, **kwargs):
-        u = request.user
-        if not (_is_manager(u) or (hasattr(u, "has_feature") and u.has_feature("ai_keys"))):
-            return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
         ser = self.get_serializer(data=request.data)
         ser.is_valid(raise_exception=True)
         plain = ser.validated_data.pop("api_key", "")
@@ -1196,7 +1252,7 @@ class AiApiKeyViewSet(viewsets.ModelViewSet):
 class TeamInviteViewSet(viewsets.ModelViewSet):
     queryset = TeamInvite.objects.all()
     serializer_class = TeamInviteSerializer
-    permission_classes = PERMS
+    permission_classes = [IsManagerPermission]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["email", "accepted_at"]
 
@@ -1327,9 +1383,14 @@ def upload_finalize(request):
     if not _can_manage_build(request.user, related_build):
         return Response({"error": "Permission denied"}, status=http.HTTP_403_FORBIDDEN)
     key = (data.get("key") or "").strip()
-    if key and not key.startswith("uploads/"):
+    if not key:
+        return Response({"error": "Upload key is required."}, status=http.HTTP_400_BAD_REQUEST)
+    if not key.startswith("uploads/"):
         return Response({"error": "Invalid upload key."}, status=http.HTTP_400_BAD_REQUEST)
-    public_url = services.public_url(key) if key else data.get("public_url", "")
+    valid, detail = services.validate_uploaded_object(key, content_type, size_bytes)
+    if not valid:
+        return Response({"error": detail}, status=http.HTTP_400_BAD_REQUEST)
+    public_url = services.public_url(key)
     doc = Document.objects.create(
         filename=filename,
         url=public_url,

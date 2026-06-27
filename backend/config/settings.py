@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+import sys
 from datetime import timedelta
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,6 +29,7 @@ def str2none(value):
 
 
 CLOUD_ENV = os.getenv("CLOUD_ENV")
+IS_TESTING = "test" in sys.argv
 
 # Load local .env files when present. `override=False` means real environment
 # variables (a Coolify dashboard, docker-compose `environment:`, or an exported
@@ -51,11 +53,13 @@ for _env_path in (BASE_DIR / ".env.dev", BASE_DIR / ".env", BASE_DIR.parent / ".
 # SECURITY WARNING: don't run with debug turned on in production!
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY") or "local-development-secret-key-change-before-production-2026"
 
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ["*", "127.0.0.1"]
+ALLOWED_HOSTS = [
+    h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",") if h.strip()
+]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://portal.calarisolutions.com",
@@ -121,7 +125,7 @@ S3_REGION = (
 )
 S3_FILE_OVERWRITE = str2bool(os.getenv("S3_FILE_OVERWRITE", "False"))
 S3_DEFAULT_ACL = str2none(os.getenv("S3_DEFAULT_ACL", None))
-S3_QUERYSTRING_AUTH = str2bool(os.getenv("S3_QUERYSTRING_AUTH", "False"))
+S3_QUERYSTRING_AUTH = str2bool(os.getenv("S3_QUERYSTRING_AUTH", "True"))
 
 
 AWS_ACCESS_KEY_ID = S3_ACCESS_KEY
@@ -174,7 +178,9 @@ CORS_ALLOW_HEADERS = [
     "authorization",
     "x-csrftoken",
 ]
-CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'", "'unsafe-eval'", "*")
+CSP_SCRIPT_SRC = tuple(
+    s.strip() for s in os.getenv("CSP_SCRIPT_SRC", "'self'").split(",") if s.strip()
+)
 
 
 
@@ -317,8 +323,15 @@ SIMPLE_JWT = {
     'AUTH_COOKIE_REFRESH': 'refresh_token',
     'AUTH_COOKIE_HTTP_ONLY': True,
     'AUTH_COOKIE_SAMESITE': 'Lax',
-    'AUTH_COOKIE_SECURE': str_to_bool(os.getenv('AUTH_COOKIE_SECURE', 'False')),
+    'AUTH_COOKIE_SECURE': str_to_bool(os.getenv('AUTH_COOKIE_SECURE', str((not DEBUG and not IS_TESTING)).lower())),
 }
+
+SESSION_COOKIE_SECURE = str_to_bool(os.getenv("SESSION_COOKIE_SECURE", str((not DEBUG and not IS_TESTING)).lower()))
+CSRF_COOKIE_SECURE = str_to_bool(os.getenv("CSRF_COOKIE_SECURE", str((not DEBUG and not IS_TESTING)).lower()))
+SECURE_SSL_REDIRECT = str_to_bool(os.getenv("SECURE_SSL_REDIRECT", str((not DEBUG and not IS_TESTING)).lower()))
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000" if (not DEBUG and not IS_TESTING) else "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = str_to_bool(os.getenv("SECURE_HSTS_INCLUDE_SUBDOMAINS", "True"))
+SECURE_HSTS_PRELOAD = str_to_bool(os.getenv("SECURE_HSTS_PRELOAD", str((not DEBUG and not IS_TESTING)).lower()))
 
 # Default primary key field type 
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

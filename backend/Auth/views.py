@@ -3,6 +3,7 @@ import string
 
 from django.conf import settings
 from django.contrib.auth import get_user_model, authenticate
+from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 from django.core.mail import send_mail
@@ -22,6 +23,23 @@ from .models import PasswordResetToken
 from projects.tasks import send_notification_email
 
 User = get_user_model()
+
+
+def _rate_limited(scope, identifier, *, limit=5, window=3600):
+    """Small cache-backed throttle for public auth endpoints."""
+    safe_identifier = str(identifier or "unknown").lower().strip()[:200]
+    key = f"auth-rate:{scope}:{safe_identifier}"
+    count = cache.get(key, 0)
+    if count >= limit:
+        return True
+    if count == 0:
+        cache.set(key, 1, window)
+    else:
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, window)
+    return False
 
 
 def _is_manager(user):
@@ -519,54 +537,57 @@ def _generate_temp_password(length: int = 10) -> str:
 
 @extend_schema(
     tags=['Auth — Password Reset'],
-    summary='Email a temporary password',
+    summary='Email a password reset link',
     description=(
-        'If an active account exists for the given email, generates a temporary '
-        'password, sets it on the account, and emails it to the user. Always '
+        'If an active account exists for the given email, generates a single-use '
+        'reset link and emails it to the user. Always '
         'returns 200 to avoid email enumeration.'
     ),
     request=ForgotPasswordSerializer,
-    responses={200: OpenApiResponse(description='Temporary password sent (if email exists)')},
+    responses={200: OpenApiResponse(description='Reset link sent (if email exists)')},
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def forgot_password(request):
-    """POST /api/auth/forgot-password/ — Email a temporary password to the user."""
+    """POST /api/auth/forgot-password/ — Email a single-use reset link."""
     serializer = ForgotPasswordSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     email = serializer.validated_data['email']
+    ip = _get_client_ip(request)
+
+    if _rate_limited("forgot-ip", ip, limit=10, window=3600) or _rate_limited("forgot-email", email, limit=3, window=3600):
+        return Response({
+            'success': True,
+            'message': 'If an account with that email exists, a reset link has been sent to it.',
+        })
 
     try:
         user = User.objects.get(email=email, is_active=True)
-        temp_password = _generate_temp_password()
-        user.set_password(temp_password)
-        user.save(update_fields=['password'])
-        # Retire any pending link-based reset tokens for this user.
+        # Retire pending links and issue a fresh one. The password is not changed
+        # until reset_password_confirm validates this token.
         PasswordResetToken.objects.filter(user=user, used=False).update(used=True)
+        reset = PasswordResetToken.objects.create(user=user)
 
         frontend = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
-        # Dispatch via Celery so the request doesn't block on SMTP. Guard the
-        # dispatch: if the broker is unreachable, .delay() raises — without this
-        # the request 500s AND the password has already been rotated to a temp
-        # value that was never delivered, locking the user out. Swallowing the
-        # error keeps the response uniform (anti-enumeration) and lets the user
-        # retry once the queue is back.
+        reset_url = f"{frontend}/login?resetToken={reset.token}"
+        # Dispatch via Celery so the request doesn't block on SMTP. Swallowing the
+        # error keeps the response uniform and preserves the user's current password.
         try:
             send_notification_email.delay(
                 recipient_email=user.email,
-                subject="Your temporary Calari password",
+                subject="Reset your Calari password",
                 context={
                     "recipient_name": user.full_name or user.username,
                     "event_type": "",
-                    "event_title": "Your temporary password",
+                    "event_title": "Reset your password",
                     "event_detail": (
-                        f"Use this temporary password to sign in: {temp_password} — "
-                        f"then change it from your profile right away. "
+                        "Use the secure reset link below to choose a new password. "
+                        "This link expires in 1 hour. "
                         f"If you did not request this, contact your administrator."
                     ),
                     "actor_name": "Calari",
                     "project_name": "",
-                    "portal_url": f"{frontend}/login",
+                    "portal_url": reset_url,
                     "year": timezone.now().year,
                 },
             )
@@ -577,7 +598,7 @@ def forgot_password(request):
 
     return Response({
         'success': True,
-        'message': 'If an account with that email exists, a temporary password has been sent to it.',
+        'message': 'If an account with that email exists, a reset link has been sent to it.',
     })
 
 

@@ -1296,10 +1296,37 @@ def _s3_client():
 
 
 def public_url(key: str) -> str:
+    try:
+        from django.core.files.storage import default_storage
+        return default_storage.url(key)
+    except Exception:  # noqa: BLE001
+        pass
     bucket = settings.AWS_STORAGE_BUCKET_NAME
     if settings.AWS_S3_ENDPOINT_URL:
         return f"{settings.AWS_S3_ENDPOINT_URL}/{bucket}/{key}"
     return f"https://{bucket}.s3.{settings.AWS_S3_REGION_NAME}.amazonaws.com/{key}"
+
+
+def validate_uploaded_object(key: str, content_type: str = "", size_bytes=None) -> tuple[bool, str]:
+    """Confirm a presigned PUT object exists before recording it in the database."""
+    if not settings.AWS_STORAGE_BUCKET_NAME:
+        return False, "S3 storage is not configured."
+    try:
+        meta = _s3_client().head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=key)
+    except Exception:  # noqa: BLE001
+        return False, "Uploaded object was not found in storage."
+    try:
+        expected_size = int(size_bytes) if size_bytes not in (None, "") else None
+    except (TypeError, ValueError):
+        return False, "Invalid file size."
+    actual_size = meta.get("ContentLength")
+    if expected_size is not None and actual_size is not None and expected_size != actual_size:
+        return False, "Uploaded object size does not match the finalized file."
+    stored_type = (meta.get("ContentType") or "").split(";")[0].strip().lower()
+    expected_type = (content_type or "").split(";")[0].strip().lower()
+    if expected_type and stored_type and expected_type != stored_type:
+        return False, "Uploaded object content type does not match the finalized file."
+    return True, ""
 
 
 def presign_upload(filename: str, content_type: str) -> dict:
