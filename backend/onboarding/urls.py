@@ -1,3 +1,4 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from . import views
@@ -10,4 +11,8 @@ router.register(r"integration-maps", views.IntegrationMapViewSet, basename="inte
 router.register(r"call-insights", views.CallInsightViewSet, basename="call-insights")
 router.register(r"integration-events", views.IntegrationEventViewSet, basename="integration-events")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("automation-settings/", views.automation_settings, name="automation-settings"),
+    path("clients/<int:client_id>/upsell/", views.client_upsell, name="client-upsell"),
+    path("webhooks/fireflies/", views.fireflies_webhook, name="fireflies-webhook"),
+] + router.urls

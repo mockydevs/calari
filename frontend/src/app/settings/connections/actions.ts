@@ -46,3 +46,15 @@ export async function renameConnection(formData: FormData) {
   await serverApi.patch(`onboarding/connections/${id}`, { label });
   revalidatePath(PATH);
 }
+
+export async function updateAutomationSettings(formData: FormData) {
+  await requireFeature("ai_keys");
+  const threshold = Number(formData.get("confidence_threshold") ?? 0.6);
+  await serverApi.patch("onboarding/automation-settings", {
+    enabled: formData.get("enabled") === "on",
+    external_posting_enabled: formData.get("external_posting_enabled") === "on",
+    confidence_threshold: Number.isFinite(threshold) ? Math.min(1, Math.max(0, threshold)) : 0.6,
+    ops_alert_channel_id: String(formData.get("ops_alert_channel_id") ?? "").trim(),
+  });
+  revalidatePath(PATH);
+}

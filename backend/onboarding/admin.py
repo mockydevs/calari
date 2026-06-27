@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import Connection, IntegrationMap, CallInsight, IntegrationEvent
+from .models import Connection, IntegrationMap, CallInsight, IntegrationEvent, AutomationSettings
+
+
+@admin.register(AutomationSettings)
+class AutomationSettingsAdmin(admin.ModelAdmin):
+    list_display = ("enabled", "external_posting_enabled", "confidence_threshold", "updated_at")
 
 
 @admin.register(Connection)

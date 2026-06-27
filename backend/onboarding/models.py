@@ -49,6 +49,29 @@ class EventStatus(models.TextChoices):
     RETRACTED = "retracted", "Retracted"
 
 
+# ─── Automation guardrails (singleton) ─────────────────────────────────────────
+class AutomationSettings(models.Model):
+    """Global controls for the unattended pipeline. Because client-facing actions post
+    automatically, safety lives here: a kill switch, a confidence floor, and an
+    external-posting toggle. One row (pk=1)."""
+    enabled = models.BooleanField(default=False)               # global kill switch (off by default)
+    external_posting_enabled = models.BooleanField(default=True)  # allow posting to client (external) Slack
+    confidence_threshold = models.FloatField(default=0.6)      # below this → internal-only + ops alert
+    ops_alert_channel_id = models.CharField(max_length=64, blank=True, default="")  # Slack channel for skips/failures
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Automation settings"
+
+    def __str__(self):
+        return "Automation settings"
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 # ─── Credentials ──────────────────────────────────────────────────────────────
 class Connection(models.Model):
     """An authenticated connection to an external provider. Secrets are encrypted at

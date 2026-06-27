@@ -1,8 +1,8 @@
-import { Cable, CheckCircle2, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Cable, CheckCircle2, KeyRound, ListChecks, Plus, Power, ShieldCheck, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { createConnection, activateConnection, deleteConnection, renameConnection } from "./actions";
+import { createConnection, activateConnection, deleteConnection, renameConnection, updateAutomationSettings } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,16 +33,23 @@ type Connection = {
   updated_at: string;
 };
 
+type Automation = {
+  enabled: boolean;
+  external_posting_enabled: boolean;
+  confidence_threshold: number;
+  ops_alert_channel_id: string;
+};
+
 function asList<T>(d: T[] | { results: T[] }): T[] {
   return Array.isArray(d) ? d : d.results ?? [];
 }
 
 export default async function ConnectionsPage() {
   await requireFeature("ai_keys");
-  const connections = await serverApi
-    .get<Connection[] | { results: Connection[] }>("onboarding/connections")
-    .then(asList)
-    .catch(() => [] as Connection[]);
+  const [connections, automation] = await Promise.all([
+    serverApi.get<Connection[] | { results: Connection[] }>("onboarding/connections").then(asList).catch(() => [] as Connection[]),
+    serverApi.get<Automation>("onboarding/automation-settings").catch(() => null),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -52,9 +59,54 @@ export default async function ConnectionsPage() {
         <p className="mt-1 text-sm text-slate-600">
           Connect Fireflies, Asana, Slack, and Google Drive for the onboarding-intelligence pipeline.
           Tokens are encrypted and only previews are shown. Map each client to its channels/projects in{" "}
-          <Link href="/settings/integration-maps" className="font-semibold text-pink-700 hover:underline">client integrations</Link>.
+          <Link href="/settings/integration-maps" className="font-semibold text-pink-700 hover:underline">client integrations</Link>,
+          and review what the agent did in{" "}
+          <Link href="/onboarding/insights" className="inline-flex items-center gap-1 font-semibold text-pink-700 hover:underline"><ListChecks className="h-3.5 w-3.5" />call insights</Link>.
         </p>
       </div>
+
+      {/* Automation controls (the unattended-pipeline safety rails) */}
+      {automation && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100"><Power className="h-4 w-4" /></span>
+              Automation controls
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form action={updateAutomationSettings} className="grid gap-4 sm:grid-cols-2">
+              <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 text-sm sm:col-span-2">
+                <input type="checkbox" name="enabled" defaultChecked={automation.enabled} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-pink-700" />
+                <span>
+                  <span className="block font-semibold text-slate-950">Pipeline enabled (master switch)</span>
+                  <span className="block text-xs text-slate-500">When off, no Fireflies call is processed and nothing is posted anywhere.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 text-sm sm:col-span-2">
+                <input type="checkbox" name="external_posting_enabled" defaultChecked={automation.external_posting_enabled} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-pink-700" />
+                <span>
+                  <span className="block font-semibold text-slate-950">Post to client (external) Slack channels</span>
+                  <span className="block text-xs text-slate-500">Client-facing summaries also pass an AI guardrail + confidence check before sending.</span>
+                </span>
+              </label>
+              <div className="space-y-1.5">
+                <Label htmlFor="confidence_threshold">Confidence threshold</Label>
+                <Input id="confidence_threshold" name="confidence_threshold" type="number" step="0.05" min="0" max="1" defaultValue={automation.confidence_threshold} />
+                <p className="text-xs text-slate-500">Below this, external posting is held + ops alerted.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ops_alert_channel_id">Ops alert Slack channel ID</Label>
+                <Input id="ops_alert_channel_id" name="ops_alert_channel_id" defaultValue={automation.ops_alert_channel_id} placeholder="C0123OPS" />
+                <p className="text-xs text-slate-500">Skips, failures, and guardrail trips are posted here.</p>
+              </div>
+              <div className="sm:col-span-2">
+                <Button type="submit"><CheckCircle2 className="h-4 w-4" /> Save automation settings</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[1fr_390px]">
         <div className="space-y-4">

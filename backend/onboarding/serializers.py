@@ -1,7 +1,15 @@
 from rest_framework import serializers
 
-from .models import Connection, IntegrationMap, CallInsight, IntegrationEvent
+from .models import Connection, IntegrationMap, CallInsight, IntegrationEvent, AutomationSettings
 from .services import encrypt_secret
+
+
+class AutomationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AutomationSettings
+        fields = ["enabled", "external_posting_enabled", "confidence_threshold",
+                  "ops_alert_channel_id", "updated_at"]
+        read_only_fields = ["updated_at"]
 
 
 class ConnectionSerializer(serializers.ModelSerializer):
