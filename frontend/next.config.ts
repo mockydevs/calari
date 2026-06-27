@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  // CI (.github/workflows/ci.yml) already runs `tsc --noEmit` + eslint as gates, so the
+  // production build doesn't need to repeat the ~1 min in-build TypeScript pass — skipping
+  // it cuts build time + memory on the deploy host, reducing the OOM/255 failures seen when
+  // the frontend is rebuilt. (Next 16's build no longer runs ESLint, so no eslint key needed.)
+  typescript: { ignoreBuildErrors: true },
 };
 
 export default nextConfig;
