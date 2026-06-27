@@ -76,9 +76,20 @@ for _src in (os.getenv("DJANGO_API_URL"), os.getenv("API_DOMAIN"), "backend", "c
     if _h and _h not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_h)
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://portal.calarisolutions.com",
-]
+# Trusted origins for CSRF / cross-site cookies. Derived from the configured app URLs
+# (no hardcoded domains) plus an optional CSRF_TRUSTED_ORIGINS override (comma-list).
+_origin_scheme = "https" if str(os.getenv("USE_HTTPS", "")).lower() == "true" else "http"
+CSRF_TRUSTED_ORIGINS = []
+for _o in [
+    *os.getenv("CSRF_TRUSTED_ORIGINS", "").split(","),
+    os.getenv("FRONTEND_URL"), os.getenv("APP_URL"), os.getenv("PUBLIC_APP_URL"), os.getenv("AUTH_URL"),
+    (f"{_origin_scheme}://{_host_only(os.getenv('API_DOMAIN'))}" if os.getenv("API_DOMAIN") else ""),
+]:
+    _o = (_o or "").strip().rstrip("/")
+    if _o.startswith("http") and _o not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_o)
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = ["http://localhost:3000"]
 
 
 # Application definition
@@ -181,11 +192,15 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 # The Next.js frontend (its BFF) consumes this API. Allow its origin + credentials.
+# Extra browser origins (e.g. the marketing site if it ever posts directly) go in the
+# CORS_ALLOWED_ORIGINS env var (comma-list). The A2P form already relays server-side
+# via the portal, so it doesn't depend on this.
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 CORS_ALLOWED_ORIGINS = list({
     FRONTEND_URL,
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    *(o.strip().rstrip("/") for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()),
 })
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
