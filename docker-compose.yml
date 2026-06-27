@@ -63,8 +63,12 @@ services:
       # name locally, or set DJANGO_API_URL to the public API URL in production.
       DJANGO_API_URL: ${DJANGO_API_URL:-http://backend:8000}
     depends_on:
+      # service_started (NOT service_healthy): the frontend BFF reaches the backend
+      # at request time, not at boot. Gating on backend health made Coolify's
+      # `docker compose up -d` abort the whole stack (exit 255) whenever the backend
+      # was slow/unhealthy on deploy — taking the entire public portal down (503).
       backend:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s

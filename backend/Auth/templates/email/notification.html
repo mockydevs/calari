@@ -3,87 +3,92 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Calari Staff Portal</title>
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Calari</title>
 </head>
-<body style="margin:0;padding:0;background-color:#06090F;font-family:Helvetica,Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#06090F;padding:32px 16px;">
+<body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;padding:40px 16px;">
 <tr><td align="center">
 
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background:#0C1220;border-radius:10px;border:1px solid rgba(255,255,255,0.07);overflow:hidden;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background:#ffffff;border-radius:14px;border:1px solid #ececf0;overflow:hidden;">
 
-  <!-- Header -->
+  <!-- Brand bar -->
   <tr>
-    <td style="background:#3B82F6;padding:16px 24px;">
-      <span style="color:#ffffff;font-size:15px;font-weight:700;letter-spacing:-0.02em;">Calari Staff Portal</span>
+    <td style="padding:28px 32px 0 32px;">
+      <span style="font-size:18px;font-weight:700;letter-spacing:-0.02em;color:#0f172a;">Calari</span>
+      <span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#db2777;margin:0 0 2px 4px;"></span>
     </td>
   </tr>
 
   <!-- Body -->
   <tr>
-    <td style="padding:24px 24px 20px;">
+    <td style="padding:24px 32px 8px 32px;">
 
-      <p style="color:#94A3B8;font-size:13px;margin:0 0 14px 0;">Hi {{ recipient_name }},</p>
+      <p style="color:#64748b;font-size:14px;margin:0 0 18px 0;">Hi {{ recipient_name }},</p>
 
-      {% if event_type == "task_assigned" %}
-        <h2 style="color:#60A5FA;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">You've been assigned a task</h2>
+      {% if event_type == "invite" %}
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">You're invited to Calari</h1>
+      {% elif event_type == "task_assigned" %}
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">You've been assigned a task</h1>
       {% elif event_type == "task_status_changed" %}
-        <h2 style="color:#22D3EE;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Task status updated</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">Task status updated</h1>
       {% elif event_type == "task_completed" %}
-        <h2 style="color:#10B981;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Task marked as done</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">Task marked as done</h1>
       {% elif event_type == "project_assigned" %}
-        <h2 style="color:#60A5FA;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">You've been assigned a project</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">You've been assigned a project</h1>
       {% elif event_type == "project_status_changed" %}
-        <h2 style="color:#22D3EE;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Project status updated</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">Project status updated</h1>
       {% elif event_type == "co_assignment_added" %}
-        <h2 style="color:#818CF8;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">You've been added to a project team</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">You've been added to a project team</h1>
       {% elif event_type == "comment_added" %}
-        <h2 style="color:#94A3B8;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">New comment on your task</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">New comment on your task</h1>
       {% elif event_type == "blocker_added" %}
-        <h2 style="color:#F87171;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Blocker reported</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">Blocker reported</h1>
       {% elif event_type == "blocker_resolved" %}
-        <h2 style="color:#10B981;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Blocker resolved</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">Blocker resolved</h1>
       {% elif event_type == "milestone_added" %}
-        <h2 style="color:#818CF8;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">New milestone added</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">New milestone added</h1>
       {% elif event_type == "milestone_completed" %}
-        <h2 style="color:#10B981;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Milestone completed</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">Milestone completed</h1>
       {% else %}
-        <h2 style="color:#E2E8F0;font-size:17px;font-weight:700;margin:0 0 14px 0;letter-spacing:-0.02em;">Portal notification</h2>
+        <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 8px 0;letter-spacing:-0.02em;">Portal notification</h1>
       {% endif %}
 
       <!-- Event title card -->
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#111927;border:1px solid rgba(255,255,255,0.06);border-radius:7px;margin-bottom:14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafafa;border:1px solid #eef0f3;border-radius:10px;margin:16px 0;">
         <tr>
-          <td style="padding:12px 14px;">
-            <p style="color:#E2E8F0;font-size:14px;font-weight:600;margin:0 0 3px 0;">{{ event_title }}</p>
-            {% if project_name %}<p style="color:#475569;font-size:11px;margin:0;">{{ project_name }}</p>{% endif %}
+          <td style="padding:14px 16px;border-left:3px solid #db2777;border-radius:10px;">
+            <p style="color:#0f172a;font-size:15px;font-weight:600;margin:0;">{{ event_title }}</p>
+            {% if project_name %}<p style="color:#94a3b8;font-size:12px;margin:5px 0 0 0;">{{ project_name }}</p>{% endif %}
           </td>
         </tr>
       </table>
 
       {% if event_detail %}
-      <p style="color:#94A3B8;font-size:12.5px;line-height:1.6;margin:0 0 14px 0;">{{ event_detail }}</p>
+      <p style="color:#475569;font-size:14px;line-height:1.65;margin:0 0 24px 0;">{{ event_detail }}</p>
       {% endif %}
 
-      <p style="color:#475569;font-size:11.5px;margin:0 0 20px 0;">Action performed by <strong style="color:#8E9DB8;">{{ actor_name }}</strong></p>
-
       {% if portal_url %}
-      <table cellpadding="0" cellspacing="0" border="0">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
         <tr>
-          <td style="background:#3B82F6;border-radius:7px;">
-            <a href="{{ portal_url }}" style="display:inline-block;padding:10px 20px;color:#ffffff;font-size:12.5px;font-weight:600;text-decoration:none;letter-spacing:-0.01em;">View in Portal &#8594;</a>
+          <td style="background:#db2777;border-radius:9px;">
+            <a href="{{ portal_url }}" style="display:inline-block;padding:12px 26px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;letter-spacing:-0.01em;">{% if event_type == "invite" %}Set up your account{% else %}View in Portal{% endif %} &rarr;</a>
           </td>
         </tr>
       </table>
       {% endif %}
+
+      <p style="color:#94a3b8;font-size:12px;margin:0 0 4px 0;">Action by <span style="color:#475569;font-weight:600;">{{ actor_name }}</span></p>
 
     </td>
   </tr>
 
   <!-- Footer -->
   <tr>
-    <td style="border-top:1px solid rgba(255,255,255,0.05);padding:14px 24px;background:#080C14;">
-      <p style="color:#374151;font-size:10.5px;margin:0;line-height:1.5;">
-        You received this because you are a Calari Staff Portal member. Do not reply to this email.<br>
+    <td style="border-top:1px solid #f0f1f4;padding:20px 32px;">
+      <p style="color:#b6bcc7;font-size:11px;margin:0;line-height:1.6;">
+        You received this because you're a member of the Calari Staff Portal. Please don't reply to this email.<br>
         &copy; {{ year }} Calari Solutions.
       </p>
     </td>

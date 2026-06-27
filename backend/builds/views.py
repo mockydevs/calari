@@ -930,7 +930,7 @@ class TeamInviteViewSet(viewsets.ModelViewSet):
                 subject="You've been invited to Calari",
                 context={
                     "recipient_name": invite.name,
-                    "event_type": "project_assigned",
+                    "event_type": "invite",
                     "event_title": f"{inviter} invited you to Calari",
                     "event_detail": "Set up your account to get started. This invite link expires in 7 days.",
                     "actor_name": inviter,
