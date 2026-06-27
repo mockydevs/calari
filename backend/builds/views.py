@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.throttling import UserRateThrottle
 
 from .models import (
     Build, Task, TaskDependency, TaskType,
@@ -43,6 +44,12 @@ from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner, can_m
 
 User = get_user_model()
 PERMS = [IsAuthenticated]
+
+
+class AIRateThrottle(UserRateThrottle):
+    """Per-user throttle for the expensive paid-LLM endpoints (the 'ai' rate in settings).
+    Caps how often one user can trigger generation — a cost/abuse guard, not a UX limit."""
+    scope = "ai"
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -321,6 +328,15 @@ class BuildViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "goals", "integrations", "client__name"]
     ordering_fields = ["created_at", "updated_at", "due_date"]
     ordering = ["-created_at"]
+
+    # Actions that make a paid LLM call — throttled per-user via the 'ai' scope.
+    _AI_ACTIONS = {"build_document", "report_progress", "progress_update", "generate_tasklist"}
+
+    def get_throttles(self):
+        # build_document GET is a cheap read; only POST (regenerate) hits the model.
+        if getattr(self, "action", "") in self._AI_ACTIONS and self.request.method == "POST":
+            return [AIRateThrottle()]
+        return super().get_throttles()
 
     def _detail_queryset(self):
         return Build.objects.select_related("client", "creator", "assignee").prefetch_related(*_DETAIL_PREFETCH)

@@ -383,14 +383,28 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'Auth.authentication.CookieJWTAuthentication',
     ),
-    # Keep AllowAny as global default; individual viewsets declare their own permissions.
+    # Secure-by-default: a view with no explicit permissions requires auth, so a forgotten
+    # permission_classes can't silently expose an endpoint. Every intentionally-public
+    # endpoint (auth login/signup/reset, A2P intake, client portal, integration webhooks)
+    # declares AllowAny explicitly, so this flip doesn't change their behaviour.
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     # Cap list responses (frontend handles both arrays and {results}).
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100,
+    # Throttling is USER-keyed only. IP-keyed (AnonRateThrottle) is intentionally omitted:
+    # every request reaches us via the Next BFF proxy, so all traffic shares one source IP
+    # and an anon/IP throttle would rate-limit the whole team as a single client. The 'ai'
+    # scope guards the expensive paid-LLM endpoints. All rates are env-tunable.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'user': os.getenv('THROTTLE_USER', '4000/hour'),
+        'ai': os.getenv('THROTTLE_AI', '80/hour'),
+    },
 }
 
 # ─── drf-spectacular (Swagger / OpenAPI) ───
