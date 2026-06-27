@@ -2,6 +2,9 @@ import hashlib
 import hmac
 import os
 
+from django.conf import settings as dj_settings
+from django.contrib.auth import get_user_model
+from django.shortcuts import redirect
 from rest_framework import viewsets, status as http
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
@@ -9,10 +12,12 @@ from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter, SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
-from . import services
+from . import services, oauth
 from .models import (
     Connection, IntegrationMap, CallInsight, IntegrationEvent, AutomationSettings,
 )
+
+User = get_user_model()
 from .serializers import (
     ConnectionSerializer, IntegrationMapSerializer,
     CallInsightSerializer, IntegrationEventSerializer, AutomationSettingsSerializer,
@@ -138,6 +143,54 @@ def client_upsell(request, client_id):
         )
     result = services.suggest_upsell(client_name, "\n\n".join(blocks))
     return Response(result)
+
+
+# ─── OAuth connect flows (Slack / Asana / Google) ──────────────────────────────
+def _oauth_redirect_uri(provider, request):
+    base = getattr(dj_settings, "ONBOARDING_OAUTH_REDIRECT_BASE", "") or request.build_absolute_uri("/").rstrip("/")
+    return f"{base}/api/onboarding/oauth/{provider}/callback/"
+
+
+@api_view(["POST"])
+@permission_classes([IsManager])
+def oauth_authorize_url(request, provider):
+    """Return the provider authorize URL (with a signed state) for the browser to visit."""
+    provider = provider.upper()
+    if not oauth.is_supported(provider):
+        return Response({"error": f"{provider} does not support OAuth here."}, status=http.HTTP_400_BAD_REQUEST)
+    if not oauth.is_configured(provider):
+        return Response({"error": f"{provider} OAuth is not configured on the server (client id/secret)."},
+                        status=http.HTTP_400_BAD_REQUEST)
+    state = oauth.sign_state(provider, request.user.id)
+    url = oauth.authorize_url(provider, state, _oauth_redirect_uri(provider, request))
+    return Response({"url": url})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def oauth_callback(request, provider):
+    """Public OAuth redirect target. Verifies signed state, exchanges code, saves the
+    connection, and bounces back to the frontend Integrations page."""
+    provider = provider.upper()
+    frontend = getattr(dj_settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    dest = f"{frontend}/settings/connections"
+
+    if request.query_params.get("error"):
+        return redirect(f"{dest}?error={request.query_params.get('error')}")
+    code = request.query_params.get("code")
+    state = request.query_params.get("state", "")
+    if not code or not state:
+        return redirect(f"{dest}?error=missing_code")
+    try:
+        state_provider, user_id = oauth.unsign_state(state)
+        if state_provider != provider:
+            raise oauth.OAuthError("state/provider mismatch")
+        token = oauth.exchange_code(provider, code, _oauth_redirect_uri(provider, request))
+        user = User.objects.filter(pk=user_id).first()
+        services.save_oauth_connection(provider, token, user)
+    except Exception as e:  # noqa: BLE001
+        return redirect(f"{dest}?error={str(e)[:120]}")
+    return redirect(f"{dest}?connected={provider}")
 
 
 # ─── Fireflies webhook ─────────────────────────────────────────────────────────

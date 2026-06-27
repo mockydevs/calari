@@ -15,4 +15,6 @@ urlpatterns = [
     path("automation-settings/", views.automation_settings, name="automation-settings"),
     path("clients/<int:client_id>/upsell/", views.client_upsell, name="client-upsell"),
     path("webhooks/fireflies/", views.fireflies_webhook, name="fireflies-webhook"),
+    path("oauth/<str:provider>/authorize-url/", views.oauth_authorize_url, name="oauth-authorize-url"),
+    path("oauth/<str:provider>/callback/", views.oauth_callback, name="oauth-callback"),
 ] + router.urls

@@ -4,6 +4,7 @@ import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { createConnection, activateConnection, deleteConnection, renameConnection, updateAutomationSettings } from "./actions";
 import { TestConnectionButton } from "./test-button";
+import { OAuthConnectButton } from "./oauth-connect-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   GDRIVE: "Google Drive",
 };
 const PROVIDERS = Object.keys(PROVIDER_LABELS);
+// Providers with a one-click OAuth flow (Fireflies is API-key only).
+const OAUTH_PROVIDERS = new Set(["SLACK", "ASANA", "GDRIVE"]);
 
 type Connection = {
   id: number;
@@ -45,8 +48,11 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
   return Array.isArray(d) ? d : d.results ?? [];
 }
 
-export default async function ConnectionsPage() {
+export default async function ConnectionsPage({
+  searchParams,
+}: { searchParams: Promise<{ connected?: string; error?: string }> }) {
   await requireFeature("ai_keys");
+  const sp = await searchParams;
   const [connections, automation] = await Promise.all([
     serverApi.get<Connection[] | { results: Connection[] }>("onboarding/connections").then(asList).catch(() => [] as Connection[]),
     serverApi.get<Automation>("onboarding/automation-settings").catch(() => null),
@@ -65,6 +71,17 @@ export default async function ConnectionsPage() {
           <Link href="/onboarding/insights" className="inline-flex items-center gap-1 font-semibold text-pink-700 hover:underline"><ListChecks className="h-3.5 w-3.5" />call insights</Link>.
         </p>
       </div>
+
+      {sp.connected && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <CheckCircle2 className="mr-1.5 inline h-4 w-4" /> Connected {PROVIDER_LABELS[sp.connected] ?? sp.connected} via OAuth.
+        </div>
+      )}
+      {sp.error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          OAuth failed: {sp.error}
+        </div>
+      )}
 
       {/* Automation controls (the unattended-pipeline safety rails) */}
       {automation && (
@@ -126,9 +143,12 @@ export default async function ConnectionsPage() {
                       <p className="text-xs text-slate-500">{activeConn ? `Active: ${activeConn.secret_preview}` : "Not connected"}</p>
                     </div>
                   </div>
-                  {activeConn
-                    ? <Badge className="bg-emerald-50 text-emerald-700"><CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Connected</Badge>
-                    : <Badge className="bg-slate-100 text-slate-600">Not configured</Badge>}
+                  <div className="flex items-center gap-2">
+                    {OAUTH_PROVIDERS.has(provider) && <OAuthConnectButton provider={provider} label={PROVIDER_LABELS[provider]} />}
+                    {activeConn
+                      ? <Badge className="bg-emerald-50 text-emerald-700"><CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Connected</Badge>
+                      : <Badge className="bg-slate-100 text-slate-600">Not configured</Badge>}
+                  </div>
                 </div>
 
                 {providerConns.length === 0 ? (

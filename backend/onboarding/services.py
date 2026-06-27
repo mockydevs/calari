@@ -22,14 +22,55 @@ def get_active_connection(provider: str) -> Connection | None:
 
 
 def get_provider_secret(provider: str) -> str | None:
-    """Decrypted access token / API key for the active connection, or None."""
+    """Decrypted access token / API key for the active connection, or None. For OAuth
+    connections, transparently refreshes an expired access token first."""
     conn = get_active_connection(provider)
     if not conn:
         return None
+    if conn.auth_type == "oauth" and conn.expires_at and conn.encrypted_refresh:
+        from django.utils import timezone
+        if conn.expires_at <= timezone.now():
+            try:
+                _refresh_connection(conn)
+            except Exception:  # noqa: BLE001 — fall through to the (possibly stale) token
+                pass
     try:
         return decrypt_secret(conn.encrypted_secret)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _epoch_to_dt(epoch):
+    if not epoch:
+        return None
+    from datetime import datetime, timezone as _dtz
+    return datetime.fromtimestamp(epoch, tz=_dtz.utc)
+
+
+def _refresh_connection(conn) -> None:
+    """Refresh an OAuth connection's access token in place."""
+    from . import oauth
+    data = oauth.refresh(conn.provider, decrypt_secret(conn.encrypted_refresh))
+    enc, preview = encrypt_secret(data["access_token"])
+    conn.encrypted_secret = enc
+    conn.secret_preview = preview
+    if data.get("refresh_token"):
+        conn.encrypted_refresh = encrypt_secret(data["refresh_token"])[0]
+    conn.expires_at = _epoch_to_dt(data.get("expires_at"))
+    conn.save(update_fields=["encrypted_secret", "secret_preview", "encrypted_refresh", "expires_at", "updated_at"])
+
+
+def save_oauth_connection(provider: str, token_data: dict, user=None):
+    """Upsert the active OAuth connection for a provider from a token exchange result."""
+    enc, preview = encrypt_secret(token_data["access_token"])
+    Connection.objects.filter(provider=provider, active=True).update(active=False)
+    return Connection.objects.create(
+        provider=provider, auth_type="oauth", label=f"{provider} (OAuth)",
+        encrypted_secret=enc, secret_preview=preview,
+        encrypted_refresh=(encrypt_secret(token_data["refresh_token"])[0] if token_data.get("refresh_token") else ""),
+        scopes=token_data.get("scope", ""), expires_at=_epoch_to_dt(token_data.get("expires_at")),
+        workspace_ref=token_data.get("workspace_ref", ""), active=True, created_by=user,
+    )
 
 
 # ─── Identity resolution (Fireflies call → client) ────────────────────────────
