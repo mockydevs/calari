@@ -465,6 +465,26 @@ def relevance_score(doc_text: str, query_tokens: set[str]) -> int:
     return len(query_tokens & _ref_tokenize(doc_text))
 
 
+_QUALITY_MULT = {"GOLD": 1.6, "STANDARD": 1.0, "RAW": 0.7}
+_RECENCY_HALFLIFE_DAYS = 365.0  # a doc's recency weight halves each year (GHL UI drifts over time)
+
+
+def _knowledge_weight(doc, query_tokens: set[str], now) -> float:
+    """Composite reference-ranking score for one Build-Library doc:
+    lexical overlap (across title + summary + structured metadata + body)
+    × quality multiplier (GOLD > STANDARD > RAW) × recency decay.
+    The `+1` floor keeps a freshly-promoted gold doc rankable even before it's enriched."""
+    text = " ".join(filter(None, (
+        doc.title, doc.summary, doc.niche, doc.build_type, doc.integrations,
+        " ".join(doc.ghl_sections or []), doc.raw_text,
+    )))
+    lex = relevance_score(text, query_tokens)
+    quality_mult = _QUALITY_MULT.get(getattr(doc, "quality", "STANDARD"), 1.0)
+    age_days = max(0.0, (now - doc.created_at).total_seconds() / 86400.0) if doc.created_at else 0.0
+    recency = 0.5 ** (age_days / _RECENCY_HALFLIFE_DAYS)
+    return (lex + 1.0) * quality_mult * (0.6 + 0.4 * recency)
+
+
 _REF_CANDIDATE_LIMIT = 25  # cap docs pulled into memory regardless of library size
 
 
@@ -531,15 +551,37 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def _chunk_text(text: str, size: int = 1500, overlap: int = 150, max_chunks: int = 50) -> list[str]:
+    """Structure-aware chunking: split on blank-line / paragraph boundaries and pack
+    whole blocks up to `size`, so a chunk is a coherent unit (a workflow, a section)
+    rather than an arbitrary character window that splits mid-step. Oversized single
+    blocks are hard-split with overlap as a fallback. Retrieval quality is bounded by
+    chunk coherence, so this matters more than it looks."""
     text = (text or "").strip()
     if not text:
         return []
-    chunks, i = [], 0
-    step = max(size - overlap, 1)
-    while i < len(text) and len(chunks) < max_chunks:
-        chunks.append(text[i:i + size])
-        i += step
-    return chunks
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
+    chunks: list[str] = []
+    cur = ""
+    for b in blocks:
+        if len(chunks) >= max_chunks:
+            break
+        if len(b) > size:                       # a single huge block — flush, then hard-split it
+            if cur:
+                chunks.append(cur)
+                cur = ""
+            step = max(size - overlap, 1)
+            for i in range(0, len(b), step):
+                if len(chunks) >= max_chunks:
+                    break
+                chunks.append(b[i:i + size])
+            continue
+        if cur and len(cur) + len(b) + 2 > size:  # adding this block would overflow → start a new chunk
+            chunks.append(cur)
+            cur = ""
+        cur = f"{cur}\n\n{b}" if cur else b
+    if cur and len(chunks) < max_chunks:
+        chunks.append(cur)
+    return chunks[:max_chunks]
 
 
 def index_knowledge(knowledge) -> int:
@@ -627,11 +669,14 @@ def build_reference_context(build) -> str:
     query_tokens = _ref_tokenize(query_text)
     docs = _candidate_docs(build, query_text)  # bounded + DB-ranked; never loads the whole library
 
+    from django.utils import timezone as _tz
+    now = _tz.now()
+
     def ranked(group):
-        # Highest relevance first; sorted() is stable so ties keep the queryset's
-        # default ordering (most recent first).
-        return sorted(group, key=lambda d: relevance_score(
-            f"{d.title} {d.summary} {d.raw_text}", query_tokens), reverse=True)
+        # Composite weight: lexical relevance (incl. structured metadata) × quality
+        # multiplier × recency decay. GOLD (approved-build) exemplars and recent docs
+        # rise; stale raw dumps sink. sorted() is stable so exact ties keep recency order.
+        return sorted(group, key=lambda d: _knowledge_weight(d, query_tokens, now), reverse=True)
 
     same = ranked([d for d in docs if build.client_id and d.client_id == build.client_id])[:_REF_SAME_CLIENT]
     same_ids = {d.id for d in same}
@@ -648,6 +693,58 @@ def build_reference_context(build) -> str:
         if budget <= 0:
             break
     return "\n\n".join(parts)[:KNOWLEDGE_MAX_CHARS]
+
+
+_KNOWLEDGE_SUMMARY_SYSTEM = (
+    "You catalogue Calari's GoHighLevel build library. Given a past-build / reference "
+    "document, produce a DENSE, retrieval-optimized summary plus structured metadata. "
+    "The summary is what a build-generating AI will read later, so describe concretely "
+    "WHAT was built: the workflows and their triggers→actions→outcomes, pipelines, "
+    "calendars, forms, integrations, fields/tags, and any reusable patterns or naming "
+    "conventions. Be specific and factual; do not invent details that aren't in the doc. "
+    "Classify the niche/vertical, the build type, the GHL sections covered, and the tools "
+    "integrated. Keep the summary under ~400 words."
+)
+
+
+def _knowledge_summary_schema() -> dict:
+    from .models import BuildSection
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "summary": {"type": "string"},
+            "niche": {"type": "string"},
+            "build_type": {"type": "string"},
+            "ghl_sections": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(BuildSection.values)},
+            },
+            "integrations": {"type": "string"},
+        },
+        "required": ["summary", "niche", "build_type", "ghl_sections", "integrations"],
+    }
+
+
+def summarize_knowledge(title: str, text: str) -> dict:
+    """AI-enrich a Build-Library doc: a dense retrieval summary + structured metadata
+    (niche / build_type / ghl_sections / integrations). Returns {} on any failure so
+    enrichment never blocks the upload — the raw text still gets indexed."""
+    if not (text or "").strip():
+        return {}
+    messages = [
+        {"role": "system", "content": _KNOWLEDGE_SUMMARY_SYSTEM},
+        {"role": "user", "content": f"TITLE: {title}\n\nDOCUMENT:\n{text[:MAX_TEXT_CHARS]}"},
+    ]
+    raw = _chat(
+        messages, max_tokens=1400, op="kb_summary",
+        response_format={"type": "json_schema",
+                         "json_schema": {"name": "kb_summary", "strict": True, "schema": _knowledge_summary_schema()}},
+    )
+    try:
+        return json.loads(raw) if raw else {}
+    except Exception:  # noqa: BLE001 — malformed model output → skip enrichment
+        return {}
 
 
 # ─── Implementation build document (long-form, step-by-step for the builder) ───

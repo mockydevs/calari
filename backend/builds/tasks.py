@@ -64,6 +64,44 @@ def remove_knowledge_chunks(knowledge_id):
     services.delete_knowledge_chunks(knowledge_id)
 
 
+@shared_task(bind=True, max_retries=1, default_retry_delay=20)
+def enrich_knowledge(self, knowledge_id):
+    """AI-enrich a Build Library doc on upload: fill the retrieval summary + structured
+    metadata (niche / build_type / ghl_sections / integrations). Only fills BLANK fields
+    so it never clobbers human edits. Saving triggers the reindex signal, so the chunks
+    re-embed off the better summary automatically."""
+    from django.utils import timezone
+    from .models import BuildKnowledge
+    kn = BuildKnowledge.objects.filter(pk=knowledge_id).first()
+    if not kn:
+        return
+    try:
+        data = services.summarize_knowledge(kn.title, kn.raw_text)
+    except Exception as exc:  # noqa: BLE001 — transient API error → retry once
+        raise self.retry(exc=exc)
+    if not data:
+        return
+    fields = []
+    if data.get("summary") and not kn.summary.strip():
+        kn.summary = data["summary"].strip()[:8000]
+        fields.append("summary")
+    if data.get("niche") and not kn.niche.strip():
+        kn.niche = data["niche"].strip()[:120]
+        fields.append("niche")
+    if data.get("build_type") and not kn.build_type.strip():
+        kn.build_type = data["build_type"].strip()[:120]
+        fields.append("build_type")
+    if data.get("ghl_sections") and not kn.ghl_sections:
+        kn.ghl_sections = data["ghl_sections"][:12]
+        fields.append("ghl_sections")
+    if data.get("integrations") and not kn.integrations.strip():
+        kn.integrations = data["integrations"].strip()[:300]
+        fields.append("integrations")
+    kn.enriched_at = timezone.now()
+    fields.append("enriched_at")
+    kn.save(update_fields=fields)
+
+
 @shared_task(bind=True, max_retries=1, default_retry_delay=15)
 def generate_task_sop(self, task_id):
     """Generate a step-by-step SOP for a build task and save it as the description."""

@@ -524,6 +524,15 @@ class AiGenerationLog(models.Model):
         indexes = [models.Index(fields=["op", "created_at"]), models.Index(fields=["created_at"])]
 
 
+class KnowledgeQuality(models.TextChoices):
+    """How much to trust/weight a Build-Library doc during retrieval. GOLD = a
+    human-approved, delivered build (the reinforcement-loop exemplars); STANDARD =
+    a curated upload; RAW = an unprocessed dump."""
+    GOLD = "GOLD", "Gold (approved build)"
+    STANDARD = "STANDARD", "Standard"
+    RAW = "RAW", "Raw"
+
+
 class BuildKnowledge(models.Model):
     """A past-build / client documentation artifact the team uploads to the shared
     Build Library. Its extracted text feeds the AI as reference material so the
@@ -541,8 +550,19 @@ class BuildKnowledge(models.Model):
     file_url = models.URLField(max_length=1000, blank=True, default="")
     filename = models.CharField(max_length=500, blank=True, default="")
     raw_text = models.TextField(blank=True, default="")        # extracted text the AI reads
-    summary = models.TextField(blank=True, default="")          # optional short summary for context
+    summary = models.TextField(blank=True, default="")          # AI-generated retrieval summary
+
+    # ── Structured metadata (auto-filled by AI enrichment; editable) — lets retrieval
+    # filter/weight by what a doc is about instead of relying on raw lexical overlap. ──
+    niche = models.CharField(max_length=120, blank=True, default="")        # industry/vertical
+    build_type = models.CharField(max_length=120, blank=True, default="")   # e.g. "lead nurture", "booking funnel"
+    ghl_sections = models.JSONField(default=list, blank=True)               # list of BuildSection keys covered
+    integrations = models.CharField(max_length=300, blank=True, default="")  # comma-list of tools used
+    quality = models.CharField(max_length=12, choices=KnowledgeQuality.choices, default=KnowledgeQuality.STANDARD)
+
     use_for_ai = models.BooleanField(default=True)              # include in generation context
+    auto_generated = models.BooleanField(default=False)         # promoted from a delivered build (flywheel)
+    enriched_at = models.DateTimeField(null=True, blank=True)   # set when AI summary/metadata last filled
     uploaded_by = models.ForeignKey(
         USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="knowledge_uploads"
     )
@@ -550,7 +570,10 @@ class BuildKnowledge(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["use_for_ai", "client"])]
+        indexes = [
+            models.Index(fields=["use_for_ai", "client"]),
+            models.Index(fields=["use_for_ai", "quality"]),
+        ]
 
     def __str__(self):
         return self.title

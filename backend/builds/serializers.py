@@ -45,8 +45,10 @@ class BuildKnowledgeSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "client", "client_name", "build", "filename", "file_url",
             "summary", "use_for_ai", "uploaded_by", "uploaded_by_name", "created_at", "text_chars",
+            "niche", "build_type", "ghl_sections", "integrations", "quality",
+            "auto_generated", "enriched_at",
         ]
-        read_only_fields = ["uploaded_by", "file_url", "filename"]
+        read_only_fields = ["uploaded_by", "file_url", "filename", "auto_generated", "enriched_at"]
 
     @extend_schema_field(_NULL_STR)
     def get_uploaded_by_name(self, obj):

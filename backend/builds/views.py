@@ -24,7 +24,7 @@ from .models import (
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
     BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildStatus,
-    ApprovalType, BuildKnowledge, AiConfig, AiGenerationLog, BuildSectionReview,
+    ApprovalType, BuildKnowledge, KnowledgeQuality, AiConfig, AiGenerationLog, BuildSectionReview,
     BuildSection, BuildSectionReviewStatus, ChangeRequestStatus, MeetingActionItem,
     ProgressReport,
 )
@@ -183,6 +183,36 @@ def _maybe_start_progress(build, user):
         _log(build, user, "Auto-moved to In Progress — work started.")
 
 
+def _promote_build_to_library(build, user):
+    """Reinforcement loop: when a build is delivered, fold its final (human-vetted)
+    implementation document back into the Build Library as a GOLD exemplar — so future
+    generations learn from real delivered work, not just manual uploads. Idempotent per
+    build (refreshes the doc on re-delivery); AI enrichment then fills the
+    summary/metadata and re-embeds the chunks."""
+    doc = (build.build_document or "").strip()
+    if not doc:
+        return
+    from .tasks import enrich_knowledge
+    kn = BuildKnowledge.objects.filter(build=build, auto_generated=True).first()
+    if kn:
+        kn.raw_text = doc
+        kn.quality = KnowledgeQuality.GOLD
+        kn.use_for_ai = True
+        kn.summary = ""          # clear so enrichment regenerates from the latest doc
+        kn.enriched_at = None
+        kn.save(update_fields=["raw_text", "quality", "use_for_ai", "summary", "enriched_at"])
+    else:
+        kn = BuildKnowledge.objects.create(
+            title=f"{build.title} — delivered build",
+            client=build.client, build=build,
+            raw_text=doc, integrations=build.integrations or "",
+            quality=KnowledgeQuality.GOLD, use_for_ai=True, auto_generated=True,
+            uploaded_by=user,
+        )
+    _log(build, user, "Delivered build added to the Build Library as a gold reference.")
+    _dispatch_async(enrich_knowledge, kn.id)
+
+
 def _501(exc):
     return Response({"error": str(exc)}, status=http.HTTP_501_NOT_IMPLEMENTED)
 
@@ -336,6 +366,8 @@ class BuildViewSet(viewsets.ModelViewSet):
             _notify(build.creator, "READY_FOR_REVIEW", f'"{build.title}" is ready for review.', f"/builds/{build.id}")
         elif new_status == BuildStatus.CHANGES_REQUESTED:
             _notify(build.assignee, "CHANGES_REQUESTED", f'Changes requested on "{build.title}".', f"/builds/{build.id}")
+        elif new_status == BuildStatus.DELIVERED:
+            _promote_build_to_library(build, request.user)
         return Response(BuildSerializer(build).data)
 
     @action(detail=True, methods=["post"], url_path="approve")
@@ -821,7 +853,9 @@ class BuildKnowledgeViewSet(_BaseViewSet):
     ordering = ["-created_at"]
 
     def perform_create(self, serializer):
-        serializer.save(uploaded_by=self.request.user)
+        kn = serializer.save(uploaded_by=self.request.user)
+        from .tasks import enrich_knowledge
+        _dispatch_async(enrich_knowledge, kn.id)  # best-effort AI summary/metadata
 
     @action(detail=False, methods=["post"], url_path="upload",
             parser_classes=[MultiPartParser, FormParser])
@@ -859,8 +893,13 @@ class BuildKnowledgeViewSet(_BaseViewSet):
             filename=filename, file_url=file_url, raw_text=text,
             summary=(request.data.get("summary") or "").strip(),
             use_for_ai=str(request.data.get("use_for_ai", "true")).lower() in ("1", "true", "yes", "on"),
+            niche=(request.data.get("niche") or "").strip(),
+            build_type=(request.data.get("build_type") or "").strip(),
+            integrations=(request.data.get("integrations") or "").strip(),
             uploaded_by=request.user,
         )
+        from .tasks import enrich_knowledge
+        _dispatch_async(enrich_knowledge, kn.id)  # AI fills the summary + any blank metadata
         return Response(BuildKnowledgeSerializer(kn).data, status=http.HTTP_201_CREATED)
 
 
