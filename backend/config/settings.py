@@ -61,6 +61,21 @@ ALLOWED_HOSTS = [
     h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",") if h.strip()
 ]
 
+
+def _host_only(value: str) -> str:
+    """Hostname from a URL or host[:port] string (no scheme/port/path)."""
+    return (value or "").split("://")[-1].split("/")[0].split(":")[0].strip()
+
+
+# Always allow the host the in-cluster BFF uses to reach us. The frontend calls the
+# backend at DJANGO_API_URL (default the compose service name `backend`), so Django
+# receives `Host: backend`. If ALLOWED_HOSTS lists only public domains, every internal
+# request 400s with DisallowedHost — which silently breaks login + the whole BFF.
+for _src in (os.getenv("DJANGO_API_URL"), os.getenv("API_DOMAIN"), "backend", "calari_backend"):
+    _h = _host_only(_src) if _src else ""
+    if _h and _h not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_h)
+
 CSRF_TRUSTED_ORIGINS = [
     "https://portal.calarisolutions.com",
 ]
