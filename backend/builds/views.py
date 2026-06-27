@@ -373,17 +373,27 @@ class BuildViewSet(viewsets.ModelViewSet):
         done = build.tasks.filter(status="DONE").count()
         return Response({"total": total, "done": done, "percent": round(done * 100 / total) if total else 0})
 
-    @action(detail=True, methods=["get", "post"], url_path="build-document")
+    @action(detail=True, methods=["get", "post", "put"], url_path="build-document")
     def build_document(self, request, pk=None):
         """The persisted implementation build document.
 
-        GET returns the stored doc instantly (no AI). POST (re)generates it via one AI
-        call and stores it on the build, so navigating away never loses it and it only
-        regenerates when a human explicitly asks.
+        GET returns the stored doc instantly (no AI). PUT saves a human-edited version
+        (no AI). POST (re)generates it via one AI call. All stored on the build, so it
+        survives navigation and only regenerates when explicitly asked.
         """
         build = self.get_object()
         if request.method == "GET":
             return Response({"markdown": build.build_document or "", "generated_at": build.build_document_at})
+
+        if request.method == "PUT":
+            markdown = request.data.get("markdown")
+            if markdown is None:
+                return Response({"error": "markdown is required."}, status=http.HTTP_400_BAD_REQUEST)
+            build.build_document = markdown
+            build.build_document_at = timezone.now()
+            build.save(update_fields=["build_document", "build_document_at", "updated_at"])
+            _log(build, request.user, "Build document edited.")
+            return Response({"markdown": build.build_document, "generated_at": build.build_document_at})
 
         if _ai_doc_rate_limited(request.user, build.pk, "build_document"):
             return Response(

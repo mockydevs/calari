@@ -291,6 +291,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
               initialMarkdown={build.build_document ?? ""}
               generatedAt={build.build_document_at}
               notes={notes}
+              canManage={canManage}
             />
           </Panel>
           {canManage && (

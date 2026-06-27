@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Check, Copy, Download, RefreshCw } from "lucide-react";
+import { Bot, Check, Copy, Download, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { api, ApiError } from "@/lib/portal/api";
 import { useToast, Spinner } from "@/components/toast";
 import { ClientHandoverButton } from "./handover-button";
@@ -23,13 +23,14 @@ function fmt(iso?: string | null) {
  * navigation; the AI only re-runs when a human clicks Regenerate.
  */
 export function BuilderDocPanel({
-  buildId, title, initialMarkdown, generatedAt, notes,
+  buildId, title, initialMarkdown, generatedAt, notes, canManage = false,
 }: {
   buildId: string;
   title: string;
   initialMarkdown: string;
   generatedAt?: string | null;
   notes: MeetingNote[];
+  canManage?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -37,6 +38,30 @@ export function BuilderDocPanel({
   const [genAt, setGenAt] = React.useState<string | null>(generatedAt ?? null);
   const [busy, setBusy] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  function startEdit() {
+    setDraft(markdown);
+    setEditing(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await api.put<{ markdown: string; generated_at: string }>(`builds/builds/${buildId}/build-document`, { markdown: draft });
+      setMarkdown(res.markdown ?? draft);
+      setGenAt(res.generated_at ?? new Date().toISOString());
+      setEditing(false);
+      toast.success("Build document saved.");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the build document.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function generate() {
     setBusy(true);
@@ -78,32 +103,59 @@ export function BuilderDocPanel({
       <div className="min-w-0 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs text-slate-500">
-            {genAt ? <>Generated {fmt(genAt)}</> : "Not generated yet"}
+            {editing ? "Editing — markdown" : genAt ? <>Generated {fmt(genAt)}</> : "Not generated yet"}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {markdown && (
+            {editing ? (
               <>
-                <button type="button" onClick={copy} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                  {copied ? <><Check className="h-3.5 w-3.5 text-emerald-600" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                <button type="button" onClick={() => setEditing(false)} disabled={saving} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                  <X className="h-3.5 w-3.5" /> Cancel
                 </button>
-                <button type="button" onClick={download} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                  <Download className="h-3.5 w-3.5" /> .md
+                <button type="button" onClick={save} disabled={saving} className="inline-flex h-8 items-center gap-2 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60">
+                  {saving ? <><Spinner className="h-3.5 w-3.5" /> Saving…</> : <><Save className="h-3.5 w-3.5" /> Save</>}
                 </button>
-                <ClientHandoverButton buildId={buildId} title={title} />
+              </>
+            ) : (
+              <>
+                {markdown && (
+                  <>
+                    <button type="button" onClick={copy} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      {copied ? <><Check className="h-3.5 w-3.5 text-emerald-600" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                    </button>
+                    <button type="button" onClick={download} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      <Download className="h-3.5 w-3.5" /> .md
+                    </button>
+                  </>
+                )}
+                {canManage && markdown && (
+                  <button type="button" onClick={startEdit} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </button>
+                )}
+                {canManage && markdown && <ClientHandoverButton buildId={buildId} title={title} />}
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={generate}
+                    disabled={busy}
+                    className="inline-flex h-8 items-center gap-2 rounded-md bg-gradient-to-r from-pink-600 to-fuchsia-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:from-pink-700 hover:to-fuchsia-700 disabled:opacity-60"
+                  >
+                    {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><RefreshCw className="h-3.5 w-3.5" /> {markdown ? "Regenerate" : "Generate"}</>}
+                  </button>
+                )}
               </>
             )}
-            <button
-              type="button"
-              onClick={generate}
-              disabled={busy}
-              className="inline-flex h-8 items-center gap-2 rounded-md bg-gradient-to-r from-pink-600 to-fuchsia-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:from-pink-700 hover:to-fuchsia-700 disabled:opacity-60"
-            >
-              {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><RefreshCw className="h-3.5 w-3.5" /> {markdown ? "Regenerate" : "Generate"}</>}
-            </button>
           </div>
         </div>
 
-        {markdown ? (
+        {editing ? (
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="h-[36rem] w-full resize-y rounded-lg border border-slate-300 bg-white px-4 py-3 font-mono text-xs leading-relaxed text-slate-800 focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500"
+            placeholder="# Implementation build document…"
+          />
+        ) : markdown ? (
           <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs leading-relaxed text-slate-700">{markdown}</pre>
         ) : (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-6 py-12 text-center">
@@ -113,9 +165,11 @@ export function BuilderDocPanel({
               Generate the step-by-step GHL implementation document from the meeting notes and tasklist.
               It&apos;s saved to the build, so it stays here until you regenerate it.
             </p>
-            <button type="button" onClick={generate} disabled={busy} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-gradient-to-r from-pink-600 to-fuchsia-600 px-4 text-xs font-semibold text-white shadow-sm hover:from-pink-700 hover:to-fuchsia-700 disabled:opacity-60">
-              {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><Bot className="h-3.5 w-3.5" /> Generate build document</>}
-            </button>
+            {canManage && (
+              <button type="button" onClick={generate} disabled={busy} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-gradient-to-r from-pink-600 to-fuchsia-600 px-4 text-xs font-semibold text-white shadow-sm hover:from-pink-700 hover:to-fuchsia-700 disabled:opacity-60">
+                {busy ? <><Spinner className="h-3.5 w-3.5" /> Generating…</> : <><Bot className="h-3.5 w-3.5" /> Generate build document</>}
+              </button>
+            )}
           </div>
         )}
       </div>
