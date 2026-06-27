@@ -857,6 +857,39 @@ class BuildKnowledgeViewSet(_BaseViewSet):
         from .tasks import enrich_knowledge
         _dispatch_async(enrich_knowledge, kn.id)  # best-effort AI summary/metadata
 
+    @action(detail=False, methods=["get"], url_path="coverage")
+    def coverage(self, request):
+        """Library coverage for the dashboard: totals, quality mix, enrichment rate, and
+        per-GHL-section gold/any counts (so the team sees what exemplars to upload next)."""
+        qs = BuildKnowledge.objects.filter(use_for_ai=True)
+        total = qs.count()
+        by_quality = {q: 0 for q, _ in KnowledgeQuality.choices}
+        section_gold = {s: 0 for s, _ in BuildSection.choices}
+        section_any = {s: 0 for s, _ in BuildSection.choices}
+        enriched = 0
+        for kn in qs.only("quality", "ghl_sections", "summary"):
+            by_quality[kn.quality] = by_quality.get(kn.quality, 0) + 1
+            if (kn.summary or "").strip():
+                enriched += 1
+            for sec in (kn.ghl_sections or []):
+                if sec in section_any:
+                    section_any[sec] += 1
+                    if kn.quality == KnowledgeQuality.GOLD:
+                        section_gold[sec] += 1
+        sections = [
+            {"key": s, "label": label, "gold": section_gold[s], "any": section_any[s],
+             "thin": section_gold[s] < 2}
+            for s, label in BuildSection.choices
+        ]
+        return Response({
+            "total": total,
+            "enriched": enriched,
+            "by_quality": by_quality,
+            "sections": sections,
+            "embed_model": services.EMBED_MODEL,
+            "vectors_enabled": services._vectors_enabled(),
+        })
+
     @action(detail=False, methods=["post"], url_path="upload",
             parser_classes=[MultiPartParser, FormParser])
     def upload(self, request):

@@ -695,6 +695,131 @@ def build_reference_context(build) -> str:
     return "\n\n".join(parts)[:KNOWLEDGE_MAX_CHARS]
 
 
+def _norm_title(t: str) -> str:
+    return re.sub(r"\s+", " ", (t or "").strip().lower())
+
+
+def _semantic_blocks(build, query_text: str, k: int = 6) -> list[tuple[str, str]]:
+    """Top chunks for an arbitrary query from the pgvector store as (title, content)
+    blocks, preferring same-client docs. [] when vectors aren't configured/available."""
+    if not _vectors_enabled() or not query_text.strip():
+        return []
+    try:
+        from vectorstore.models import BuildKnowledgeChunk
+        from pgvector.django import CosineDistance
+
+        qv = embed_texts([query_text])[0]
+        base = BuildKnowledgeChunk.objects.filter(use_for_ai=True).annotate(
+            dist=CosineDistance("embedding", qv))
+        rows, seen = [], set()
+        if getattr(build, "client_id", None):
+            for r in base.filter(client_id=build.client_id).order_by("dist")[: max(2, k // 2)]:
+                rows.append(r); seen.add(r.id)
+        for r in base.order_by("dist")[:k]:
+            if r.id not in seen:
+                rows.append(r); seen.add(r.id)
+        return [(r.title, r.content) for r in rows]
+    except Exception:  # noqa: BLE001 — any failure → caller still has the FTS path
+        logger.exception("semantic block retrieval failed")
+        return []
+
+
+def _fts_blocks(build, query_text: str, k: int = 6) -> list[tuple[str, str]]:
+    """Top Build-Library docs for a query as (title, excerpt) blocks, ranked by the
+    composite weight (lexical + quality + recency). Keyword path — always available."""
+    from django.utils import timezone as _tz
+    docs = _candidate_docs(build, query_text)
+    qt = _ref_tokenize(query_text)
+    now = _tz.now()
+    docs = sorted(docs, key=lambda d: _knowledge_weight(d, qt, now), reverse=True)[:k]
+    out = []
+    for d in docs:
+        content = (d.summary or d.raw_text or "").strip()
+        if content:
+            out.append((d.title, content))
+    return out
+
+
+def _rrf_merge(*lists: list[tuple[str, str]], k: int = 4, rrf_k: int = 60) -> list[tuple[str, str]]:
+    """Reciprocal-rank fusion of several ranked (title, content) lists, deduped by
+    normalized title (one block per source doc — diversity). Combines semantic + keyword
+    signals: a doc both paths agree on rises; either path alone can still surface a hit."""
+    scores: dict[str, float] = {}
+    best: dict[str, tuple[str, str]] = {}
+    for lst in lists:
+        for rank, (title, content) in enumerate(lst):
+            key = _norm_title(title)
+            if not key:
+                continue
+            scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
+            # Keep the longest content seen for this doc (richer excerpt).
+            if key not in best or len(content) > len(best[key][1]):
+                best[key] = (title, content)
+    ranked = sorted(scores, key=lambda key: scores[key], reverse=True)[:k]
+    return [best[key] for key in ranked]
+
+
+def _retrieve_context(build, query_text: str, *, max_chars: int, per_doc_chars: int = 1400, k: int = 4) -> str:
+    """Hybrid retrieval for one query: semantic + keyword, RRF-fused & deduped, rendered
+    to a size-bounded reference block. The building block for per-section retrieval."""
+    fused = _rrf_merge(
+        _semantic_blocks(build, query_text, k=k * 2),
+        _fts_blocks(build, query_text, k=k * 2),
+        k=k,
+    )
+    parts, budget = [], max_chars
+    for title, content in fused:
+        block = f"### {title}\n{content.strip()[:per_doc_chars]}"
+        if parts and budget - len(block) < 0:
+            break
+        parts.append(block)
+        budget -= len(block)
+    return "\n\n".join(parts)
+
+
+def _build_active_sections(build) -> list[tuple[str, str, str]]:
+    """The GHL sections this build actually touches (from its tasklist), each with its
+    item texts — used to retrieve section-matched references. (section_key, label, text)."""
+    from collections import OrderedDict
+    from .models import BuildSection
+    groups: "OrderedDict[str, list[str]]" = OrderedDict()
+    for it in build.action_items.filter(superseded=False).exclude(section=""):
+        groups.setdefault(it.section, []).append(it.text or "")
+    out = []
+    for key, texts in groups.items():
+        try:
+            label = BuildSection(key).label
+        except ValueError:
+            label = key
+        out.append((key, label, " ".join(texts)[:1200]))
+    return out
+
+
+def build_section_reference_context(build) -> str:
+    """Per-section reference context: instead of one generic blob for the whole 24-section
+    document, retrieve references matched to each GHL section the build covers (query =
+    section label + that section's tasklist items). Far higher signal per token. Falls
+    back to the whole-build context when the build has no sectioned tasklist yet."""
+    sections = _build_active_sections(build)
+    if not sections:
+        return build_reference_context(build)
+    per_section = max(700, KNOWLEDGE_MAX_CHARS // max(len(sections), 1))
+    parts, budget = [], KNOWLEDGE_MAX_CHARS
+    for _key, label, items_text in sections:
+        ctx = _retrieve_context(
+            build, f"{label}. {items_text}",
+            max_chars=min(per_section, budget), per_doc_chars=1200, k=2,
+        )
+        if not ctx.strip():
+            continue
+        block = f"## Reference for {label}\n{ctx}"
+        parts.append(block)
+        budget -= len(block)
+        if budget <= 0:
+            break
+    return ("\n\n".join(parts)[:KNOWLEDGE_MAX_CHARS]) or build_reference_context(build)
+
+
 _KNOWLEDGE_SUMMARY_SYSTEM = (
     "You catalogue Calari's GoHighLevel build library. Given a past-build / reference "
     "document, produce a DENSE, retrieval-optimized summary plus structured metadata. "
@@ -872,7 +997,8 @@ def generate_build_document(build, notes_text: str = "", reference_text: str = "
         )
     if not reference_text:
         try:
-            reference_text = build_reference_context(build)
+            # Per-section retrieval — section-matched exemplars beat one generic blob.
+            reference_text = build_section_reference_context(build)
         except Exception:  # noqa: BLE001 — reference is a bonus, never block generation
             reference_text = ""
 
