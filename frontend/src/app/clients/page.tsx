@@ -17,6 +17,7 @@ type DjangoClient = {
   company_name: string;
   email: string;
   phone_number: string;
+  ghl_location_id?: string;
   is_active: boolean;
 };
 
@@ -89,6 +90,11 @@ export default async function ClientsPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" name="email" type="email" placeholder="jane@acme.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ghl_location_id">GHL location ID</Label>
+                <Input id="ghl_location_id" name="ghl_location_id" placeholder="GoHighLevel sub-account id (optional)" />
+                <p className="text-xs text-slate-500">Enables AI progress audits against this client&apos;s live GHL account.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="notes">Notes</Label>

@@ -10,6 +10,9 @@ class Clients(models.Model):
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=20, blank=True)
     company_name = models.CharField(max_length=255, blank=True)
+    # GoHighLevel sub-account (location) id — lets the AI progress auditor inspect this
+    # client's real GHL account via the GHL MCP server. Non-secret; the token lives in env.
+    ghl_location_id = models.CharField(max_length=120, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
 

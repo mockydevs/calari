@@ -478,6 +478,14 @@ class AiConfig(models.Model):
     model = models.CharField(max_length=64, blank=True, default="")            # blank → provider default
     blueprint_model = models.CharField(max_length=64, blank=True, default="")  # blank → falls back to `model`
     multi_pass = models.BooleanField(default=False)  # architect→critic→revise on the blueprint
+    # ── GoHighLevel MCP — live build verification (Settings → AI) ──
+    # When url + token are set, the progress auditor inspects the client's real GHL
+    # account. Token is AES-GCM encrypted like AiApiKey; only a preview is exposed.
+    # Blank here falls back to the GHL_MCP_* env vars; blank everywhere → doc-only audit.
+    ghl_mcp_url = models.CharField(max_length=500, blank=True, default="")
+    ghl_mcp_token_encrypted = models.TextField(blank=True, default="")
+    ghl_mcp_token_preview = models.CharField(max_length=32, blank=True, default="")
+    ghl_mcp_model = models.CharField(max_length=64, blank=True, default="")  # blank → claude-opus-4-8
     updated_by = models.ForeignKey(USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -45,6 +45,19 @@ export async function renameApiKey(formData: FormData) {
   revalidatePath("/settings/ai");
 }
 
+export async function updateGhlMcpConfig(formData: FormData) {
+  await requireFeature("ai_keys");
+  // GoHighLevel MCP endpoint used by the AI progress auditor for live verification.
+  // A blank token means "keep the stored one" (it's encrypted server-side and never
+  // re-shown); clearing the URL disables live verification entirely.
+  await serverApi.patch("builds/ai-config", {
+    ghl_mcp_url: String(formData.get("ghl_mcp_url") ?? "").trim(),
+    ghl_mcp_model: String(formData.get("ghl_mcp_model") ?? "").trim(),
+    ghl_mcp_token: String(formData.get("ghl_mcp_token") ?? "").trim(),
+  });
+  revalidatePath("/settings/ai");
+}
+
 export async function updateAiConfig(formData: FormData) {
   await requireFeature("ai_keys");
   // Which provider + model the AI generation uses (the active key within that

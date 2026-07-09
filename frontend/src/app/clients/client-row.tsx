@@ -9,6 +9,7 @@ export type ClientItem = {
   company_name: string;
   email: string;
   phone_number: string;
+  ghl_location_id?: string;
 };
 
 function initials(name: string) {
@@ -25,14 +26,17 @@ export function ClientRow({ client }: { client: ClientItem }) {
       <form
         action={updateClient}
         onSubmit={() => setEditing(false)}
-        className="grid gap-2 px-4 py-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center"
+        className="flex flex-col gap-2 px-4 py-3"
       >
         <input type="hidden" name="id" value={client.id} />
-        <input name="name" defaultValue={client.name} required placeholder="Name" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
-        <input name="company" defaultValue={client.company_name} placeholder="Company" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
-        <input name="email" type="email" defaultValue={client.email} placeholder="Email" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
-        <div className="flex items-center gap-1.5">
-          <input type="hidden" name="phone" value={client.phone_number} />
+        <input type="hidden" name="phone" value={client.phone_number} />
+        <div className="grid gap-2 sm:grid-cols-3">
+          <input name="name" defaultValue={client.name} required placeholder="Name" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
+          <input name="company" defaultValue={client.company_name} placeholder="Company" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
+          <input name="email" type="email" defaultValue={client.email} placeholder="Email" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
+        </div>
+        <div className="flex items-center gap-2">
+          <input name="ghl_location_id" defaultValue={client.ghl_location_id ?? ""} placeholder="GHL location ID (for live AI audits)" className="h-9 flex-1 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
           <button type="submit" className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-pink-600 text-white hover:bg-pink-700" aria-label="Save"><Check className="h-4 w-4" /></button>
           <button type="button" onClick={() => setEditing(false)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" aria-label="Cancel"><X className="h-4 w-4" /></button>
         </div>

@@ -1,7 +1,7 @@
 import { Bot, CheckCircle2, KeyRound, Plus, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { createApiKey, activateApiKey, deleteApiKey, renameApiKey, updateAiConfig } from "./actions";
+import { createApiKey, activateApiKey, deleteApiKey, renameApiKey, updateAiConfig, updateGhlMcpConfig } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,7 +39,10 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
   return Array.isArray(d) ? d : d.results ?? [];
 }
 
-type AiConfig = { provider: string; model: string; blueprint_model: string; multi_pass: boolean };
+type AiConfig = {
+  provider: string; model: string; blueprint_model: string; multi_pass: boolean;
+  ghl_mcp_url: string; ghl_mcp_model: string; ghl_mcp_token_preview: string;
+};
 type AiUsage = {
   days: number;
   totals: {
@@ -56,7 +59,7 @@ export default async function AiSettingsPage() {
   await requireFeature("ai_keys");
   const [keys, config, usage] = await Promise.all([
     serverApi.get<AiKey[] | { results: AiKey[] }>("builds/ai-keys").then(asList).catch(() => [] as AiKey[]),
-    serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "", multi_pass: false } as AiConfig)),
+    serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "", multi_pass: false, ghl_mcp_url: "", ghl_mcp_model: "", ghl_mcp_token_preview: "" } as AiConfig)),
     serverApi.get<AiUsage>("builds/ai-usage").catch(() => null),
   ]);
   // Providers we actually generate with today (others can still store keys).
@@ -112,6 +115,46 @@ export default async function AiSettingsPage() {
               <Button type="submit"><CheckCircle2 className="h-4 w-4" /> Save active provider</Button>
               <span className="ml-3 text-xs text-slate-500">If the chosen provider/model errors, generation safely falls back to OpenAI.</span>
             </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* GoHighLevel MCP — live build verification */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
+              <ShieldCheck className="h-4 w-4" />
+            </span>
+            GoHighLevel live verification
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form action={updateGhlMcpConfig} className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="ghl-mcp-url">GHL MCP server URL</Label>
+              <Input id="ghl-mcp-url" name="ghl_mcp_url" defaultValue={config.ghl_mcp_url} placeholder="https://services.leadconnectorhq.com/mcp/  (may contain {'{location_id}'})" />
+              <p className="text-xs text-slate-500">
+                {"{location_id}"} is filled per client from the GHL location ID on the Clients page. Clear this field to turn live verification off.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ghl-mcp-model">Model (optional)</Label>
+              <Input id="ghl-mcp-model" name="ghl_mcp_model" defaultValue={config.ghl_mcp_model} placeholder="claude-opus-4-8" />
+              <p className="text-xs text-slate-500">Blank = claude-opus-4-8. Uses the active Anthropic key above.</p>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="ghl-mcp-token">MCP token</Label>
+              <PasswordInput id="ghl-mcp-token" name="ghl_mcp_token" autoComplete="off" placeholder={config.ghl_mcp_token_preview ? `Stored: ${config.ghl_mcp_token_preview} — paste a new token to replace` : "Paste GHL private-integration / bearer token"} />
+              <p className="text-xs text-slate-500">Encrypted before storage and never shown again. Leave blank to keep the current token.</p>
+            </div>
+            <div className="flex items-end">
+              <Button type="submit"><CheckCircle2 className="h-4 w-4" /> Save GHL settings</Button>
+            </div>
+            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600 ring-1 ring-slate-100 sm:col-span-3">
+              When configured, progress-report audits inspect the client&apos;s real GHL account and only mark items VERIFIED
+              if they actually exist there. Not configured = audits work exactly as before (doc-only).
+            </p>
           </form>
         </CardContent>
       </Card>

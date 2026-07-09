@@ -358,8 +358,18 @@ def analyze_build_progress(self, build_id, report_id, user_id):
         reference = services.build_reference_context(build)
     except Exception:  # noqa: BLE001
         reference = ""
+    # Optional: inspect the client's REAL GHL account (GHL MCP) so the audit verifies
+    # against ground truth, not just the staff write-up. No-op unless GHL MCP is configured.
     try:
-        audit = services.analyze_progress_report(build, report.raw_text, reference_text=reference)
+        focus = "\n".join(
+            it.text for it in build.action_items.filter(superseded=False).only("text")[:60]
+        )
+        ghl_state = services.ghl_state_snapshot(build, focus=focus)
+    except Exception:  # noqa: BLE001 — live verification is a bonus, never block the audit
+        ghl_state = ""
+    try:
+        audit = services.analyze_progress_report(
+            build, report.raw_text, reference_text=reference, ghl_state=ghl_state)
     except Exception:  # noqa: BLE001 — surface failure so the UI doesn't hang
         report.ai_status = "failed"
         report.save(update_fields=["ai_status"])
@@ -412,5 +422,6 @@ def analyze_build_progress(self, build_id, report_id, user_id):
         Activity.objects.create(
             build=build, actor=actor,
             message=f"Progress report audited: {verified} verified, {needs_info} need info"
-                    + (f", {len(pushback)} open question(s)" if pushback else "") + ".",
+                    + (f", {len(pushback)} open question(s)" if pushback else "")
+                    + (" (verified against live GHL)." if ghl_state else "."),
         )

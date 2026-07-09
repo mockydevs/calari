@@ -21,6 +21,7 @@ export async function createClient(formData: FormData) {
     company_name: parsed.data.company ?? "",
     email: parsed.data.email || "",
     phone_number: "",
+    ghl_location_id: String(formData.get("ghl_location_id") ?? "").trim(),
     is_active: true,
   });
 
@@ -39,6 +40,7 @@ export async function updateClient(formData: FormData) {
     company_name: String(formData.get("company") ?? "").trim(),
     email: String(formData.get("email") ?? "").trim(),
     phone_number: String(formData.get("phone") ?? "").trim(),
+    ghl_location_id: String(formData.get("ghl_location_id") ?? "").trim(),
   });
   revalidatePath("/clients");
 }
