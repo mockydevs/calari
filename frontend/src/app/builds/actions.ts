@@ -122,6 +122,16 @@ export async function updateTaskStatus(formData: FormData) {
   revalidatePath(`/builds/${buildId}`);
 }
 
+export async function reassignTask(formData: FormData) {
+  await requireUser();
+  const taskId = String(formData.get("taskId") ?? "");
+  const buildId = String(formData.get("buildId") ?? "");
+  const assignee = String(formData.get("assignee") ?? "").trim();
+  if (!taskId) throw new Error("Task is required");
+  await serverApi.patch(`builds/tasks/${taskId}`, { assignee: assignee ? Number(assignee) : null });
+  revalidatePath(`/builds/${buildId}`);
+}
+
 export async function updateBuildSectionReview(formData: FormData) {
   await requireUser();
   const buildId = String(formData.get("buildId") ?? "");

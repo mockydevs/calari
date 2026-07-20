@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
   addComment, convertSectionBlockerToTask, createChangeRequest, createTask, deleteChangeRequest, deleteTask, enablePortal,
-  generateChangeRequestSteps, recordApproval, setBuildStatus, setChangeRequestStatus,
+  generateChangeRequestSteps, recordApproval, reassignTask, setBuildStatus, setChangeRequestStatus,
   requestSectionBlockerInfo, updateTaskStatus, uploadDocument,
 } from "../actions";
 import { AssignApprove } from "../assign-approve";
@@ -383,7 +383,17 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                     {t.description && (
                       <div className="mt-2 rounded-md bg-slate-50 p-3 text-xs leading-relaxed whitespace-pre-wrap text-slate-700">{t.description}</div>
                     )}
-                    {t.assignee_name && (
+                    {canManageBuilds && users.length > 0 ? (
+                      <form action={reassignTask} className="mt-2 flex items-center gap-2">
+                        <input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="buildId" value={id} />
+                        <span className="text-xs text-slate-400">Assignee:</span>
+                        <Select name="assignee" defaultValue={t.assignee != null ? String(t.assignee) : ""} className="h-7 text-xs">
+                          <option value="">Unassigned</option>
+                          {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
+                        </Select>
+                        <Button type="submit" size="sm" variant="outline">Save</Button>
+                      </form>
+                    ) : t.assignee_name && (
                       <p className="mt-1 text-xs text-slate-400">Assigned to {t.assignee_name}</p>
                     )}
                   </li>

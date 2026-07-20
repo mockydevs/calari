@@ -68,6 +68,7 @@ export interface BuildTask {
   description: string;
   type: string;
   status: TaskStatus;
+  assignee: number | null;
   assignee_name?: string;
   due_date: string | null;
 }
