@@ -110,6 +110,7 @@ export async function deleteTask(formData: FormData) {
   if (!taskId) throw new Error("Task is required");
   await serverApi.del(`builds/tasks/${taskId}`);
   revalidatePath(`/builds/${buildId}`);
+  revalidatePath("/tasks");
 }
 
 export async function updateTaskStatus(formData: FormData) {
@@ -120,6 +121,7 @@ export async function updateTaskStatus(formData: FormData) {
   if (!taskId || !status) throw new Error("Task and status are required");
   await serverApi.post(`builds/tasks/${taskId}/status`, { status });
   revalidatePath(`/builds/${buildId}`);
+  revalidatePath("/tasks");
 }
 
 export async function reassignTask(formData: FormData) {
@@ -130,6 +132,7 @@ export async function reassignTask(formData: FormData) {
   if (!taskId) throw new Error("Task is required");
   await serverApi.patch(`builds/tasks/${taskId}`, { assignee: assignee ? Number(assignee) : null });
   revalidatePath(`/builds/${buildId}`);
+  revalidatePath("/tasks");
 }
 
 export async function updateBuildSectionReview(formData: FormData) {

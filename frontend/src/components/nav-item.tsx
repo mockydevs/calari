@@ -11,6 +11,7 @@ import {
   KanbanSquare,
   KeyRound,
   LayoutDashboard,
+  ListChecks,
   MessageSquare,
   Settings,
   Users,
@@ -30,6 +31,7 @@ const ICON_MAP = {
   BookOpen,
   MessageSquare,
   Cable,
+  ListChecks,
 } as const;
 
 export type NavIconName = keyof typeof ICON_MAP;

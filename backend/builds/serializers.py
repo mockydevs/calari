@@ -15,7 +15,9 @@ _NULL_STR = serializers.CharField(allow_null=True)
 def _user_name(user):
     if not user:
         return None
-    return user.get_full_name() or user.username
+    # DashboardUser stores the display name in `full_name`, not the built-in
+    # first_name/last_name Django expects get_full_name() to read from.
+    return getattr(user, "display_name", None) or user.get_full_name() or user.username
 
 
 def _user_initials(user):
@@ -248,12 +250,15 @@ class TaskDependencySerializer(serializers.ModelSerializer):
 class TaskCardSerializer(serializers.ModelSerializer):
     assignee_name = serializers.SerializerMethodField()
     assignee_initials = serializers.SerializerMethodField()
+    build_title = serializers.SerializerMethodField()
+    client_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
         fields = [
             "id", "title", "description", "type", "status", "ai_generated",
-            "progress_note", "build", "assignee", "assignee_name", "assignee_initials",
+            "progress_note", "build", "build_title", "client_name",
+            "assignee", "assignee_name", "assignee_initials",
             "due_date", "created_at", "updated_at",
         ]
 
@@ -264,6 +269,14 @@ class TaskCardSerializer(serializers.ModelSerializer):
     @extend_schema_field(_NULL_STR)
     def get_assignee_initials(self, obj):
         return _user_initials(obj.assignee)
+
+    @extend_schema_field(_NULL_STR)
+    def get_build_title(self, obj):
+        return obj.build.title if obj.build_id else None
+
+    @extend_schema_field(_NULL_STR)
+    def get_client_name(self, obj):
+        return obj.build.client.name if obj.build_id and obj.build.client_id else None
 
 
 class TaskSerializer(TaskCardSerializer):

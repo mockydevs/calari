@@ -38,6 +38,7 @@ from .serializers import (
     AiApiKeySerializer, TeamInviteSerializer,
     BuildKnowledgeSerializer, AiConfigSerializer,
     BuildSectionReviewSerializer, MeetingActionItemSerializer, ProgressReportSerializer,
+    _user_name,
 )
 from . import services
 from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner, can_manage_builds
@@ -101,7 +102,7 @@ def _related_build(obj):
 def _log(build, user, message):
     Activity.objects.create(
         build=build,
-        actor=(user.get_full_name() or user.username) if user else "system",
+        actor=_user_name(user) or "system",
         message=message,
     )
 
@@ -155,11 +156,11 @@ def _notify(user, type_, message, link, actor=None, build_name=""):
             recipient_email=user.email,
             subject=message,
             context={
-                "recipient_name": user.get_full_name() or user.username,
+                "recipient_name": _user_name(user),
                 "event_type": _EMAIL_EVENT_MAP.get(type_, ""),
                 "event_title": message,
                 "event_detail": "",
-                "actor_name": (actor.get_full_name() or actor.username) if actor else "Calari Staff Portal",
+                "actor_name": _user_name(actor) or "Calari Staff Portal",
                 "project_name": build_name,
                 "portal_url": f"{frontend}{link}",
                 "year": date.today().year,
@@ -365,7 +366,7 @@ class BuildViewSet(viewsets.ModelViewSet):
         if build.status in (BuildStatus.DRAFT, BuildStatus.AI_DRAFTED):
             build.status = BuildStatus.ASSIGNED
         build.save()
-        _log(build, request.user, f"Assigned to {assignee.get_full_name() or assignee.username}.")
+        _log(build, request.user, f"Assigned to {_user_name(assignee)}.")
         _notify(assignee, "BUILD_ASSIGNED", f'You were assigned to "{build.title}".', f"/builds/{build.id}")
         return Response(BuildSerializer(build).data)
 
@@ -418,7 +419,7 @@ class BuildViewSet(viewsets.ModelViewSet):
             scope_changes=f"{q['edited']} AI item(s) edited, {q['human_added']} human-added, "
                           f"{q['gaps_resolved']}/{q['gaps_total']} gaps resolved.",
         )
-        _log(build, request.user, f"Build-out approved and handed to {assignee.get_full_name() or assignee.username}.")
+        _log(build, request.user, f"Build-out approved and handed to {_user_name(assignee)}.")
         _notify(
             assignee, "BUILD_ASSIGNED",
             f'Build "{build.title}" approved — ready to implement.',
@@ -607,7 +608,7 @@ def my_builds(request):
 
 # ─── Tasks ────────────────────────────────────────────────────────────────────
 class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.select_related("assignee", "build").prefetch_related("documents__uploader", "comments__author").all()
+    queryset = Task.objects.select_related("assignee", "build", "build__client").prefetch_related("documents__uploader", "comments__author").all()
     permission_classes = [IsManagerOrBuildTaskOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["build", "status", "type", "assignee"]
@@ -651,7 +652,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         task.save()
         _maybe_start_progress(task.build, request.user)
         _log(task.build, request.user, f'Task "{task.title}" → {task.status}.')
-        actor_name = request.user.get_full_name() or request.user.username
+        actor_name = _user_name(request.user)
         msg = f'{actor_name} updated task "{task.title}" to {task.status}.'
         if task.progress_note:
             msg += f" Note: {task.progress_note}"
@@ -1142,7 +1143,7 @@ class BuildSectionReviewViewSet(_BaseViewSet):
                     "attachment_url": review.blocker_attachment_url,
                     "attachment_name": review.blocker_attachment_name,
                     "user_id": request.user.id,
-                    "user_name": request.user.get_full_name() or request.user.username,
+                    "user_name": _user_name(request.user),
                     "created_at": timezone.now().isoformat(),
                 },
             ]
@@ -1206,7 +1207,7 @@ class BuildSectionReviewViewSet(_BaseViewSet):
             {
                 "note": f"Admin requested more info: {note}",
                 "user_id": request.user.id,
-                "user_name": request.user.get_full_name() or request.user.username,
+                "user_name": _user_name(request.user),
                 "created_at": timezone.now().isoformat(),
             },
         ]
@@ -1412,7 +1413,7 @@ class TeamInviteViewSet(viewsets.ModelViewSet):
         """Email the signup link via Celery so the API response never blocks on SMTP."""
         frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
         signup_url = f"{frontend}/signup/{token}"
-        inviter = self.request.user.get_full_name() or self.request.user.username
+        inviter = _user_name(self.request.user)
         try:
             send_notification_email.delay(
                 recipient_email=invite.email,

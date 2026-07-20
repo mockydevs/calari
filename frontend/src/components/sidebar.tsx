@@ -13,6 +13,7 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
 
   const navItems: { href: string; label: string; iconName: NavIconName; show: boolean }[] = [
     { href: "/dashboard", label: "Dashboard", iconName: "LayoutDashboard", show: true },
+    { href: "/tasks", label: "Tasks", iconName: "ListChecks", show: true },
     { href: "/projects", label: "Projects", iconName: "FolderKanban", show: true },
     { href: "/builds", label: "Builds", iconName: "BriefcaseBusiness", show: true },
     { href: "/builds/kanban", label: "Board", iconName: "KanbanSquare", show: true },

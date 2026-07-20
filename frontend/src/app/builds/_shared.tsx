@@ -71,7 +71,13 @@ export interface BuildTask {
   assignee: number | null;
   assignee_name?: string;
   due_date: string | null;
+  build?: number;
+  build_title?: string;
+  client_name?: string;
 }
+
+export type DjangoUser = { id: number; full_name: string; username: string };
+export type DjangoClient = { id: number; name: string };
 
 export type ChangeRequestStatus =
   | "PENDING"

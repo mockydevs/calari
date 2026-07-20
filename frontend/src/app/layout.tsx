@@ -5,6 +5,7 @@ import { getAppUser } from "@/lib/auth-helpers";
 import { Sidebar } from "@/components/sidebar";
 import { SidebarWrapper } from "@/components/sidebar-wrapper";
 import { ToastProvider } from "@/components/toast";
+import { LoginWelcome } from "@/components/login-welcome";
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ToastProvider>
           {user ? (
             <div className="flex min-h-screen">
+              <LoginWelcome name={user.name} />
               <SidebarWrapper>
                 <Sidebar user={user} />
               </SidebarWrapper>

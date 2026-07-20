@@ -8,6 +8,7 @@ from .models import (
     Build, Task, BuildMemorySnapshot, Activity,
     ChangeRequest, MeetingNote, MeetingActionItem, ProgressReport,
 )
+from .serializers import _user_name
 
 User = get_user_model()
 
@@ -26,7 +27,7 @@ def _run_qa_snapshot(build, user):
     )
     Activity.objects.create(
         build=build,
-        actor=(user.get_full_name() or user.username) if user else "system",
+        actor=_user_name(user) or "system",
         message="AI QA review completed.",
     )
 
@@ -165,7 +166,7 @@ def apply_progress_update(self, build_id, note_id, user_id):
         note.save(update_fields=["ai_status"])
         return
 
-    actor = (user.get_full_name() or user.username) if user else "system"
+    actor = _user_name(user) or "system"
     scope_changes = delta.get("scopeChanges", []) or []
     questions = delta.get("newQuestions", []) or []
     progress = delta.get("progress", []) or []
@@ -245,7 +246,7 @@ def generate_meeting_tasklist(self, build_id, note_id, user_id):
         return
     user = User.objects.filter(pk=user_id).first()
     note = MeetingNote.objects.filter(pk=note_id).first()
-    actor = (user.get_full_name() or user.username) if user else "system"
+    actor = _user_name(user) or "system"
     # Ground categorization/phrasing in how Calari builds (Build Library), never scope.
     reference = services.build_reference_context(build)
 
@@ -353,7 +354,7 @@ def analyze_build_progress(self, build_id, report_id, user_id):
     if not build or not report:
         return
     user = User.objects.filter(pk=user_id).first()
-    actor = (user.get_full_name() or user.username) if user else "system"
+    actor = _user_name(user) or "system"
     try:
         reference = services.build_reference_context(build)
     except Exception:  # noqa: BLE001
