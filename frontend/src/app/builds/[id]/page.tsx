@@ -138,10 +138,10 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   const user = await requireUser();
   const canManageBuilds = user.role === "ADMIN" || (user.features ?? []).includes("builds_manage");
 
-  // Fetch build + users + notes in parallel (one round-trip wave).
-  const [build, users, notes] = await Promise.all([
+  // Fetch build + notes in parallel (one round-trip wave); users list depends on
+  // isOwner, which needs `build`, so it's fetched just after.
+  const [build, notes] = await Promise.all([
     serverApi.get<BuildDetail>(`builds/builds/${id}`).catch(() => null),
-    canManageBuilds ? serverApi.get<DjangoUser[] | { results: DjangoUser[] }>("auth/users").then(asList).catch(() => []) : Promise.resolve([] as DjangoUser[]),
     serverApi.get<MeetingNote[] | { results: MeetingNote[] }>(`builds/meeting-notes?build=${id}`).then(asList).catch(() => [] as MeetingNote[]),
   ]);
   if (!build) notFound();
@@ -151,6 +151,15 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   // controls that would 403. Admin-only actions stay gated by canManageBuilds below.
   const isOwner = build.assignee != null && String(build.assignee) === user.id;
   const canManage = canManageBuilds || isOwner;
+
+  // Needed to populate the task-assignee / change-request-owner dropdowns.
+  // `auth/users` (the staff roster) is manager/`team`-feature-gated on the backend
+  // (Auth/views.py list_users), so non-admin build owners still see the empty
+  // fallback ("Assignee: build assignee") rather than a picker — same limit the
+  // existing change-request owner dropdown already has.
+  const users = canManageBuilds
+    ? await serverApi.get<DjangoUser[] | { results: DjangoUser[] }>("auth/users").then(asList).catch(() => [] as DjangoUser[])
+    : ([] as DjangoUser[]);
 
   const tasks = build.tasks ?? [];
   const changeRequests = build.change_requests ?? [];
@@ -374,15 +383,27 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                     {t.description && (
                       <div className="mt-2 rounded-md bg-slate-50 p-3 text-xs leading-relaxed whitespace-pre-wrap text-slate-700">{t.description}</div>
                     )}
+                    {t.assignee_name && (
+                      <p className="mt-1 text-xs text-slate-400">Assigned to {t.assignee_name}</p>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
-            <form action={createTask} className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+            <form action={createTask} className="mt-3 space-y-2 border-t border-slate-100 pt-3">
               <input type="hidden" name="buildId" value={id} />
-              <div className="flex-1"><Input name="title" required placeholder="New task title" className="h-9" /></div>
-              <Select name="type" defaultValue="OTHER" className="h-9">{TASK_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>)}</Select>
-              <Button type="submit" size="sm"><Plus className="h-3.5 w-3.5" /> Add</Button>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex-1"><Input name="title" required placeholder="New task or concern title" className="h-9" /></div>
+                <Select name="type" defaultValue="OTHER" className="h-9">{TASK_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>)}</Select>
+              </div>
+              <Textarea name="description" rows={2} placeholder="Describe the concern or what needs to be done…" />
+              <div className="flex flex-wrap items-end gap-2">
+                <Select name="assignee" defaultValue="" className="h-9">
+                  <option value="">Assignee: build assignee</option>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
+                </Select>
+                <Button type="submit" size="sm"><Plus className="h-3.5 w-3.5" /> Add</Button>
+              </div>
             </form>
           </Panel>
         </TabPanel>

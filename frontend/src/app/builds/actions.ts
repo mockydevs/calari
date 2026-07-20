@@ -93,8 +93,13 @@ export async function createTask(formData: FormData) {
   const buildId = String(formData.get("buildId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   const type = String(formData.get("type") ?? "OTHER");
+  const description = String(formData.get("description") ?? "").trim();
+  const assignee = String(formData.get("assignee") ?? "").trim();
   if (!buildId || !title) throw new Error("Build and title are required");
-  await serverApi.post("builds/tasks", { build: Number(buildId), title, type });
+  await serverApi.post("builds/tasks", {
+    build: Number(buildId), title, type, description,
+    assignee: assignee ? Number(assignee) : null,
+  });
   revalidatePath(`/builds/${buildId}`);
 }
 

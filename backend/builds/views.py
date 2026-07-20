@@ -996,6 +996,11 @@ class ChangeRequestViewSet(_BaseViewSet):
         cr = serializer.save(created_by=self.request.user)
         _log(cr.build, self.request.user, f'Change request "{cr.title}" raised.')
         _notify(cr.build.assignee, "CHANGE_REQUEST", f'Change request: "{cr.title}".', f"/builds/{cr.build_id}")
+        if cr.owner_id and cr.owner_id != cr.build.assignee_id:
+            _notify(
+                cr.owner, "CHANGE_REQUEST", f'You were assigned change request: "{cr.title}".',
+                f"/builds/{cr.build_id}", actor=self.request.user, build_name=cr.build.title,
+            )
 
     @action(detail=True, methods=["post"], url_path="status")
     def set_status(self, request, pk=None):

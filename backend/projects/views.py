@@ -1032,10 +1032,24 @@ def my_dashboard(request):
 
     # ── My builds (assigned to me, not yet delivered). Lazy import to avoid a
     #    circular import between the projects and builds apps at module load.
-    from builds.models import Build, BuildStatus
+    from builds.models import Build, BuildStatus, Task as BuildTask, TaskStatus as BuildTaskStatus, ChangeRequest, ChangeRequestStatus
     my_builds_qs = Build.objects.filter(assignee=user).select_related('client').order_by('-updated_at')
     my_open_builds = my_builds_qs.exclude(status=BuildStatus.DELIVERED).count()
     my_builds_list = list(my_builds_qs[:10])
+
+    # ── Concerns assigned to me: build-scoped tasks and change requests where I'm
+    #    the assignee/owner, across every build — not just the one I'm running.
+    #    This is what lets an employee log in and immediately see a concern a
+    #    manager raised and assigned to them, without opening each build.
+    my_build_tasks_qs = BuildTask.objects.filter(
+        assignee=user
+    ).exclude(status=BuildTaskStatus.DONE).select_related('build', 'build__client').order_by('-created_at')[:10]
+
+    my_change_requests_qs = ChangeRequest.objects.filter(
+        owner=user
+    ).exclude(
+        status__in=[ChangeRequestStatus.IMPLEMENTED, ChangeRequestStatus.REJECTED]
+    ).select_related('build', 'build__client').order_by('-created_at')[:10]
 
     def fmt_build(b):
         return {
@@ -1055,6 +1069,28 @@ def my_dashboard(request):
             'due_date': t.due_date,
             'project_id': t.project_id,
             'project_name': t.project.name,
+        }
+
+    def fmt_build_task(t):
+        return {
+            'id': t.id,
+            'title': t.title,
+            'status': t.status,
+            'due_date': t.due_date,
+            'build_id': t.build_id,
+            'build_title': t.build.title,
+            'client_name': t.build.client.name if t.build.client_id else '',
+        }
+
+    def fmt_change_request(c):
+        return {
+            'id': c.id,
+            'title': c.title,
+            'status': c.status,
+            'due_date': c.due_date,
+            'build_id': c.build_id,
+            'build_title': c.build.title,
+            'client_name': c.build.client.name if c.build.client_id else '',
         }
 
     def fmt_milestone(m):
@@ -1097,6 +1133,8 @@ def my_dashboard(request):
             'my_open_builds': my_open_builds,
         },
         'my_builds': [fmt_build(b) for b in my_builds_list],
+        'my_build_tasks': [fmt_build_task(t) for t in my_build_tasks_qs],
+        'my_change_requests': [fmt_change_request(c) for c in my_change_requests_qs],
         'almost_due_tasks': [fmt_task(t) for t in almost_due_qs],
         'overdue_tasks': [fmt_task(t) for t in overdue_qs],
         'high_priority_tasks': [fmt_task(t) for t in high_priority_qs],
