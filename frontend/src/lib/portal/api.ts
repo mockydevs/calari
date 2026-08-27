@@ -19,7 +19,7 @@ export class ApiError extends Error {
 }
 
 /** Extract a human-readable message from a DRF error response. */
-export function extractApiError(data: unknown, fallback = "An unexpected error occurred."): string {
+function extractApiError(data: unknown, fallback = "An unexpected error occurred."): string {
   if (!data) return fallback;
   if (typeof data === "string") return data;
   const d = data as ApiErrorBody;
@@ -77,6 +77,8 @@ async function request<T>(path: string, init: RequestInit, params?: Record<strin
     if (res.status === 401 && typeof window !== "undefined") {
       const path = window.location.pathname;
       if (!path.includes("/login") && !path.includes("password")) {
+        // A hard reload discards authenticated client state after session expiry.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = `/login?next=${encodeURIComponent(path)}`;
       }
     }

@@ -23,6 +23,7 @@ export function NewBuildForm({ clients }: { clients: DjangoClient[] }) {
   const [files, setFiles] = React.useState<File[]>([]);
   const [dragging, setDragging] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [analyze, setAnalyze] = React.useState(true);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   function addFiles(list: FileList | null) {
@@ -34,10 +35,12 @@ export function NewBuildForm({ clients }: { clients: DjangoClient[] }) {
     if (!title.trim()) return toast.error("Build title is required.");
     if (!client) return toast.error("Select a client.");
     setBusy(true);
+    let createdId: number | null = null;
     try {
       const build = await api.post<{ id: number }>("builds/builds", {
         title: title.trim(), client: Number(client), status: "DRAFT",
       });
+      createdId = build.id;
       if (notes.trim()) {
         await api.post("builds/meeting-notes", { build: build.id, raw_text: notes.trim(), source: "paste" });
       }
@@ -47,10 +50,20 @@ export function NewBuildForm({ clients }: { clients: DjangoClient[] }) {
         fd.set("file", f);
         await api.upload("builds/meeting-notes/upload", fd);
       }
-      toast.success("Build created.");
-      router.push(`/builds/${build.id}`);
+      if (analyze && (notes.trim() || files.length)) {
+        await api.post(`builds/builds/${build.id}/generate-tasklist`, {});
+        toast.info("Meeting saved. AI task analysis has started; review the suggestions before assigning them.");
+        router.push(`/builds/${build.id}#meeting-tasklist`);
+      } else {
+        toast.success("Build created.");
+        router.push(`/builds/${build.id}`);
+      }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not create the build.");
+      if (createdId) {
+        toast.info("Your build was saved. Check the meeting notes and retry analysis from the build workspace.");
+        router.push(`/builds/${createdId}`);
+      }
       setBusy(false);
     }
   }
@@ -79,8 +92,9 @@ export function NewBuildForm({ clients }: { clients: DjangoClient[] }) {
           </div>
         </div>
 
+        <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm"><input type="checkbox" className="mt-1" checked={analyze} onChange={e => setAnalyze(e.target.checked)} disabled={busy} /><span>Analyze meeting notes with AI<span className="mt-1 block text-xs leading-5 text-slate-500">Uses your configured AI provider. Review suggestions by GHL section before assigning staff.</span></span></label>
         <Button type="submit" disabled={busy} className="h-11 w-full">
-          {busy ? <><Spinner className="h-4 w-4" /> Creating…</> : <><Plus className="h-4 w-4" /> Create build</>}
+          {busy ? <><Spinner className="h-4 w-4" /> Saving meeting…</> : <><Plus className="h-4 w-4" /> {analyze && (notes.trim() || files.length) ? 'Create & analyze meeting' : 'Create build'}</>}
         </Button>
         <p className="text-center text-xs text-slate-500">Notes are optional now — you can add them later and generate the brief from the build.</p>
       </section>

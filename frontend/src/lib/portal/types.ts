@@ -1,16 +1,8 @@
-/**
- * Calari Staff Portal — Django API domain types.
- * Hand-written from the DRF serializer inventory (see scripts/openapi.yaml).
- * The portal consumes Django as the backend of record; these mirror its JSON shapes.
- */
-
-// ─── Enums ───────────────────────────────────────────────────────────────────
-export type UserRole = "superuser" | "admin" | "employee" | "finance";
-export type EffectiveRole = "superuser" | "admin" | "viewer";
+/** Django API types used by the staff portal. */
 export type ProjectStatus = "active" | "on_hold" | "completed" | "cancelled";
 export type Priority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "todo" | "in_progress" | "in_review" | "done";
-export type CoAssignRole =
+type CoAssignRole =
   | "lead"
   | "developer"
   | "designer"
@@ -21,14 +13,6 @@ export type CoAssignRole =
 export const PROJECT_STATUSES: ProjectStatus[] = ["active", "on_hold", "completed", "cancelled"];
 export const PRIORITIES: Priority[] = ["low", "medium", "high", "critical"];
 export const TASK_STATUSES: TaskStatus[] = ["todo", "in_progress", "in_review", "done"];
-export const CO_ASSIGN_ROLES: CoAssignRole[] = [
-  "lead",
-  "developer",
-  "designer",
-  "tester",
-  "reviewer",
-  "observer",
-];
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   active: "Active",
@@ -48,43 +32,9 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   in_review: "In Review",
   done: "Done",
 };
-export const USER_ROLE_LABELS: Record<UserRole, string> = {
-  superuser: "Superuser",
-  admin: "Admin",
-  employee: "Employee",
-  finance: "Finance",
-};
-
-// ─── Users / Auth ────────────────────────────────────────────────────────────
-export interface User {
-  id: number;
-  username: string;
-  email: string;
-  full_name: string;
-  role: UserRole;
-  effective_role: EffectiveRole;
-  is_active: boolean;
-  is_superuser: boolean;
-  job_title: string;
-  date_joined: string;
-  last_login: string | null;
-  last_login_ip: string | null;
-  profile_notes: string;
-}
-
-// ─── Clients ─────────────────────────────────────────────────────────────────
-export interface Client {
-  id: number;
-  name: string;
-  email: string;
-  phone_number: string;
-  company_name: string;
-  created_at: string;
-  is_active: boolean;
-}
 
 // ─── Projects ────────────────────────────────────────────────────────────────
-export interface ProjectMilestone {
+interface ProjectMilestone {
   id: number;
   project: number;
   name: string;
@@ -97,7 +47,7 @@ export interface ProjectMilestone {
   created_at: string;
 }
 
-export interface ProjectContactPerson {
+interface ProjectContactPerson {
   id: number;
   project: number;
   name: string;
@@ -106,7 +56,7 @@ export interface ProjectContactPerson {
   role: string;
 }
 
-export interface ProjectBlocker {
+interface ProjectBlocker {
   id: number;
   project: number;
   description: string;
@@ -121,7 +71,7 @@ export interface ProjectBlocker {
   project_name?: string;
 }
 
-export interface ProjectCoAssignment {
+interface ProjectCoAssignment {
   id: number;
   project: number;
   user: number;
@@ -133,7 +83,7 @@ export interface ProjectCoAssignment {
   assigned_at: string;
 }
 
-export interface ProjectFile {
+interface ProjectFile {
   id: number;
   project: number;
   file_name: string;
@@ -179,79 +129,12 @@ export interface Project {
   milestones?: ProjectMilestone[];
 }
 
-export interface ProjectProgress {
-  total: number;
-  done: number;
-  percent: number;
-  overdue_count?: number;
-  milestone_count?: number;
-}
-
 // ─── Tasks ───────────────────────────────────────────────────────────────────
-export interface TaskLabel {
+interface TaskLabel {
   id: number;
   name: string;
   color: string;
   created_by?: number | null;
-}
-
-export interface TaskComment {
-  id: number;
-  task: number;
-  author: number | null;
-  author_name?: string;
-  author_initials?: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TaskFile {
-  id: number;
-  task: number;
-  file_name: string;
-  file: string;
-  uploaded_by: number | null;
-  uploaded_by_name?: string;
-  uploaded_at: string;
-}
-
-export interface TaskBlocker {
-  id: number;
-  task: number;
-  description: string;
-  attachment: string | null;
-  reported_by: number | null;
-  reported_by_name?: string;
-  created_at: string;
-  resolved: boolean;
-  resolved_at: string | null;
-  resolved_by: number | null;
-  resolved_by_name?: string;
-  task_name?: string;
-  project_name?: string;
-}
-
-export interface TaskChecklistItem {
-  id: number;
-  task: number;
-  title: string;
-  completed: boolean;
-  completed_by: number | null;
-  completed_by_name?: string;
-  completed_at: string | null;
-  order: number;
-}
-
-export interface TaskActivity {
-  id: number;
-  task: number;
-  user: number | null;
-  user_name?: string;
-  user_initials?: string;
-  action: string;
-  detail: string;
-  created_at: string;
 }
 
 /** Lightweight task shape used on boards / project nesting. */
@@ -273,20 +156,6 @@ export interface TaskCard {
   completed?: boolean;
 }
 
-export interface Task extends TaskCard {
-  estimated_hours: string | null;
-  actual_hours: string | null;
-  created_at: string;
-  created_by: number | null;
-  created_by_name?: string;
-  completed_at: string | null;
-  completed_by: number | null;
-  files?: TaskFile[];
-  blockers?: TaskBlocker[];
-  comments?: TaskComment[];
-  checklist?: TaskChecklistItem[];
-}
-
 /** Response of GET /api/projects/tasks/board/{project_id}/ */
 export interface TaskBoard {
   project_name?: string;
@@ -294,48 +163,6 @@ export interface TaskBoard {
   in_progress: TaskCard[];
   in_review: TaskCard[];
   done: TaskCard[];
-}
-
-// ─── Dashboards ──────────────────────────────────────────────────────────────
-export interface MyDashboard {
-  stats: {
-    my_active_projects: number;
-    my_open_tasks: number;
-    my_overdue_tasks: number;
-    my_high_priority_tasks: number;
-  };
-  almost_due_tasks: TaskCard[];
-  my_tasks: TaskCard[];
-  high_priority_tasks: TaskCard[];
-  overdue_tasks: TaskCard[];
-  upcoming_milestones: ProjectMilestone[];
-  active_blockers: ProjectBlocker[];
-  recent_activity: ProjectActivity[];
-}
-
-export interface DashboardStats {
-  projects: {
-    total: number;
-    active: number;
-    completed: number;
-    on_hold: number;
-    overdue: number;
-    cancelled: number;
-  };
-  clients: { total: number; active: number };
-  tasks: { total: number; pending: number; completed: number };
-  users: {
-    total: number;
-    active: number;
-    inactive: number;
-    superusers: number;
-    admins: number;
-  };
-  blockers: { project_open: number; task_open: number };
-  recent_projects?: Project[];
-  recent_tasks?: TaskCard[];
-  recent_clients?: Client[];
-  staff_workload?: { user: string; initials?: string; open_tasks: number }[];
 }
 
 /** Standard DRF field-error envelope. */

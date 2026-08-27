@@ -1,4 +1,4 @@
-import { Cable, CheckCircle2, KeyRound, ListChecks, Plus, Power, ShieldCheck, Trash2 } from "lucide-react";
+import { Cable, CheckCircle2, KeyRound, ListChecks, Plus, Power, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
@@ -51,7 +51,7 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 export default async function ConnectionsPage({
   searchParams,
 }: { searchParams: Promise<{ connected?: string; error?: string }> }) {
-  await requireFeature("ai_keys");
+  const user = await requireFeature("ai_keys");
   const sp = await searchParams;
   const [connections, automation] = await Promise.all([
     serverApi.get<Connection[] | { results: Connection[] }>("onboarding/connections").then(asList).catch(() => [] as Connection[]),
@@ -72,11 +72,20 @@ export default async function ConnectionsPage({
         </p>
       </div>
 
+      {user.role === "ADMIN" && <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5">
+        <div><h2 className="font-semibold text-slate-950">Fathom meeting notes</h2><p className="mt-1 text-sm text-slate-600">Automatically import meetings, route them to client builds, and review unmatched notes.</p></div>
+        <Link href="/settings/fathom" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Set up Fathom & view inbox</Link>
+      </section>}
+
       {sp.connected && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <CheckCircle2 className="mr-1.5 inline h-4 w-4" /> Connected {PROVIDER_LABELS[sp.connected] ?? sp.connected} via OAuth.
         </div>
       )}
+      {user.role === "ADMIN" && <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5">
+        <div><h2 className="font-semibold text-slate-950">Slack delivery routing</h2><p className="mt-1 text-sm text-slate-600">Route client requests to staff by channel and responsibility, with original messages and AI context.</p></div>
+        <Link href="/settings/slack" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Manage Slack routing</Link>
+      </section>}
       {sp.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           OAuth failed: {sp.error}
@@ -254,7 +263,7 @@ export default async function ConnectionsPage({
                 </span>
               </label>
               <div className="rounded-lg bg-pink-50 px-3 py-3 text-xs leading-5 text-pink-800 ring-1 ring-pink-100">
-                <div className="mb-1 flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Security note</div>
+                <div className="mb-1 flex items-center gap-2 font-semibold">Security note</div>
                 Tokens are encrypted at rest with the same crypto as AI provider keys.
               </div>
               <Button type="submit" className="w-full"><Plus className="h-4 w-4" /> Save connection</Button>

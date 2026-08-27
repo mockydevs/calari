@@ -20,18 +20,37 @@ export function Tabs({ children }: { children: React.ReactNode }) {
     React.isValidElement,
   ) as React.ReactElement<PanelProps>[];
   const [active, setActive] = React.useState(panels[0]?.props.id ?? "");
+  React.useEffect(() => {
+    const sync = () => { if (window.location.hash) setActive(window.location.hash.slice(1)); };
+    sync(); window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
   const current = panels.find((p) => p.props.id === active) ?? panels[0];
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
+      <div role="tablist" aria-label="Build workspace" className="flex flex-wrap items-center gap-1 border-b border-slate-200">
         {panels.map((p) => {
-          const on = p.props.id === active;
+          const on = p.props.id === current?.props.id;
           return (
             <button
               key={p.props.id}
               type="button"
-              onClick={() => setActive(p.props.id)}
+              role="tab"
+              aria-label={p.props.label}
+              id={`tab-${p.props.id}`}
+              aria-selected={on}
+              aria-controls={`panel-${p.props.id}`}
+              tabIndex={on ? 0 : -1}
+              onClick={() => { setActive(p.props.id); window.history.replaceState(null, "", `#${p.props.id}`); }}
+              onKeyDown={event => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const index = panels.indexOf(p);
+                const next = event.key === "Home" ? 0 : event.key === "End" ? panels.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + panels.length) % panels.length;
+                const id = panels[next].props.id;
+                setActive(id); window.history.replaceState(null, "", `#${id}`); document.getElementById(`tab-${id}`)?.focus();
+              }}
               className={`relative -mb-px rounded-t-md px-3.5 py-2 text-sm font-medium transition-colors ${
                 on
                   ? "border-b-2 border-pink-600 text-pink-700"
@@ -52,7 +71,7 @@ export function Tabs({ children }: { children: React.ReactNode }) {
           );
         })}
       </div>
-      <div className="space-y-5">{current?.props.children}</div>
+      <div role="tabpanel" id={`panel-${current?.props.id}`} aria-labelledby={`tab-${current?.props.id}`} className="space-y-5">{current?.props.children}</div>
     </div>
   );
 }

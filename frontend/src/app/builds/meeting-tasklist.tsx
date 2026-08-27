@@ -1,6 +1,9 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { PublishMeetingTasks } from "./publish-meeting-tasks";
+import type { DjangoUser } from "./_shared";
 import {
   Bot, Check, ChevronDown, Download, FileDown, Pencil, Plus, Printer, Trash2, X,
 } from "lucide-react";
@@ -32,7 +35,7 @@ function slugify(s: string) {
 }
 
 export function MeetingTasklistPanel({
-  buildId, title, items, notes, canManage, tasklistStatus,
+  buildId, title, items, notes, canManage, tasklistStatus, canAssign = false, users = [],
 }: {
   buildId: string;
   title: string;
@@ -40,10 +43,13 @@ export function MeetingTasklistPanel({
   notes: MeetingNote[];
   canManage: boolean;
   tasklistStatus?: string;
+  canAssign?: boolean;
+  users?: DjangoUser[];
 }) {
   const router = useRouter();
   const toast = useToast();
   const [busy, setBusy] = React.useState(tasklistStatus === "processing");
+  const [polling, setPolling] = React.useState(tasklistStatus === "processing");
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [adding, setAdding] = React.useState(false);
 
@@ -67,31 +73,43 @@ export function MeetingTasklistPanel({
       setBusy(false);
       return;
     }
+    setPolling(true);
+  }
+
+  React.useEffect(() => {
+    if (!polling) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
     const deadline = Date.now() + 120_000;
     const poll = async () => {
       const res = await api.get<{ tasklist_status?: string }>(`builds/builds/${buildId}`).catch(() => null);
+      if (stopped) return;
       const status = res?.tasklist_status;
       if (status === "done") {
         toast.success("Tasklist updated.", "Done");
         setBusy(false);
+        setPolling(false);
         router.refresh();
         return;
       }
       if (status === "failed") {
-        toast.error("Tasklist generation failed — check Settings → AI Keys and try again.", "Failed");
+        toast.error("Tasklist generation failed — check Administration → AI configuration and try again.", "Failed");
         setBusy(false);
+        setPolling(false);
         return;
       }
       if (Date.now() > deadline) {
         toast.info("Still working in the background — refresh in a moment.");
         setBusy(false);
+        setPolling(false);
         router.refresh();
         return;
       }
-      setTimeout(poll, 2500);
+      timer = setTimeout(poll, 2500);
     };
-    setTimeout(poll, 2500);
-  }
+    timer = setTimeout(poll, 2500);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [polling, buildId, router, toast]);
 
   // ── Per-item mutations ──────────────────────────────────────────────────────
   async function setStatus(item: MeetingActionItem, status: ActionItemStatus) {
@@ -161,6 +179,7 @@ export function MeetingTasklistPanel({
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       {/* ── Main: the reconciled tasklist ─────────────────────────────── */}
       <div className="space-y-4">
+        {canAssign && <PublishMeetingTasks buildId={buildId} items={items} users={users} disabled={busy} />}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-slate-500">
             {active.length} item{active.length === 1 ? "" : "s"} captured straight from the meeting notes
@@ -181,7 +200,7 @@ export function MeetingTasklistPanel({
               </>
             )}
             {canManage && (
-              <button type="button" onClick={generate} disabled={busy}
+              <button type="button" onClick={generate} disabled={busy || !notes.length}
                 className="inline-flex h-8 items-center gap-2 rounded-md bg-gradient-to-r from-pink-600 to-fuchsia-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:from-pink-700 hover:to-fuchsia-700 disabled:opacity-60">
                 {busy ? <><Spinner className="h-3.5 w-3.5" /> Working…</> : <><Bot className="h-3.5 w-3.5" /> {hasList ? "Re-sync from latest meeting" : "Generate from notes"}</>}
               </button>
@@ -215,7 +234,7 @@ export function MeetingTasklistPanel({
                         {editingId === item.id ? (
                           <ItemEditor item={item} buildId={buildId} onDone={() => { setEditingId(null); router.refresh(); }} onCancel={() => setEditingId(null)} />
                         ) : (
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
                             <div className="min-w-0 space-y-1">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${CATEGORY_STYLE[item.category]}`}>
@@ -226,6 +245,7 @@ export function MeetingTasklistPanel({
                                 {item.locked && <span className="text-[10px] text-slate-400" title="Edited by a human — protected from AI re-sync">edited</span>}
                               </div>
                               <p className={`text-sm text-slate-900 ${item.status === "DONE" ? "line-through text-slate-400" : ""}`}>{item.text}</p>
+                              {item.assigned_task_id && <Link href={`/tasks?search=${encodeURIComponent(item.text.slice(0, 80))}`} className="inline-block text-xs font-semibold text-pink-700">Assigned to {item.assignee_name || 'staff'} · Open task →</Link>}
                               {item.detail && <p className="text-xs text-slate-500">{item.detail}</p>}
                               {item.verification === "NEEDS_INFO" && item.verification_note && (
                                 <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900"><span className="font-semibold">AI: </span>{item.verification_note}</p>
@@ -236,7 +256,7 @@ export function MeetingTasklistPanel({
                               </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
-                              {canManage ? (
+                              {canManage && !item.assigned_task_id ? (
                                 <div className="relative">
                                   <select
                                     value={item.status}
@@ -250,7 +270,7 @@ export function MeetingTasklistPanel({
                               ) : (
                                 <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[item.status]}`}>{ACTION_ITEM_STATUS_LABEL[item.status]}</span>
                               )}
-                              {canManage && (
+                              {canManage && !item.assigned_task_id && (
                                 <>
                                   <button type="button" onClick={() => setEditingId(item.id)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
                                   <button type="button" onClick={() => remove(item)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>

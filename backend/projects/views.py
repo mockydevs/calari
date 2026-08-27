@@ -1,13 +1,17 @@
 import logging
+import uuid
 from datetime import date
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q
+from django.db import IntegrityError, transaction
+from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import viewsets, status as drf_status
 from rest_framework.decorators import api_view, permission_classes, action
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -133,6 +137,151 @@ class ClientsViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name', 'created_at']
     ordering = ['-created_at']
 
+    def handle_exception(self, exc):
+        if isinstance(exc, IntegrityError) and self.action in ("ghl_connection", "onboard_ghl"):
+            return Response({"detail": "This client or location is already connected. Refresh before trying again."}, status=409)
+        return super().handle_exception(exc)
+
+    @action(detail=False, methods=["post"], url_path="onboard-ghl")
+    def onboard_ghl(self, request):
+        if not _is_manager(request.user):
+            raise PermissionDenied("Only administrators can onboard GHL clients.")
+        from . import ghl
+        from .models import GhlConnection
+        from .serializers import GhlConnectionInputSerializer
+        from builds.services import encrypt_api_key
+        serializer = GhlConnectionInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        location = serializer.validated_data["location_id"]
+        token = serializer.validated_data.get("token", "")
+        if not token:
+            raise ValidationError({"token": "A private integration token is required."})
+        throttle = GhlTestThrottle()
+        if not throttle.allow_request(request, self):
+            self.throttled(request, throttle.wait())
+        try:
+            details = ghl.location_details(token, location)
+        except ghl.GhlError as exc:
+            raise ValidationError(str(exc)) from None
+        existing = GhlConnection.objects.filter(location_id=location).first()
+        if existing:
+            return Response({"client_id": existing.client_id, "created": False})
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from django.core.validators import validate_email
+        email = details.get("email") or None
+        if email:
+            try:
+                validate_email(email)
+                if len(email) > 254:
+                    email = None
+            except DjangoValidationError:
+                email = None  # Do not invent contact details if GHL does not supply a valid email.
+        try:
+            with transaction.atomic():
+                matches = list(Clients.objects.select_for_update().filter(ghl_location_id=location)[:2])
+                if len(matches) > 1:
+                    raise ValidationError("More than one client has this location. Resolve the duplicate records first.")
+                if matches:
+                    client = matches[0]
+                    # Preserve the portal's curated details on an existing client.
+                else:
+                    if email and Clients.objects.filter(email__iexact=email).exists():
+                        raise ValidationError("A client already uses this business email. Open its GHL connection to link the location.")
+                    client = Clients.objects.create(
+                        name=details.get("name", "")[:255] or "GHL client",
+                        company_name=details.get("name", "")[:255], email=email,
+                        phone_number=details.get("phone", "")[:20], ghl_location_id=location,
+                    )
+                GhlConnection.objects.create(
+                    client=client, location_id=location, encrypted_token=encrypt_api_key(token)[0],
+                    business_details=details,
+                )
+        except IntegrityError:
+            return Response({"detail": "This client or location was connected by another request. Refresh the client list."}, status=409)
+        return Response({"client_id": client.id, "created": not bool(matches)}, status=201)
+
+    @action(detail=True, methods=["get", "put", "delete"], url_path="ghl-connection")
+    def ghl_connection(self, request, pk=None):
+        if not _is_manager(request.user):
+            raise PermissionDenied("Only administrators can manage GHL connections.")
+        from . import ghl
+        from .models import GhlConnection
+        from .serializers import GhlConnectionInputSerializer
+        from builds.services import encrypt_api_key
+        client = self.get_object()
+        if request.method == "GET":
+            return Response(ghl.connection_status(client))
+        if request.method == "DELETE":
+            with transaction.atomic():
+                client = Clients.objects.select_for_update().get(pk=client.pk)
+                GhlConnection.objects.filter(client=client).delete()
+                from onboarding.investigations import invalidate
+                from onboarding.models import ClientInvestigation
+                invalidate(ClientInvestigation.objects.filter(client=client), "GHL connection removed. Context and drafts were cleared.")
+                client.ghl_location_id = ""
+                client.save(update_fields=["ghl_location_id"])
+            return Response(status=204)
+        serializer = GhlConnectionInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        location = serializer.validated_data["location_id"]
+        token = serializer.validated_data.get("token", "")
+        if GhlConnection.objects.filter(location_id=location).exclude(client=client).exists():
+            raise ValidationError({"location_id": "This GHL location is already linked to another client."})
+        # No network under a database lock. Saving is separate from the explicit test.
+        with transaction.atomic():
+            client = Clients.objects.select_for_update().get(pk=client.pk)
+            existing = GhlConnection.objects.filter(client=client).first()
+            if not token and (not existing or existing.location_id != location):
+                raise ValidationError({"token": "A token is required for a new or changed location."})
+            if token:
+                GhlConnection.objects.update_or_create(client=client, defaults={
+                    "location_id": location, "encrypted_token": encrypt_api_key(token)[0],
+                    "revision": uuid.uuid4(), "checked_at": None, "last_check": {},
+                    "business_details": existing.business_details if existing and existing.location_id == location else {},
+                })
+                from onboarding.investigations import invalidate
+                from onboarding.models import ClientInvestigation
+                invalidate(ClientInvestigation.objects.filter(client=client), "GHL credentials changed. Refresh to retrieve current evidence.")
+            client.ghl_location_id = location
+            client.save(update_fields=["ghl_location_id"])
+        return Response(ghl.connection_status(client))
+
+    @action(detail=True, methods=["post"], url_path="ghl-test")
+    def ghl_test(self, request, pk=None):
+        if not _is_manager(request.user):
+            raise PermissionDenied("Only administrators can test GHL connections.")
+        from . import ghl
+        from .models import GhlConnection
+        client = self.get_object()
+        connection = GhlConnection.objects.filter(client=client).first()
+        if not connection:
+            raise ValidationError("Save a token and location ID first.")
+        # Reuse recent results so repeat clicks never fan out to GHL.
+        if connection.checked_at and (timezone.now() - connection.checked_at).total_seconds() < 60:
+            return Response(ghl.connection_status(client))
+        throttle = GhlTestThrottle()
+        if not throttle.allow_request(request, self):
+            self.throttled(request, throttle.wait())
+        try:
+            result = ghl.inventory(ghl.connection_token(connection), connection.location_id)
+        except ghl.GhlError as exc:
+            result = {"ok": False, "error": str(exc), "checks": [], "limitations": ghl.LIMITATIONS}
+        # Do not attach stale test results to a token replaced/disconnected mid-request.
+        updated = GhlConnection.objects.filter(pk=connection.pk, revision=connection.revision).update(
+            checked_at=timezone.now(), last_check={
+                **result, "checks": [{k: v for k, v in check.items() if k != "names"} for check in result["checks"]],
+            },
+        )
+        if not updated:
+            return Response({"detail": "Connection changed during testing. Test the current connection again."}, status=409)
+        return Response(ghl.connection_status(client))
+
+
+class GhlTestThrottle(UserRateThrottle):
+    scope = "ghl_read_checks"
+    scope = "ghl_test"
+    rate = "6/min"
+
 
 # ─────────────────────────────────────────────────────────────
 # Projects
@@ -237,8 +386,16 @@ class ProjectsViewSet(viewsets.ModelViewSet):
 @permission_classes([IsAuthenticated])
 def my_projects(request):
     user = request.user
+    # Count in SQL without loading every task/blocker or joining both child
+    # collections together (which multiplies rows on large projects).
+    tasks = Tasks.objects.filter(project_id=OuterRef('pk')).order_by()
+    blockers = projectBlockers.objects.filter(project_id=OuterRef('pk'), resolved=False).order_by()
     qs = Projects.objects.select_related('client', 'assigned_to').prefetch_related(
-        'tasks', 'blockers', 'co_assignments__user',
+        'co_assignments__user',
+    ).annotate(
+        task_total=Coalesce(Subquery(tasks.values('project_id').annotate(n=Count('pk')).values('n')), 0),
+        task_done=Coalesce(Subquery(tasks.filter(status='done').values('project_id').annotate(n=Count('pk')).values('n')), 0),
+        open_blockers=Coalesce(Subquery(blockers.values('project_id').annotate(n=Count('pk')).values('n')), 0),
     )
     if not _is_manager(user):
         qs = qs.filter(
@@ -1078,8 +1235,8 @@ def my_dashboard(request):
             'status': t.status,
             'due_date': t.due_date,
             'build_id': t.build_id,
-            'build_title': t.build.title,
-            'client_name': t.build.client.name if t.build.client_id else '',
+            'build_title': t.build.title if t.build_id else 'Internal task',
+            'client_name': t.build.client.name if t.build_id and t.build.client_id else '',
         }
 
     def fmt_change_request(c):

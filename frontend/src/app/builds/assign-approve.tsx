@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ShieldCheck } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -84,7 +84,7 @@ export function AssignApprove({
       </Button>
       {canApprove && (
         <Button type="button" onClick={() => run("approve")} disabled={pending} size="sm" variant="success">
-          {pending && mode === "approve" ? <Spinner className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+          {pending && mode === "approve" && <Spinner className="h-3.5 w-3.5" />}
           Approve &amp; hand to staff
         </Button>
       )}

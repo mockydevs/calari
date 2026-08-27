@@ -47,7 +47,9 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   BLOCKED: "Blocked",
   DONE: "Done",
 };
-export const TASK_TYPES = ["AUTOMATION", "FUNNEL", "FORM", "INTEGRATION", "OTHER"] as const;
+export const TASK_TYPES = ["AUTOMATION", "PIPELINE", "TAG", "FUNNEL", "FORM", "EMAIL", "INTEGRATION", "OTHER"] as const;
+export const TASK_TYPE_LABEL: Record<string, string> = { AUTOMATION: "Automation", PIPELINE: "Pipelines", TAG: "Tags", FUNNEL: "Funnels", FORM: "Forms", EMAIL: "Email copy", INTEGRATION: "Integrations", OTHER: "General" };
+export const TASK_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
 export interface BuildRow {
   id: number;
@@ -63,6 +65,11 @@ export interface BuildRow {
 }
 
 export interface BuildTask {
+  ghl_verification_status?: string;
+  ghl_verification_note?: string;
+  ghl_verification_checked_at?: string | null;
+  progress_note?: string;
+  slack_intake?: boolean;
   id: number;
   title: string;
   description: string;
@@ -71,7 +78,10 @@ export interface BuildTask {
   assignee: number | null;
   assignee_name?: string;
   due_date: string | null;
-  build?: number;
+  build?: number | null;
+  priority?: string;
+  creator?: number | null;
+  source_item?: number | null;
   build_title?: string;
   client_name?: string;
 }
@@ -108,10 +118,10 @@ export interface ChangeRequest {
   created_by_name?: string;
   created_at: string;
 }
-export interface Approval { id: number; type: string; note: string; approver_name?: string; created_at: string }
-export interface BuildComment { id: number; body: string; author_name?: string; created_at: string }
-export interface BuildDocument { id: number; filename: string; url: string; uploaded_by_name?: string; created_at: string }
-export interface BuildActivity { id: number; actor: string; message: string; created_at: string }
+interface Approval { id: number; type: string; note: string; approver_name?: string; created_at: string }
+interface BuildComment { id: number; body: string; author_name?: string; created_at: string }
+interface BuildDocument { id: number; filename: string; url: string; uploaded_by_name?: string; created_at: string }
+interface BuildActivity { id: number; actor: string; message: string; created_at: string }
 export interface MeetingNote {
   id: number; raw_text: string; source: string; ai_status: string; created_at: string;
   kind?: string; title?: string; meeting_date?: string | null;
@@ -120,8 +130,10 @@ export const MEETING_NOTE_KIND_LABEL: Record<string, string> = {
   kickoff: "Kickoff", meeting: "Meeting notes", progress: "Progress update",
   change_request: "Client-requested update", other: "Note",
 };
-export interface MemorySnapshot { id: number; summary: string; scope_changes: string; created_by_name?: string; created_by_ai: boolean; created_at: string }
+interface MemorySnapshot { id: number; summary: string; scope_changes: string; created_by_name?: string; created_by_ai: boolean; created_at: string }
 export type BuildSectionKey =
+  | "FUNNELS"
+  | "EMAIL_COPY"
   | "PIPELINE"
   | "AUTOMATIONS"
   | "CLIENT_UPDATES"
@@ -131,7 +143,7 @@ export type BuildSectionKey =
   | "FIELDS_TAGS"
   | "FORMS_PAYMENTS"
   | "REPORTING_LAUNCH";
-export type BuildSectionReviewStatus = "TODO" | "DONE" | "BLOCKED";
+type BuildSectionReviewStatus = "TODO" | "DONE" | "BLOCKED";
 export interface BuildSectionReview {
   id: number;
   build: number;
@@ -167,22 +179,23 @@ export const ACTION_ITEM_STATUS_LABEL: Record<ActionItemStatus, string> = {
 };
 // GHL-section display order + labels for grouping the tasklist ("" = uncategorized).
 export const ACTION_ITEM_SECTIONS: { key: BuildSectionKey | ""; label: string }[] = [
-  { key: "PIPELINE", label: "Pipeline" },
   { key: "AUTOMATIONS", label: "Automations" },
+  { key: "PIPELINE", label: "Pipelines" },
+  { key: "FIELDS_TAGS", label: "Tags & fields" },
+  { key: "FUNNELS", label: "Funnels" },
+  { key: "FORMS_PAYMENTS", label: "Forms & payments" },
+  { key: "EMAIL_COPY", label: "Email copy" },
   { key: "CLIENT_UPDATES", label: "New features & updates" },
   { key: "LEAD_SOURCES", label: "Lead sources" },
   { key: "CALENDARS", label: "Calendars" },
   { key: "INTEGRATIONS", label: "Integrations" },
-  { key: "FIELDS_TAGS", label: "Fields & tags" },
-  { key: "FORMS_PAYMENTS", label: "Forms & payments" },
   { key: "REPORTING_LAUNCH", label: "Reporting & launch" },
   { key: "", label: "Other / uncategorized" },
 ];
-export type ActionItemVerification = "UNVERIFIED" | "VERIFIED" | "NEEDS_INFO";
-export const ACTION_ITEM_VERIFICATION_LABEL: Record<ActionItemVerification, string> = {
-  UNVERIFIED: "Unverified", VERIFIED: "Verified", NEEDS_INFO: "Needs info",
-};
+type ActionItemVerification = "UNVERIFIED" | "VERIFIED" | "NEEDS_INFO";
 export interface MeetingActionItem {
+  assigned_task_id?: number | null;
+  assignee_name?: string | null;
   id: number;
   build: number;
   text: string;
@@ -245,8 +258,6 @@ export interface BuildDetail extends BuildRow {
   one_line_summary?: string;
   maintenance_notes?: string;
   creator_name?: string;
-  client_portal_enabled?: boolean;
-  client_portal_token?: string | null;
   tasks?: BuildTask[];
   documents?: BuildDocument[];
   comments?: BuildComment[];

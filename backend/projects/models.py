@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from django.utils import timezone
 
@@ -7,17 +9,28 @@ from django.utils import timezone
 # ─────────────────────────────────────────────────────────────
 class Clients(models.Model):
     name = models.CharField(max_length=255)
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=20, blank=True)
     company_name = models.CharField(max_length=255, blank=True)
-    # GoHighLevel sub-account (location) id — lets the AI progress auditor inspect this
-    # client's real GHL account via the GHL MCP server. Non-secret; the token lives in env.
+    # Non-secret legacy/display field; connections manage this together with the token.
     ghl_location_id = models.CharField(max_length=120, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
+
+
+class GhlConnection(models.Model):
+    """Private integration for one client. Never serialize this model wholesale."""
+    client = models.OneToOneField(Clients, on_delete=models.CASCADE, related_name="ghl_connection")
+    location_id = models.CharField(max_length=120, unique=True)
+    encrypted_token = models.TextField()
+    business_details = models.JSONField(default=dict, blank=True)
+    revision = models.UUIDField(default=uuid.uuid4, editable=False)
+    checked_at = models.DateTimeField(null=True, blank=True)
+    last_check = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 # ─────────────────────────────────────────────────────────────

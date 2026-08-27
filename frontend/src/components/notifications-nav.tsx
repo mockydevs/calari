@@ -6,8 +6,7 @@ import { api } from "@/lib/portal/api";
 import { useToast } from "./toast";
 import { speak } from "@/lib/speech";
 
-type NotificationItem = { id: number; message: string; link?: string };
-type Paged = { count?: number; results?: NotificationItem[] };
+type UnreadSummary = { count: number; latest: { id: number; message: string } | null };
 
 // ── Singleton AudioContext ──────────────────────────────────────────────────
 // Browsers suspend AudioContext until a user gesture. Create it once and reuse
@@ -86,13 +85,16 @@ export function NotificationsNav() {
   const pathname = usePathname();
   const toast = useToast();
   const prevUnreadRef = React.useRef<number | null>(null);
+  const inFlightRef = React.useRef(false);
 
   const refetch = React.useCallback(() => {
+    // Focus, visibility and navigation can fire together. Share one request.
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     api
-      .get<NotificationItem[] | Paged>("builds/notifications?read=false")
+      .get<UnreadSummary>("builds/notifications/unread-summary")
       .then((d) => {
-        const list = Array.isArray(d) ? d : d.results ?? [];
-        const count = Array.isArray(d) ? d.length : d.count ?? list.length;
+        const count = d.count;
         setUnread(count);
 
         if (prevUnreadRef.current === null) {
@@ -102,7 +104,7 @@ export function NotificationsNav() {
         }
         if (count > prevUnreadRef.current) {
           const delta = count - prevUnreadRef.current;
-          const latest = list[0]?.message;
+          const latest = d.latest?.message;
           playChime();
           toast.info(latest && delta === 1 ? latest : `${delta} new notification${delta === 1 ? "" : "s"}`, "Notification");
           // Short delay so the chime finishes before the voice starts.
@@ -110,11 +112,11 @@ export function NotificationsNav() {
         }
         prevUnreadRef.current = count;
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { inFlightRef.current = false; });
   }, [toast]);
 
   React.useEffect(() => {
-    refetch();
     const interval = setInterval(refetch, 45_000);
     const onVisible = () => document.visibilityState === "visible" && refetch();
     window.addEventListener("focus", refetch);

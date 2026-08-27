@@ -56,3 +56,5 @@ yarn-error.log*
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+*.sqlite3
+.local-checks/

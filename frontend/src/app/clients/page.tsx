@@ -3,6 +3,7 @@ import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { createClient } from "./actions";
 import { ClientRow } from "./client-row";
+import { OnboardGhlForm } from "./onboard-ghl-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,14 +16,14 @@ type DjangoClient = {
   id: number;
   name: string;
   company_name: string;
-  email: string;
+  email: string | null;
   phone_number: string;
   ghl_location_id?: string;
   is_active: boolean;
 };
 
 export default async function ClientsPage() {
-  await requireFeature("clients");
+  const user = await requireFeature("clients");
   // Consumes the Django backend (projects.Clients) instead of Prisma.
   const clients = await serverApi
     .get<DjangoClient[] | { results: DjangoClient[] }>("projects/clients")
@@ -62,12 +63,14 @@ export default async function ClientsPage() {
           ) : (
             <div className="divide-y divide-slate-100">
               {clients.map((client) => (
-                <ClientRow key={client.id} client={client} />
+                <ClientRow key={client.id} client={client} canManageGhl={user.role === "ADMIN"} />
               ))}
             </div>
           )}
         </div>
 
+        <div className="space-y-5">
+        {user.role === "ADMIN" && <OnboardGhlForm />}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -94,7 +97,7 @@ export default async function ClientsPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="ghl_location_id">GHL location ID</Label>
                 <Input id="ghl_location_id" name="ghl_location_id" placeholder="GoHighLevel sub-account id (optional)" />
-                <p className="text-xs text-slate-500">Enables AI progress audits against this client&apos;s live GHL account.</p>
+                <p className="text-xs text-slate-500">After creating the client, an administrator can add its token under GHL connection.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="notes">Notes</Label>
@@ -107,6 +110,7 @@ export default async function ClientsPage() {
             </form>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );

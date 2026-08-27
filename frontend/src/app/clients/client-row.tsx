@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { Check, Mail, Pencil, Trash2, X } from "lucide-react";
 import { updateClient, deleteClient } from "./actions";
 
@@ -7,7 +8,7 @@ export type ClientItem = {
   id: number;
   name: string;
   company_name: string;
-  email: string;
+  email: string | null;
   phone_number: string;
   ghl_location_id?: string;
 };
@@ -18,7 +19,7 @@ function initials(name: string) {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
 
-export function ClientRow({ client }: { client: ClientItem }) {
+export function ClientRow({ client, canManageGhl = false }: { client: ClientItem; canManageGhl?: boolean }) {
   const [editing, setEditing] = React.useState(false);
 
   if (editing) {
@@ -33,7 +34,7 @@ export function ClientRow({ client }: { client: ClientItem }) {
         <div className="grid gap-2 sm:grid-cols-3">
           <input name="name" defaultValue={client.name} required placeholder="Name" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
           <input name="company" defaultValue={client.company_name} placeholder="Company" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
-          <input name="email" type="email" defaultValue={client.email} placeholder="Email" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
+          <input name="email" type="email" defaultValue={client.email ?? ""} placeholder="Email" className="h-9 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
         </div>
         <div className="flex items-center gap-2">
           <input name="ghl_location_id" defaultValue={client.ghl_location_id ?? ""} placeholder="GHL location ID (for live AI audits)" className="h-9 flex-1 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500" />
@@ -66,6 +67,7 @@ export function ClientRow({ client }: { client: ClientItem }) {
         </div>
       </div>
       <div className="flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100">
+        {canManageGhl && <Link href={`/clients/${client.id}/ghl`} className="rounded-md px-2 py-1 text-xs font-medium text-pink-700 hover:bg-pink-50" aria-label={`GHL connection for ${client.name}`}>GHL connection</Link>}
         <button onClick={() => setEditing(true)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-pink-50 hover:text-pink-700" aria-label="Edit"><Pencil className="h-4 w-4" /></button>
         <form action={deleteClient}>
           <input type="hidden" name="id" value={client.id} />

@@ -42,11 +42,14 @@ class IsManagerOrBuildOwner(BasePermission):
 
 
 class IsManagerOrBuildTaskOwner(BasePermission):
-    """Build-task writes require a manager, the task assignee, or someone who
-    owns the parent build."""
+    """Managers administer tasks; task assignees and build owners update status."""
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS or view.action in ("set_status", "ghl_verification", "ghl_acceptance", "client_context", "reply_draft"):
+            return True
+        return can_manage_builds(request.user)
 
     def has_object_permission(self, request, view, obj):
         if request.method in SAFE_METHODS or can_manage_builds(request.user):

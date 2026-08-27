@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { MailPlus, ShieldCheck } from "lucide-react";
+import { MailPlus } from "lucide-react";
 import { createInvite } from "./actions";
 import { useToast, Spinner } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ export function InviteForm() {
         <Select id="role" name="role" defaultValue="MEMBER"><option value="MEMBER">Member</option><option value="ADMIN">Admin</option></Select>
       </div>
       <div className="rounded-lg bg-pink-50 px-3 py-3 text-xs leading-5 text-pink-800 ring-1 ring-pink-100">
-        <div className="mb-1 flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Invite</div>
+        <div className="mb-1 flex items-center gap-2 font-semibold">Invite</div>
         The invitee receives an emailed signup link to set their password.
       </div>
       <Button type="submit" disabled={pending} className="w-full">

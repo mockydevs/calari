@@ -10,10 +10,29 @@ from .models import (
 # ─────────────────────────────────────────────────────────────
 # Clients
 # ─────────────────────────────────────────────────────────────
+class GhlConnectionInputSerializer(serializers.Serializer):
+    location_id = serializers.RegexField(r"\A[A-Za-z0-9_-]{1,120}\Z")
+    token = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=4096)
+
+    def validate_token(self, value):
+        if value and any(ord(char) < 33 or ord(char) > 126 for char in value):
+            raise serializers.ValidationError("Enter the token without spaces or control characters.")
+        return value
+
+
 class ClientsSerializer(serializers.ModelSerializer):
     class Meta:
         model = Clients
         fields = '__all__'
+
+    def validate_email(self, value):
+        return value or None
+
+    def validate_ghl_location_id(self, value):
+        from .models import GhlConnection
+        if self.instance and value != self.instance.ghl_location_id and GhlConnection.objects.filter(client=self.instance).exists():
+            raise serializers.ValidationError("Change the location in this client's GHL connection settings.")
+        return value
 
 
 # ─────────────────────────────────────────────────────────────
@@ -412,9 +431,9 @@ class ProjectListSerializer(serializers.ModelSerializer):
     client_name = serializers.SerializerMethodField()
     co_assignments = ProjectCoAssignmentSerializer(many=True, read_only=True)
     progress_percent = serializers.SerializerMethodField()
-    task_total = serializers.SerializerMethodField()
-    task_done = serializers.SerializerMethodField()
-    open_blockers = serializers.SerializerMethodField()
+    task_total = serializers.IntegerField(read_only=True)
+    task_done = serializers.IntegerField(read_only=True)
+    open_blockers = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Projects
@@ -441,27 +460,9 @@ class ProjectListSerializer(serializers.ModelSerializer):
     def get_client_name(self, obj):
         return obj.client.name if obj.client else None
 
-    # All four counts read from the `tasks` / `blockers` relations that the
-    # my_projects view prefetches. Using len()/sum() over the cached .all()
-    # reuses that prefetch; the previous .count()/.filter() calls each issued a
-    # fresh query per project (≈5 × N), making the prefetch dead weight.
+    # my_projects supplies aggregate counts; no child objects need hydration.
     @extend_schema_field(serializers.IntegerField())
     def get_progress_percent(self, obj):
-        tasks = obj.tasks.all()
-        total = len(tasks)
-        if total == 0:
+        if obj.task_total == 0:
             return 0
-        done = sum(1 for t in tasks if t.status == 'done')
-        return round((done / total) * 100)
-
-    @extend_schema_field(serializers.IntegerField())
-    def get_task_total(self, obj):
-        return len(obj.tasks.all())
-
-    @extend_schema_field(serializers.IntegerField())
-    def get_task_done(self, obj):
-        return sum(1 for t in obj.tasks.all() if t.status == 'done')
-
-    @extend_schema_field(serializers.IntegerField())
-    def get_open_blockers(self, obj):
-        return sum(1 for b in obj.blockers.all() if not b.resolved)
+        return round((obj.task_done / obj.task_total) * 100)

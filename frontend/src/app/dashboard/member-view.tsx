@@ -1,7 +1,5 @@
 import Link from "next/link";
-import {
-  AlarmClock, AlertTriangle, CalendarClock, FolderKanban, Flag, ListChecks, ShieldAlert, Zap, Briefcase, MessageSquare,
-} from "lucide-react";
+import { AlarmClock, AlertTriangle, CalendarClock, FolderKanban, Flag, ListChecks, Zap, Briefcase, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/utils";
 import { TASK_STATUS_LABEL, CHANGE_REQUEST_STATUS_LABEL } from "../builds/_shared";
@@ -11,7 +9,7 @@ type DBuild = { id: number; title: string; status: string; client_name: string; 
 type DMilestone = { id: number; name: string; due_date: string; project_id: number; project_name: string };
 type DBlocker = { id: number; description: string; project_id: number; project_name: string; reported_by: string | null; created_at: string };
 type DActivity = { id: number; action: string; detail: string; project_name: string; project_id: number; user_name: string | null; created_at: string };
-type DBuildTask = { id: number; title: string; status: string; due_date: string | null; build_id: number; build_title: string; client_name: string };
+type DBuildTask = { id: number; title: string; status: string; due_date: string | null; build_id: number | null; build_title: string; client_name: string };
 type DChangeRequest = { id: number; title: string; status: string; due_date: string | null; build_id: number; build_title: string; client_name: string };
 
 export type MyDashboard = {
@@ -88,7 +86,7 @@ function BuildTaskRow({ t }: { t: DBuildTask }) {
   return (
     <li className="flex items-center justify-between gap-3 px-5 py-3">
       <div className="min-w-0">
-        <Link href={`/builds/${t.build_id}`} className="truncate text-sm font-semibold text-slate-900 hover:text-pink-700">{t.title}</Link>
+        <Link href={t.build_id ? `/builds/${t.build_id}#tasks` : '/tasks'} className="truncate text-sm font-semibold text-slate-900 hover:text-pink-700">{t.title}</Link>
         <p className="truncate text-xs text-slate-400">{t.client_name || t.build_title}{t.due_date ? ` · due ${t.due_date}` : ""}</p>
       </div>
       <span className={cn("shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ring-inset", BUILD_ITEM_STATUS_STYLE[t.status] ?? "")}>
@@ -112,7 +110,7 @@ function ChangeRequestRow({ c }: { c: DChangeRequest }) {
   );
 }
 
-function ListCard({ title, icon, empty, children }: { title: string; icon: React.ReactNode; empty: string; children: React.ReactNode[] }) {
+function ListCard({ title, icon, empty, children }: { title: string; icon?: React.ReactNode; empty: string; children: React.ReactNode[] }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
       <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-950">{icon}{title}</div>
@@ -178,7 +176,7 @@ export function MemberDashboard({ data, name }: { data: MyDashboard; name: strin
             </li>
           ))}
         </ListCard>
-        <ListCard title="Active blockers" icon={<ShieldAlert className="h-4 w-4 text-red-600" />} empty="No active blockers.">
+        <ListCard title="Active blockers" empty="No active blockers.">
           {data.active_blockers.map((b) => (
             <li key={b.id} className="px-5 py-3 text-sm">
               <Link href={`/projects/${b.project_id}`} className="font-medium text-red-700 hover:underline">{b.project_name}</Link>

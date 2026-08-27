@@ -6,6 +6,7 @@ import { PRIORITY_LABELS, PROJECT_STATUS_LABELS, type Project } from "@/lib/port
 import { cn } from "@/lib/utils";
 import { AdminDashboard, type AdminStats } from "./admin-view";
 import { MemberDashboard, type MyDashboard } from "./member-view";
+import { WorkspaceOverview } from "./workspace-overview";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,9 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
   return Array.isArray(d) ? d : d.results ?? [];
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
   const user = await requireUser();
+  if ((await searchParams).view !== 'reports') return <WorkspaceOverview user={user} />;
   const isAdmin = user.role === "ADMIN";
 
   // Admins get the full operational overview.

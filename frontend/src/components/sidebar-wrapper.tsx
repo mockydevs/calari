@@ -44,8 +44,9 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
         onClick={closeAfterNavigation}
         className={cn(
           "fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out lg:translate-x-0",
-          isOpen ? "translate-x-0" : "-translate-x-full",
+          isOpen ? "visible translate-x-0" : "invisible -translate-x-full lg:visible",
         )}
+        onKeyDown={(event) => { if (event.key === "Escape") setIsOpen(false); }}
       >
         <button
           onClick={() => setIsOpen(false)}

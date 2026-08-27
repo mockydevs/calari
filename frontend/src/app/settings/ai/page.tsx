@@ -1,7 +1,7 @@
-import { Bot, CheckCircle2, KeyRound, Plus, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { Bot, CheckCircle2, KeyRound, Plus, Trash2 } from "lucide-react";
 import { requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
-import { createApiKey, activateApiKey, deleteApiKey, renameApiKey, updateAiConfig, updateGhlMcpConfig } from "./actions";
+import { createApiKey, activateApiKey, deleteApiKey, renameApiKey, updateAiConfig } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,12 +16,7 @@ export const dynamic = "force-dynamic";
 
 const PROVIDER_LABELS: Record<string, string> = {
   OPENAI: "OpenAI",
-  ANTHROPIC: "Claude / Anthropic",
-  GOOGLE: "Google AI",
-  GROQ: "Groq",
-  MISTRAL: "Mistral",
-  OPENROUTER: "OpenRouter",
-  OTHER: "Other",
+  ANTHROPIC: "Anthropic Claude",
 };
 const PROVIDERS = Object.keys(PROVIDER_LABELS);
 
@@ -41,7 +36,6 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
 
 type AiConfig = {
   provider: string; model: string; blueprint_model: string; multi_pass: boolean;
-  ghl_mcp_url: string; ghl_mcp_model: string; ghl_mcp_token_preview: string;
 };
 type AiUsage = {
   days: number;
@@ -59,11 +53,9 @@ export default async function AiSettingsPage() {
   await requireFeature("ai_keys");
   const [keys, config, usage] = await Promise.all([
     serverApi.get<AiKey[] | { results: AiKey[] }>("builds/ai-keys").then(asList).catch(() => [] as AiKey[]),
-    serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "", multi_pass: false, ghl_mcp_url: "", ghl_mcp_model: "", ghl_mcp_token_preview: "" } as AiConfig)),
+    serverApi.get<AiConfig>("builds/ai-config").catch(() => ({ provider: "OPENAI", model: "", blueprint_model: "", multi_pass: false } as AiConfig)),
     serverApi.get<AiUsage>("builds/ai-usage").catch(() => null),
   ]);
-  // Providers we actually generate with today (others can still store keys).
-  const ACTIVE_PROVIDERS = ["OPENAI", "ANTHROPIC"];
 
   return (
     <div className="space-y-5">
@@ -71,7 +63,7 @@ export default async function AiSettingsPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Admin settings</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">AI providers</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Add API keys for OpenAI, Claude, and other providers. Keys are encrypted and only previews are shown.
+          Manage OpenAI and Anthropic Claude. Keys are encrypted and only previews are shown.
         </p>
       </div>
 
@@ -79,9 +71,6 @@ export default async function AiSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
-              <Sparkles className="h-4 w-4" />
-            </span>
             Active AI provider &amp; model
           </CardTitle>
         </CardHeader>
@@ -90,7 +79,7 @@ export default async function AiSettingsPage() {
             <div className="space-y-1.5">
               <Label htmlFor="active-provider">Provider</Label>
               <Select id="active-provider" name="provider" defaultValue={config.provider || "OPENAI"}>
-                {ACTIVE_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
+                {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
               </Select>
               <p className="text-xs text-slate-500">Uses that provider&apos;s active key above.</p>
             </div>
@@ -119,45 +108,10 @@ export default async function AiSettingsPage() {
         </CardContent>
       </Card>
 
-      {/* GoHighLevel MCP — live build verification */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-pink-50 text-pink-700 ring-1 ring-pink-100">
-              <ShieldCheck className="h-4 w-4" />
-            </span>
-            GoHighLevel live verification
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form action={updateGhlMcpConfig} className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="ghl-mcp-url">GHL MCP server URL</Label>
-              <Input id="ghl-mcp-url" name="ghl_mcp_url" defaultValue={config.ghl_mcp_url} placeholder="https://services.leadconnectorhq.com/mcp/  (may contain {'{location_id}'})" />
-              <p className="text-xs text-slate-500">
-                {"{location_id}"} is filled per client from the GHL location ID on the Clients page. Clear this field to turn live verification off.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ghl-mcp-model">Model (optional)</Label>
-              <Input id="ghl-mcp-model" name="ghl_mcp_model" defaultValue={config.ghl_mcp_model} placeholder="claude-opus-4-8" />
-              <p className="text-xs text-slate-500">Blank = claude-opus-4-8. Uses the active Anthropic key above.</p>
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="ghl-mcp-token">MCP token</Label>
-              <PasswordInput id="ghl-mcp-token" name="ghl_mcp_token" autoComplete="off" placeholder={config.ghl_mcp_token_preview ? `Stored: ${config.ghl_mcp_token_preview} — paste a new token to replace` : "Paste GHL private-integration / bearer token"} />
-              <p className="text-xs text-slate-500">Encrypted before storage and never shown again. Leave blank to keep the current token.</p>
-            </div>
-            <div className="flex items-end">
-              <Button type="submit"><CheckCircle2 className="h-4 w-4" /> Save GHL settings</Button>
-            </div>
-            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600 ring-1 ring-slate-100 sm:col-span-3">
-              When configured, progress-report audits inspect the client&apos;s real GHL account and only mark items VERIFIED
-              if they actually exist there. Not configured = audits work exactly as before (doc-only).
-            </p>
-          </form>
-        </CardContent>
-      </Card>
+      <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+        GoHighLevel connections are managed per client using a private integration token and location ID.{' '}
+        <a href="/clients" className="font-medium text-pink-700 underline">Manage client connections</a>
+      </p>
 
       {/* AI usage telemetry */}
       {usage && (
@@ -349,7 +303,6 @@ export default async function AiSettingsPage() {
               </label>
               <div className="rounded-lg bg-pink-50 px-3 py-3 text-xs leading-5 text-pink-800 ring-1 ring-pink-100">
                 <div className="mb-1 flex items-center gap-2 font-semibold">
-                  <ShieldCheck className="h-4 w-4" />
                   Security note
                 </div>
                 Store provider keys here instead of editing server env files when admins need to rotate keys.

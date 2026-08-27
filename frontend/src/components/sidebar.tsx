@@ -2,7 +2,7 @@ import { logout } from "@/lib/logout-action";
 import { NavItem } from "@/components/nav-item";
 import { NotificationsNav } from "@/components/notifications-nav";
 import type { NavIconName } from "@/components/nav-item";
-import { ExternalLink, Globe, LogOut, ShieldCheck } from "lucide-react";
+import { ExternalLink, Globe, LogOut } from "lucide-react";
 import Link from "next/link";
 
 const MAIN_SITE_URL = "https://calarisolutions.com";
@@ -15,14 +15,12 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
     { href: "/dashboard", label: "Dashboard", iconName: "LayoutDashboard", show: true },
     { href: "/tasks", label: "Tasks", iconName: "ListChecks", show: true },
     { href: "/projects", label: "Projects", iconName: "FolderKanban", show: true },
-    { href: "/builds", label: "Builds", iconName: "BriefcaseBusiness", show: true },
-    { href: "/builds/kanban", label: "Board", iconName: "KanbanSquare", show: true },
+    { href: "/builds", label: "GHL delivery", iconName: "BriefcaseBusiness", show: true },
     { href: "/library", label: "Build Library", iconName: "BookOpen", show: true },
     { href: "/a2p", label: "A2P intake", iconName: "MessageSquare", show: can("a2p") },
     { href: "/clients", label: "Clients", iconName: "Users", show: can("clients") },
-    { href: "/settings/profile", label: "Profile", iconName: "CircleUserRound", show: true },
     { href: "/settings/team", label: "Team", iconName: "Settings", show: can("team") },
-    { href: "/settings/ai", label: "AI Keys", iconName: "KeyRound", show: can("ai_keys") },
+    { href: "/settings/ai", label: "AI configuration", iconName: "KeyRound", show: can("ai_keys") },
     { href: "/settings/connections", label: "Integrations", iconName: "Cable", show: can("ai_keys") },
   ];
 
@@ -38,25 +36,18 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
       <div className="flex h-20 shrink-0 flex-col justify-center gap-1.5 border-b border-white/[0.08] px-5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="Calari" className="h-7 w-auto self-start" />
-        <p className="text-xs text-slate-400">Client delivery command</p>
+        <p className="text-xs text-slate-400">Internal workspace</p>
       </div>
 
       <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 py-5">
-        <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-          Workspace
-        </p>
-        <ul className="space-y-0.5">
-          {navItems
-            .filter((item) => item.show)
-            .map((item) => (
-              <NavItem
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                iconName={item.iconName}
-              />
-            ))}
-        </ul>
+        {[
+          { label: "Workspace", paths: ["/dashboard", "/tasks", "/projects"] },
+          { label: "Client delivery", paths: ["/builds", "/clients", "/library", "/a2p"] },
+          { label: "Administration", paths: ["/settings/team", "/settings/ai", "/settings/connections"] },
+        ].map(group => {
+          const items = group.paths.flatMap(path => navItems.filter(item => item.href === path && item.show));
+          return items.length ? <div key={group.label} className="mb-7"><p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{group.label}</p><ul className="space-y-1">{items.map(item => <NavItem key={item.href} href={item.href} label={item.label} iconName={item.iconName} />)}</ul></div> : null;
+        })}
       </nav>
 
       <div className="shrink-0 border-t border-white/[0.08] px-3 pb-4 pt-3">
@@ -91,7 +82,6 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium leading-tight text-white">{user.name}</p>
               <p className="mt-1 flex items-center gap-1.5 truncate text-xs capitalize leading-tight text-slate-400">
-                <ShieldCheck className="h-3.5 w-3.5 text-pink-300" />
                 {user.role.toLowerCase()} access
               </p>
             </div>

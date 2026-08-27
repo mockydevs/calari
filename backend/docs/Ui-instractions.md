@@ -116,7 +116,7 @@ ROW 3 — THREE COLUMNS
    - Today highlighted with pulse animation
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ VISUAL EFFECTS & MICRO-INTERACTIONS
+VISUAL EFFECTS & MICRO-INTERACTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Glassmorphism cards: background rgba(28,35,51,0.6), 
   border 1px solid rgba(255,255,255,0.07), 

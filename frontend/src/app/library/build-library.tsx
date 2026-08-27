@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Trash2, FileText, Sparkles, Crown, Loader2 } from "lucide-react";
+import { Upload, Trash2, FileText, Crown, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/portal/api";
 import { useToast, Spinner } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -169,7 +169,7 @@ export function BuildLibrary({ clients }: { clients: ClientOpt[] }) {
                       )}
                       {d.use_for_ai && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-semibold text-pink-700 ring-1 ring-pink-100">
-                          <Sparkles className="h-3 w-3" /> AI learning
+                          AI learning
                         </span>
                       )}
                       {d.use_for_ai && !d.enriched_at && !d.summary && (
@@ -193,8 +193,9 @@ export function BuildLibrary({ clients }: { clients: ClientOpt[] }) {
                   <div className="flex shrink-0 items-center gap-1">
                     <button type="button" onClick={() => toggleAi(d)}
                       title={d.use_for_ai ? "Exclude from AI" : "Include in AI"}
-                      className={`rounded p-1.5 ${d.use_for_ai ? "text-pink-600 hover:bg-pink-50" : "text-slate-400 hover:bg-slate-100"}`}>
-                      <Sparkles className="h-4 w-4" />
+                      aria-pressed={d.use_for_ai}
+                      className={`rounded px-2 py-1.5 text-xs font-medium ${d.use_for_ai ? "text-pink-600 hover:bg-pink-50" : "text-slate-400 hover:bg-slate-100"}`}>
+                      {d.use_for_ai ? "AI on" : "AI off"}
                     </button>
                     <button type="button" onClick={() => remove(d)} title="Remove"
                       className="rounded p-1.5 text-red-500 hover:bg-red-50">
@@ -285,7 +286,7 @@ export function BuildLibrary({ clients }: { clients: ClientOpt[] }) {
       {coverage && coverage.total > 0 && (
         <section className="h-fit overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm lg:col-start-2">
           <div className="border-b border-slate-100 px-5 py-3.5">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Sparkles className="h-4 w-4 text-pink-700" /> Learning coverage</h2>
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-950">Learning coverage</h2>
           </div>
           <div className="space-y-3 p-5 text-sm">
             <div className="flex flex-wrap gap-2">

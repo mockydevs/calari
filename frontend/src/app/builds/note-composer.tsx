@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useToast, Spinner } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { addMeetingNote, logProgressUpdate } from "./actions";
 
 const TYPES = [
-  { value: "meeting", label: "Meeting notes (feeds the blueprint)" },
+  { value: "meeting", label: "Meeting notes (GHL task list)" },
   { value: "progress", label: "Progress update (captures changes)" },
   { value: "change_request", label: "Client-requested change" },
 ];
@@ -40,7 +40,7 @@ export function NoteComposer({ buildId }: { buildId: string }) {
           toast.success("Logged — change requests, questions & progress captured.");
         } else {
           await addMeetingNote(fd);
-          toast.success("Meeting notes added. Generate / Regenerate to build them in.");
+          toast.success("Notes saved. Open Meeting Tasklist to generate or re-sync the GHL tasks.");
         }
         setText("");
       } catch (e) {
@@ -62,14 +62,14 @@ export function NoteComposer({ buildId }: { buildId: string }) {
       />
       <div className="flex items-center gap-2">
         <Button type="button" onClick={submit} size="sm" disabled={pending}>
-          {pending ? <Spinner className="h-3.5 w-3.5" /> : isDelta ? <Sparkles className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+          {pending ? <Spinner className="h-3.5 w-3.5" /> : isDelta ? null : <Plus className="h-3.5 w-3.5" />}
           {isDelta ? "Log update" : "Add note"}
         </Button>
       </div>
       <p className="text-[11px] text-slate-400">
         {isDelta
           ? "Captures scope changes (→ change requests), new questions (→ gaps) and progress, and refreshes the build memory — without rewriting the blueprint."
-          : "Meeting notes feed the full blueprint when you Generate / Regenerate."}
+          : "After saving, open Meeting Tasklist and choose Generate from notes or Re-sync from latest meeting."}
       </p>
     </div>
   );

@@ -4,8 +4,6 @@ import { redirect } from "next/navigation";
 import { requireUser, requireFeature } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 
-type Created = { id: number };
-
 async function uploadBuildFile(buildId: string, file: File) {
   const contentType = file.type || "application/octet-stream";
   const presign = await serverApi.post<{ upload_url: string; public_url: string; key: string }>(
@@ -26,26 +24,6 @@ async function uploadBuildFile(buildId: string, file: File) {
     build: Number(buildId),
   });
   return { url: presign.public_url, name: file.name };
-}
-
-export async function createBuild(formData: FormData) {
-  await requireFeature("builds_manage");
-  const title = String(formData.get("title") ?? "").trim();
-  const client = String(formData.get("client") ?? "");
-  const notes = String(formData.get("notes") ?? "").trim();
-  if (!title) throw new Error("Title is required");
-  if (!client) throw new Error("Client is required");
-
-  const build = await serverApi.post<Created>("builds/builds", {
-    title,
-    client: Number(client),
-    status: "DRAFT",
-  });
-  if (notes) {
-    await serverApi.post("builds/meeting-notes", { build: build.id, raw_text: notes, source: "paste" });
-  }
-  revalidatePath("/builds");
-  redirect(`/builds/${build.id}`);
 }
 
 export async function deleteBuild(formData: FormData) {
@@ -95,12 +73,16 @@ export async function createTask(formData: FormData) {
   const type = String(formData.get("type") ?? "OTHER");
   const description = String(formData.get("description") ?? "").trim();
   const assignee = String(formData.get("assignee") ?? "").trim();
-  if (!buildId || !title) throw new Error("Build and title are required");
+  if (!title) throw new Error("Title is required");
+  const dueDate = String(formData.get("dueDate") ?? "");
   await serverApi.post("builds/tasks", {
-    build: Number(buildId), title, type, description,
+    build: buildId ? Number(buildId) : null, title, type, description,
+    priority: String(formData.get("priority") ?? "MEDIUM"),
+    due_date: dueDate || null,
     assignee: assignee ? Number(assignee) : null,
   });
-  revalidatePath(`/builds/${buildId}`);
+  if (buildId) revalidatePath(`/builds/${buildId}`);
+  revalidatePath("/tasks");
 }
 
 export async function deleteTask(formData: FormData) {
@@ -119,7 +101,7 @@ export async function updateTaskStatus(formData: FormData) {
   const buildId = String(formData.get("buildId") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!taskId || !status) throw new Error("Task and status are required");
-  await serverApi.post(`builds/tasks/${taskId}/status`, { status });
+  await serverApi.post(`builds/tasks/${taskId}/status`, { status, ...(formData.has("progressNote") ? { progress_note: String(formData.get("progressNote") || "") } : {}) });
   revalidatePath(`/builds/${buildId}`);
   revalidatePath("/tasks");
 }
@@ -205,14 +187,6 @@ export async function logProgressUpdate(formData: FormData) {
   revalidatePath(`/builds/${buildId}`);
 }
 
-export async function generateBrief(formData: FormData) {
-  await requireFeature("builds_manage");
-  const buildId = String(formData.get("buildId") ?? "");
-  if (!buildId) throw new Error("Build is required");
-  await serverApi.post(`builds/builds/${buildId}/generate-brief`, {});
-  revalidatePath(`/builds/${buildId}`);
-}
-
 // ─── Change requests + approvals ─────────────────────────────────────────────
 export async function createChangeRequest(formData: FormData) {
   await requireUser();
@@ -282,15 +256,6 @@ export async function recordApproval(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim();
   if (!buildId) throw new Error("Build is required");
   await serverApi.post("builds/approvals", { build: Number(buildId), type, note });
-  revalidatePath(`/builds/${buildId}`);
-}
-
-// ─── Client portal ───────────────────────────────────────────────────────────
-export async function enablePortal(formData: FormData) {
-  await requireFeature("builds_manage");
-  const buildId = String(formData.get("buildId") ?? "");
-  if (!buildId) throw new Error("Build is required");
-  await serverApi.post(`builds/builds/${buildId}/enable-portal`, {});
   revalidatePath(`/builds/${buildId}`);
 }
 

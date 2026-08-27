@@ -1,10 +1,13 @@
 from rest_framework import serializers
+import uuid
+from django.db import transaction
+from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 
 from .models import (
-    Build, Task, TaskDependency,
+    Build, Task, TaskDependency, TaskPriority,
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
-    BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
+    BuildMemorySnapshot, Notification, NotificationPreference,
     AiApiKey, TeamInvite, BuildKnowledge, AiConfig,
     BuildSectionReview, MeetingActionItem, ProgressReport,
 )
@@ -29,29 +32,12 @@ def _user_initials(user):
 
 
 class AiConfigSerializer(serializers.ModelSerializer):
-    # Write-only: submitting a non-blank value replaces the stored (encrypted) GHL MCP
-    # token; blank/omitted leaves it unchanged (the secret is never re-shown — only
-    # ghl_mcp_token_preview is readable). Clearing ghl_mcp_url disables the feature.
-    ghl_mcp_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
-
     class Meta:
         model = AiConfig
-        fields = [
-            "provider", "model", "blueprint_model", "multi_pass",
-            "ghl_mcp_url", "ghl_mcp_model", "ghl_mcp_token", "ghl_mcp_token_preview",
-            "updated_at",
-        ]
-        read_only_fields = ["ghl_mcp_token_preview", "updated_at"]
-
-    def update(self, instance, validated_data):
-        token = (validated_data.pop("ghl_mcp_token", "") or "").strip()
-        if token:
-            from .services import encrypt_api_key
-            instance.ghl_mcp_token_encrypted, instance.ghl_mcp_token_preview = encrypt_api_key(token)
-        return super().update(instance, validated_data)
+        fields = ["provider", "model", "blueprint_model", "multi_pass", "updated_at"]
+        read_only_fields = ["updated_at"]
 
 
-# ─── Build Library (knowledge the AI learns from) ─────────────────────────────
 class BuildKnowledgeSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.SerializerMethodField()
     client_name = serializers.SerializerMethodField()
@@ -103,6 +89,8 @@ class MeetingNoteSerializer(serializers.ModelSerializer):
 
 
 class MeetingActionItemSerializer(serializers.ModelSerializer):
+    assigned_task_id = serializers.IntegerField(source="assigned_task.id", read_only=True, default=None)
+    assignee_name = serializers.SerializerMethodField()
     introduced_in_title = serializers.SerializerMethodField()
     last_changed_in_title = serializers.SerializerMethodField()
 
@@ -110,6 +98,11 @@ class MeetingActionItemSerializer(serializers.ModelSerializer):
         model = MeetingActionItem
         fields = "__all__"
         read_only_fields = ["ai_generated", "introduced_in", "last_changed_in"]
+
+    @extend_schema_field(_NULL_STR)
+    def get_assignee_name(self, obj):
+        task = getattr(obj, "assigned_task", None)
+        return _user_name(task.assignee) if task else None
 
     @extend_schema_field(_NULL_STR)
     def get_introduced_in_title(self, obj):
@@ -233,12 +226,6 @@ class BuildMemorySnapshotSerializer(serializers.ModelSerializer):
         return _user_name(obj.created_by)
 
 
-class ClientPortalFeedbackSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ClientPortalFeedback
-        fields = "__all__"
-
-
 class TaskDependencySerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskDependency
@@ -248,6 +235,8 @@ class TaskDependencySerializer(serializers.ModelSerializer):
 # ─── Tasks ────────────────────────────────────────────────────────────────────
 @extend_schema_serializer(component_name="BuildTaskCard")
 class TaskCardSerializer(serializers.ModelSerializer):
+    ghl_verification_note = serializers.SerializerMethodField()
+    slack_intake = serializers.BooleanField(read_only=True, default=False)
     assignee_name = serializers.SerializerMethodField()
     assignee_initials = serializers.SerializerMethodField()
     build_title = serializers.SerializerMethodField()
@@ -258,9 +247,44 @@ class TaskCardSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "description", "type", "status", "ai_generated",
             "progress_note", "build", "build_title", "client_name",
+            "ghl_verification_status", "ghl_verification_note", "ghl_verification_checked_at",
             "assignee", "assignee_name", "assignee_initials",
-            "due_date", "created_at", "updated_at",
+            "due_date", "created_at", "updated_at", "priority", "creator", "source_item", "slack_intake",
         ]
+        read_only_fields = ["creator", "source_item", "ai_generated", "ghl_verification_status", "ghl_verification_note", "ghl_verification_checked_at"]
+
+    @staticmethod
+    def _queue_verification(data, done):
+        data.update(
+            ghl_verification_status="PENDING" if done else "",
+            ghl_verification_note="Queued for a read-only GHL check. Staff completion is not verification." if done else "",
+            ghl_verification_revision=uuid.uuid4(), ghl_verification_started_at=None, ghl_verification_checked_at=None,
+        )
+
+    def get_ghl_verification_note(self, obj):
+        from .permissions import is_manager
+        request = self.context.get("request")
+        if request and (is_manager(request.user) or obj.assignee_id == request.user.pk):
+            return obj.ghl_verification_note
+        return ""
+
+    def create(self, validated_data):
+        if validated_data.get("status") == "DONE":
+            self._queue_verification(validated_data, True)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        with transaction.atomic():
+            instance = Task.objects.select_for_update().get(pk=instance.pk)
+            relevant = ("status", "title", "description", "type", "progress_note", "build")
+            if any(key in validated_data and validated_data[key] != getattr(instance, key) for key in relevant):
+                self._queue_verification(validated_data, validated_data.get("status", instance.status) == "DONE")
+            return super().update(instance, validated_data)
+
+    def validate_assignee(self, value):
+        if value and not value.is_active:
+            raise serializers.ValidationError("Choose an active staff member.")
+        return value
 
     @extend_schema_field(_NULL_STR)
     def get_assignee_name(self, obj):
@@ -287,6 +311,23 @@ class TaskSerializer(TaskCardSerializer):
         fields = TaskCardSerializer.Meta.fields + ["documents", "comments"]
 
 
+class PublishTaskItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(min_value=1)
+    assignee = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.filter(is_active=True))
+    priority = serializers.ChoiceField(choices=TaskPriority.choices, default=TaskPriority.MEDIUM)
+    due_date = serializers.DateTimeField(required=False, allow_null=True, default=None)
+
+
+class PublishTasklistSerializer(serializers.Serializer):
+    build = serializers.PrimaryKeyRelatedField(queryset=Build.objects.all())
+    items = PublishTaskItemSerializer(many=True, allow_empty=False, max_length=200)
+
+    def validate_items(self, value):
+        if len({item["id"] for item in value}) != len(value):
+            raise serializers.ValidationError("Each meeting item may only appear once.")
+        return value
+
+
 # ─── Builds ───────────────────────────────────────────────────────────────────
 class BuildListSerializer(serializers.ModelSerializer):
     creator_name = serializers.SerializerMethodField()
@@ -298,9 +339,9 @@ class BuildListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "status", "goals", "integrations", "client", "client_name",
             "creator", "creator_name", "assignee", "assignee_name", "due_date",
-            "client_portal_enabled", "client_portal_token", "created_at", "updated_at",
+            "created_at", "updated_at",
         ]
-        read_only_fields = ["creator", "client_portal_token"]
+        read_only_fields = ["creator"]
 
     @extend_schema_field(_NULL_STR)
     def get_creator_name(self, obj):

@@ -1,4 +1,4 @@
-import { Clock, MailPlus, Send, ShieldCheck, Trash2, UserCheck, Users } from "lucide-react";
+import { Clock, MailPlus, Send, Trash2, UserCheck, Users } from "lucide-react";
 import { requireFeature, FEATURE_KEYS, FEATURE_LABELS } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import { approveUser, cancelInvite, deactivateUser, resendInvite, setUserFeatures } from "./actions";
@@ -99,7 +99,7 @@ export default async function TeamPage() {
                         {isTrueAdmin && (
                           <td className="px-5 py-3.5">
                             {u.role === "admin" || u.role === "superuser" ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-700"><ShieldCheck className="h-3.5 w-3.5" /> Full access</span>
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-700">Full access</span>
                             ) : (
                               <details className="group">
                                 <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">

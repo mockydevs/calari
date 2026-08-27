@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DJANGO_API } from "@/lib/portal/config";
 import { djangoCookieHeader, getTokens, refreshAccess } from "@/lib/portal/server";
+import { backendFetch } from "@/lib/portal/backend-fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   const refresh = tokens.refresh;
 
   const doFetch = (token?: string) =>
-    fetch(target, {
+    backendFetch(target, {
       method,
       headers: (() => {
         const h = new Headers(fwd);
@@ -44,6 +45,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
       body: body ? Buffer.from(body) : undefined,
       redirect: "manual",
       cache: "no-store",
+      signal: req.signal,
     });
 
   // Django uses redirect-based auth: unauthenticated/expired requests 302 to
@@ -52,14 +54,23 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     r.status === 401 ||
     (r.status >= 300 && r.status < 400 && (r.headers.get("location") || "").includes("/login"));
 
-  let res = await doFetch(access);
-
-  if (isAuthChallenge(res) && refresh) {
-    const newAccess = await refreshAccess(refresh);
-    if (newAccess) {
-      access = newAccess;
-      res = await doFetch(newAccess);
+  let res: Response;
+  try {
+    res = await doFetch(access);
+    if (isAuthChallenge(res) && refresh) {
+      await res.body?.cancel();
+      const newAccess = await refreshAccess(refresh);
+      if (newAccess) {
+        access = newAccess;
+        res = await doFetch(newAccess);
+      }
     }
+  } catch (error) {
+    const timeout = error instanceof Error && error.name === "TimeoutError";
+    return NextResponse.json(
+      { error: timeout ? "The server took too long to respond. Check the latest state before retrying." : "The server is unavailable. Please try again shortly." },
+      { status: timeout ? 504 : 502 },
+    );
   }
 
   // Still unauthenticated → return a clean 401 (never leak the cross-origin redirect).
@@ -67,7 +78,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   }
 
-  const resBody = await res.arrayBuffer();
+  // Stream downloads instead of buffering them in Next's heap. No-content
+  // statuses must use null: even an empty ArrayBuffer is an invalid body.
+  const resBody = [204, 205, 304].includes(res.status) ? null : res.body;
   const out = new NextResponse(resBody, { status: res.status });
   const contentType = res.headers.get("content-type");
   if (contentType) out.headers.set("content-type", contentType);

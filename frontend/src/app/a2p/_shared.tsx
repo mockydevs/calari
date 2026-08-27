@@ -10,7 +10,7 @@ export const A2P_STATUS_LABEL: Record<string, string> = {
   REJECTED: "Rejected",
 };
 
-export const A2P_STATUS_STYLE: Record<string, string> = {
+const A2P_STATUS_STYLE: Record<string, string> = {
   NEW: "bg-pink-50 text-pink-700 ring-pink-200",
   IN_REVIEW: "bg-amber-50 text-amber-700 ring-amber-200",
   SUBMITTED: "bg-sky-50 text-sky-700 ring-sky-200",
@@ -18,7 +18,7 @@ export const A2P_STATUS_STYLE: Record<string, string> = {
   REJECTED: "bg-red-50 text-red-700 ring-red-200",
 };
 
-export type PhoneEntry = { number: string; label?: string };
+type PhoneEntry = { number: string; label?: string };
 
 export interface A2PSubmission {
   id: number;

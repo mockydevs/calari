@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
@@ -12,6 +12,7 @@ import {
   KeyRound,
   LayoutDashboard,
   ListChecks,
+  Loader2,
   MessageSquare,
   Settings,
   Users,
@@ -43,16 +44,23 @@ interface NavItemProps {
   badge?: number;
 }
 
+function NavigationPending({ label }: { label: string }) {
+  const { pending } = useLinkStatus();
+  if (!pending) return null;
+  return <span role="status" className="ml-auto"><Loader2 aria-hidden="true" className="h-4 w-4 motion-safe:animate-spin" /><span className="sr-only">Opening {label}…</span></span>;
+}
+
 export function NavItem({ href, label, iconName, badge }: NavItemProps) {
   const pathname = usePathname();
   const isActive =
-    pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+    pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
   const Icon = ICON_MAP[iconName];
 
   return (
     <li>
       <Link
         href={href}
+        aria-current={isActive ? "page" : undefined}
         className={cn(
           "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
           isActive
@@ -67,6 +75,7 @@ export function NavItem({ href, label, iconName, badge }: NavItemProps) {
           )}
         />
         <span className="flex-1 truncate">{label}</span>
+        <NavigationPending label={label} />
         {badge != null && badge > 0 ? (
           <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
             {badge > 99 ? "99+" : badge}

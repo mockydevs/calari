@@ -6,7 +6,7 @@ import { useToast, Spinner } from "@/components/toast";
 
 /** Fetch an AI-generated markdown document for a build and preview/copy/download it. */
 function MarkdownDocButton({
-  buildId, title, endpoint, label, hideLabel, previewTitle, slugSuffix, fallback, copiedMsg, accent,
+  buildId, title, endpoint, label, hideLabel, previewTitle, slugSuffix, fallback, copiedMsg,
 }: {
   buildId: number | string;
   title: string;
@@ -17,7 +17,6 @@ function MarkdownDocButton({
   slugSuffix: string;
   fallback: string;
   copiedMsg: string;
-  accent?: boolean;
 }) {
   const toast = useToast();
   const [busy, setBusy] = React.useState(false);
@@ -57,9 +56,7 @@ function MarkdownDocButton({
     URL.revokeObjectURL(url);
   }
 
-  const btnClass = accent
-    ? "border-pink-200 bg-pink-50 text-pink-700 hover:bg-pink-100"
-    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
+  const btnClass = "border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
 
   return (
     <>
@@ -89,18 +86,6 @@ function MarkdownDocButton({
         </div>
       )}
     </>
-  );
-}
-
-/** AI-generated, implementer-facing GHL build document. */
-export function BuildDocumentButton({ buildId, title }: { buildId: number | string; title: string }) {
-  return (
-    <MarkdownDocButton
-      buildId={buildId} title={title} endpoint="build-document" accent
-      label="Builder doc" hideLabel="Hide builder doc"
-      previewTitle="Implementation build document" slugSuffix="builder-doc"
-      fallback="The build document could not be generated yet." copiedMsg="Builder document copied."
-    />
   );
 }
 

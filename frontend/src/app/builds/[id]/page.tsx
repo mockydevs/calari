@@ -1,13 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import {
-  AlertTriangle, ArrowLeft, FileText, Link2, MessageSquare,
-  Plus, ShieldCheck, Sparkles, ListChecks,
-} from "lucide-react";
+import { AlertTriangle, ArrowLeft, FileText, MessageSquare, Plus, ListChecks } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
-  addComment, convertSectionBlockerToTask, createChangeRequest, createTask, deleteChangeRequest, enablePortal,
+  addComment, convertSectionBlockerToTask, createChangeRequest, createTask, deleteChangeRequest,
   generateChangeRequestSteps, recordApproval, setBuildStatus, setChangeRequestStatus,
   requestSectionBlockerInfo, uploadDocument,
 } from "../actions";
@@ -15,7 +12,6 @@ import { AssignApprove } from "../assign-approve";
 import { NoteComposer } from "../note-composer";
 import { BuildDeleteButton, ConfirmDeleteButton } from "../build-row-actions";
 import { TaskCard } from "../task-card";
-import { PortalLink } from "../portal-link";
 import { BuilderDocPanel } from "../builder-doc";
 import { ProgressReportPanel } from "../progress-report";
 import { MeetingNoteUpload } from "../meeting-note-upload";
@@ -41,7 +37,7 @@ function asList<T>(d: T[] | { results: T[] }): T[] {
   return Array.isArray(d) ? d : d.results ?? [];
 }
 
-function Panel({ title, icon, children, action }: { title: string; icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
+function Panel({ title, icon, children, action }: { title: string; icon?: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm shadow-slate-900/[0.03]">
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
@@ -124,7 +120,7 @@ function ChangeRequestCard({
           <form action={generateChangeRequestSteps} className="flex items-end justify-end">
             <input type="hidden" name="id" value={change.id} />
             <input type="hidden" name="buildId" value={buildId} />
-            <Button type="submit" size="sm" variant="outline"><Sparkles className="h-3.5 w-3.5" /> Generate steps</Button>
+            <Button type="submit" size="sm" variant="outline">Generate steps</Button>
           </form>
         </div>
       )}
@@ -137,11 +133,13 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   const user = await requireUser();
   const canManageBuilds = user.role === "ADMIN" || (user.features ?? []).includes("builds_manage");
 
-  // Fetch build + notes in parallel (one round-trip wave); users list depends on
-  // isOwner, which needs `build`, so it's fetched just after.
-  const [build, notes] = await Promise.all([
+  // The manager grant is already known, so the roster need not wait for the build.
+  const [build, notes, users] = await Promise.all([
     serverApi.get<BuildDetail>(`builds/builds/${id}`).catch(() => null),
     serverApi.get<MeetingNote[] | { results: MeetingNote[] }>(`builds/meeting-notes?build=${id}`).then(asList).catch(() => [] as MeetingNote[]),
+    canManageBuilds
+      ? serverApi.get<DjangoUser[] | { results: DjangoUser[] }>("builds/tasks/assignees").then(asList).catch(() => [] as DjangoUser[])
+      : Promise.resolve([] as DjangoUser[]),
   ]);
   if (!build) notFound();
 
@@ -150,15 +148,6 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
   // controls that would 403. Admin-only actions stay gated by canManageBuilds below.
   const isOwner = build.assignee != null && String(build.assignee) === user.id;
   const canManage = canManageBuilds || isOwner;
-
-  // Needed to populate the task-assignee / change-request-owner dropdowns.
-  // `auth/users` (the staff roster) is manager/`team`-feature-gated on the backend
-  // (Auth/views.py list_users), so non-admin build owners still see the empty
-  // fallback ("Assignee: build assignee") rather than a picker — same limit the
-  // existing change-request owner dropdown already has.
-  const users = canManageBuilds
-    ? await serverApi.get<DjangoUser[] | { results: DjangoUser[] }>("auth/users").then(asList).catch(() => [] as DjangoUser[])
-    : ([] as DjangoUser[]);
 
   const tasks = build.tasks ?? [];
   const changeRequests = build.change_requests ?? [];
@@ -215,13 +204,6 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
               defaultAssigneeId={build.assignee != null ? String(build.assignee) : ""}
               canApprove={hasPlan && build.status !== "DELIVERED"}
             />
-            <form action={enablePortal}>
-              <input type="hidden" name="buildId" value={id} />
-              <Button type="submit" size="sm" variant="outline"><Link2 className="h-3.5 w-3.5" /> {build.client_portal_enabled ? "Portal enabled" : "Enable client portal"}</Button>
-            </form>
-            {build.client_portal_enabled && build.client_portal_token && (
-              <div className="w-full"><PortalLink token={build.client_portal_token} /></div>
-            )}
             <div className="ml-auto"><BuildDeleteButton id={Number(id)} title={build.title} label="Delete build" /></div>
             {hasPlan && build.status !== "DELIVERED" && (
               <p className="w-full text-xs text-slate-400">Assign hands the build over; Approve also records sign-off and notifies the staff member to start implementing.</p>
@@ -233,7 +215,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
       <Tabs>
         {/* ── Overview ─────────────────────────────────────────────── */}
         <TabPanel id="overview" label="Overview">
-          <Panel title="Overview & meeting notes" icon={<Sparkles className="h-4 w-4 text-pink-700" />}>
+          <Panel title="Overview & meeting notes">
             {(build.overview || build.one_line_summary || build.goals || integrations.length > 0) && (
               <div className="space-y-4 text-sm">
                 {build.overview && (
@@ -269,6 +251,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                       <span className="inline-flex items-center gap-2">
                         <span className="font-semibold text-slate-800">{n.title || MEETING_NOTE_KIND_LABEL[n.kind ?? "meeting"] || "Notes"}</span>
                         <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">{MEETING_NOTE_KIND_LABEL[n.kind ?? "meeting"] ?? "Note"}</span>
+                        {n.source === "fathom" && <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">Fathom import</span>}
                         {n.ai_status === "processing" && <span className="text-[10px] text-amber-600">processing…</span>}
                       </span>
                       <span className="text-slate-400">{formatDate(n.created_at)}</span>
@@ -359,11 +342,11 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
             {tasks.length === 0 ? <p className="text-sm text-slate-500">No tasks yet.</p> : (
               <ul className="space-y-2.5">
                 {tasks.map((t) => (
-                  <TaskCard key={t.id} task={t} buildId={id} canManage={canManage} canManageBuilds={canManageBuilds} users={users} />
+                  <TaskCard key={t.id} task={t} buildId={id} canManage={canManage || t.assignee === Number(user.id)} canManageBuilds={canManageBuilds} users={users} />
                 ))}
               </ul>
             )}
-            <form action={createTask} className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+            {canManageBuilds && <form action={createTask} className="mt-3 space-y-2 border-t border-slate-100 pt-3">
               <input type="hidden" name="buildId" value={id} />
               <div className="flex flex-wrap items-end gap-2">
                 <div className="flex-1"><Input name="title" required placeholder="New task or concern title" className="h-9" /></div>
@@ -377,7 +360,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
                 </Select>
                 <Button type="submit" size="sm"><Plus className="h-3.5 w-3.5" /> Add</Button>
               </div>
-            </form>
+            </form>}
           </Panel>
         </TabPanel>
 
@@ -395,6 +378,8 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
               notes={notes}
               canManage={canManage}
               tasklistStatus={build.tasklist_status}
+              canAssign={canManageBuilds}
+              users={users}
             />
           </Panel>
         </TabPanel>
@@ -455,7 +440,7 @@ export default async function BuildDetail({ params }: { params: Promise<{ id: st
             </form>
           </Panel>
 
-          <Panel title="Approvals" icon={<ShieldCheck className="h-4 w-4 text-pink-700" />}>
+          <Panel title="Approvals">
             {approvals.length === 0 ? <p className="text-sm text-slate-500">No approvals recorded.</p> : (
               <ul className="space-y-1.5">{approvals.map((a) => (
                 <li key={a.id} className="flex items-center justify-between text-sm">

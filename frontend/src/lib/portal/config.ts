@@ -1,7 +1,7 @@
 /** Calari Staff Portal — server config & cookie constants. */
 
 /** Django backend base URL (no trailing slash). API paths live under `/api`. */
-export const DJANGO_BASE = (process.env.DJANGO_API_URL || "https://portal.calarisolutions.com").replace(
+const DJANGO_BASE = (process.env.DJANGO_API_URL || "https://portal.calarisolutions.com").replace(
   /\/+$/,
   "",
 );

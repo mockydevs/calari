@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Sparkles } from "lucide-react";
+
 import { api, ApiError } from "@/lib/portal/api";
 import { useToast, Spinner } from "@/components/toast";
 
@@ -39,7 +39,7 @@ export function UpsellPanel({ clientId, clientName }: { clientId: number; client
         disabled={busy}
         className="inline-flex h-8 items-center gap-2 rounded-md border border-pink-200 bg-pink-50 px-3 text-xs font-semibold text-pink-700 transition-colors hover:bg-pink-100 disabled:opacity-60"
       >
-        {busy ? <><Spinner className="h-3.5 w-3.5" /> Analyzing…</> : <><Sparkles className="h-3.5 w-3.5" /> Suggest upsells for {clientName}</>}
+        {busy ? <><Spinner className="h-3.5 w-3.5" /> Analyzing…</> : <>Suggest upsells for {clientName}</>}
       </button>
       {suggestions && suggestions.length > 0 && (
         <ul className="mt-3 space-y-2">

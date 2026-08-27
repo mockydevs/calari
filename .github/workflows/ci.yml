@@ -45,6 +45,8 @@ jobs:
       DEMO_ADMIN_PASSWORD: cipass123
     steps:
       - uses: actions/checkout@v4
+      - name: Startup failure regression checks
+        run: bash scripts/test-start.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -55,7 +57,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           # Mirror the Dockerfile: these aren't in the hash-pinned export.
-          pip install --no-cache-dir "openai>=2,<3" "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0" "sentry-sdk>=2,<3"
+          pip install --no-cache-dir "openai>=2,<3" "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0" "sentry-sdk>=2,<3" "pypdf>=5,<6"
       - name: Django system check
         run: python manage.py check
       - name: Migration drift check
@@ -63,9 +65,6 @@ jobs:
       - name: Migrate
         run: python manage.py migrate --noinput
       - name: Unit tests
-        # Advisory for now (existing suites not yet CI-verified); make this a hard gate
-        # once it's reliably green.
-        continue-on-error: true
         run: python manage.py test Auth builds onboarding projects a2p -v1
       - name: Login smoke test (boot + real auth)
         run: |
@@ -78,7 +77,7 @@ jobs:
             -X POST "http://127.0.0.1:8000/api/token/" \
             -H "Host: backend" -H "Content-Type: application/json" \
             -d '{"username_or_email":"ci@example.com","password":"cipass123"}')
-          echo "login status: $code"; cat /tmp/login.json || true
+          echo "login status: $code"
           test "$code" = "200" || { echo "::error::Login smoke failed (expected 200, got $code)"; exit 1; }
           grep -q '"ok": *true' /tmp/login.json || { echo "::error::Login response missing ok:true"; exit 1; }
 
@@ -96,14 +95,16 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install
         run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        # Advisory: there are pre-existing eslint errors (e.g. set-state-in-effect in
-        # kanban/portal-link). Clean those, then drop continue-on-error to enforce.
-        continue-on-error: true
-        run: npm run lint
-      - name: Unit tests
-        run: npm run test -- --passWithNoTests
+      - name: Lint, typecheck, dead code, and tests
+        run: npm run check
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/.next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('frontend/package-lock.json') }}-
       - name: Production build
         run: npm run build

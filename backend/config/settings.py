@@ -385,7 +385,7 @@ REST_FRAMEWORK = {
     ),
     # Secure-by-default: a view with no explicit permissions requires auth, so a forgotten
     # permission_classes can't silently expose an endpoint. Every intentionally-public
-    # endpoint (auth login/signup/reset, A2P intake, client portal, integration webhooks)
+    # endpoint (auth login/signup/reset, A2P intake, integration webhooks)
     # declares AllowAny explicitly, so this flip doesn't change their behaviour.
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -471,6 +471,22 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
+    "purge-client-context": {
+        "task": "onboarding.tasks.purge_client_context",
+        "schedule": 3600.0,
+    },
+    "drain-client-investigations": {
+        "task": "onboarding.tasks.drain_client_investigations",
+        "schedule": 15.0,
+    },
+    "verify-completed-ghl-tasks": {
+        "task": "builds.tasks.verify_completed_ghl_tasks",
+        "schedule": 15.0,
+    },
+    "drain-slack-intake": {
+        "task": "onboarding.tasks.drain_slack_intake",
+        "schedule": 15.0,
+    },
     "notify-due-builds": {
         "task": "builds.tasks.notify_due_builds",
         "schedule": crontab(hour=7, minute=0),  # daily 07:00 — SLA watcher (overdue / due-soon)

@@ -22,6 +22,9 @@ class BuildStatus(models.TextChoices):
 
 class TaskType(models.TextChoices):
     AUTOMATION = "AUTOMATION", "Automation"
+    PIPELINE = "PIPELINE", "Pipeline"
+    TAG = "TAG", "Tags"
+    EMAIL = "EMAIL", "Email copy"
     FUNNEL = "FUNNEL", "Funnel"
     FORM = "FORM", "Form"
     INTEGRATION = "INTEGRATION", "Integration"
@@ -33,6 +36,13 @@ class TaskStatus(models.TextChoices):
     IN_PROGRESS = "IN_PROGRESS", "In Progress"
     BLOCKED = "BLOCKED", "Blocked"
     DONE = "DONE", "Done"
+
+
+class TaskPriority(models.TextChoices):
+    LOW = "LOW", "Low"
+    MEDIUM = "MEDIUM", "Medium"
+    HIGH = "HIGH", "High"
+    URGENT = "URGENT", "Urgent"
 
 
 class MeetingNoteKind(models.TextChoices):
@@ -80,12 +90,7 @@ class ProgressReportStatus(models.TextChoices):
 
 class AIProvider(models.TextChoices):
     OPENAI = "OPENAI", "OpenAI"
-    ANTHROPIC = "ANTHROPIC", "Anthropic"
-    GOOGLE = "GOOGLE", "Google"
-    GROQ = "GROQ", "Groq"
-    MISTRAL = "MISTRAL", "Mistral"
-    OPENROUTER = "OPENROUTER", "OpenRouter"
-    OTHER = "OTHER", "Other"
+    ANTHROPIC = "ANTHROPIC", "Anthropic Claude"
 
 
 class ChangeRequestStatus(models.TextChoices):
@@ -106,6 +111,8 @@ class ApprovalType(models.TextChoices):
 
 
 class BuildSection(models.TextChoices):
+    FUNNELS = "FUNNELS", "Funnels"
+    EMAIL_COPY = "EMAIL_COPY", "Email copy"
     PIPELINE = "PIPELINE", "Pipeline"
     AUTOMATIONS = "AUTOMATIONS", "Automations"
     CLIENT_UPDATES = "CLIENT_UPDATES", "New features & updates"
@@ -149,8 +156,6 @@ class Build(models.Model):
         USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_builds"
     )
     due_date = models.DateTimeField(null=True, blank=True)
-    client_portal_enabled = models.BooleanField(default=False)
-    client_portal_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -169,7 +174,16 @@ class Task(models.Model):
     ai_generated = models.BooleanField(default=False)
     locked = models.BooleanField(default=False)  # protect from regeneration wipe (set on human edit)
     progress_note = models.TextField(blank=True, default="")
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="tasks")
+    ghl_verification_status = models.CharField(max_length=24, blank=True, default="", db_index=True)
+    ghl_verification_note = models.TextField(blank=True, default="")
+    ghl_verification_revision = models.UUIDField(null=True, blank=True, editable=False)
+    ghl_verification_started_at = models.DateTimeField(null=True, blank=True)
+    ghl_verification_checked_at = models.DateTimeField(null=True, blank=True)
+    ghl_acceptance_checks = models.JSONField(default=list, blank=True)
+    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="tasks", null=True, blank=True)
+    creator = models.ForeignKey(USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_build_tasks")
+    priority = models.CharField(max_length=8, choices=TaskPriority.choices, default=TaskPriority.MEDIUM)
+    source_item = models.OneToOneField("MeetingActionItem", on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_task")
     assignee = models.ForeignKey(
         USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_build_tasks"
     )
@@ -416,17 +430,6 @@ class BuildMemorySnapshot(models.Model):
         indexes = [models.Index(fields=["build", "created_at"])]
 
 
-class ClientPortalFeedback(models.Model):
-    name = models.CharField(max_length=255, blank=True, default="")
-    message = models.TextField()
-    build = models.ForeignKey(Build, on_delete=models.CASCADE, related_name="portal_feedback")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        indexes = [models.Index(fields=["build", "created_at"])]
-
-
 class Notification(models.Model):
     type = models.CharField(max_length=64)
     message = models.TextField()
@@ -478,14 +481,6 @@ class AiConfig(models.Model):
     model = models.CharField(max_length=64, blank=True, default="")            # blank → provider default
     blueprint_model = models.CharField(max_length=64, blank=True, default="")  # blank → falls back to `model`
     multi_pass = models.BooleanField(default=False)  # architect→critic→revise on the blueprint
-    # ── GoHighLevel MCP — live build verification (Settings → AI) ──
-    # When url + token are set, the progress auditor inspects the client's real GHL
-    # account. Token is AES-GCM encrypted like AiApiKey; only a preview is exposed.
-    # Blank here falls back to the GHL_MCP_* env vars; blank everywhere → doc-only audit.
-    ghl_mcp_url = models.CharField(max_length=500, blank=True, default="")
-    ghl_mcp_token_encrypted = models.TextField(blank=True, default="")
-    ghl_mcp_token_preview = models.CharField(max_length=32, blank=True, default="")
-    ghl_mcp_model = models.CharField(max_length=64, blank=True, default="")  # blank → claude-opus-4-8
     updated_by = models.ForeignKey(USER, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     updated_at = models.DateTimeField(auto_now=True)
 

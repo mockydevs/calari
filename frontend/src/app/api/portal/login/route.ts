@@ -1,3 +1,4 @@
+import { backendFetch } from "@/lib/portal/backend-fetch";
 import { NextRequest, NextResponse } from "next/server";
 import { DJANGO_ACCESS_COOKIE, DJANGO_API, DJANGO_REFRESH_COOKIE, parseSetCookie } from "@/lib/portal/config";
 import { setTokens } from "@/lib/portal/server";
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
 
   let res: Response;
   try {
-    res = await fetch(`${DJANGO_API}/token/`, {
+    res = await backendFetch(`${DJANGO_API}/token/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username_or_email, password }),

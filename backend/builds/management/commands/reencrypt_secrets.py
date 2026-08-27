@@ -16,10 +16,32 @@ from builds.models import AiApiKey
 
 
 class Command(BaseCommand):
-    help = "Re-encrypt stored secrets (AI keys + onboarding connections) with the current key."
+    help = "Re-encrypt stored secrets (AI keys, GHL and onboarding connections) with the current key."
 
     def handle(self, *args, **options):
         done = skipped = 0
+
+        from onboarding.models import SlackContextGrant
+        for grant in SlackContextGrant.objects.all().iterator():
+            for field in ("encrypted_token", "encrypted_refresh"):
+                original = getattr(grant, field)
+                if not original:
+                    continue
+                try:
+                    encrypted = services.encrypt_api_key(services.decrypt_api_key(original))[0]
+                    done += SlackContextGrant.objects.filter(pk=grant.pk, **{field: original}).update(**{field: encrypted})
+                except Exception:
+                    self.stderr.write(self.style.WARNING(f"Slack context {grant.pk}: cannot decrypt; skipped"))
+                    skipped += 1
+
+        from projects.models import GhlConnection
+        for connection in GhlConnection.objects.all().iterator():
+            try:
+                encrypted = services.encrypt_api_key(services.decrypt_api_key(connection.encrypted_token))[0]
+                done += GhlConnection.objects.filter(pk=connection.pk, encrypted_token=connection.encrypted_token).update(encrypted_token=encrypted)
+            except Exception:
+                self.stderr.write(self.style.WARNING(f"GHL connection {connection.id}: cannot decrypt; skipped"))
+                skipped += 1
 
         for k in AiApiKey.objects.all():
             try:

@@ -7,39 +7,11 @@ export const clientSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const buildCreateSchema = z.object({
-  title: z.string().min(1, "Title is required"),
-  clientId: z.string().min(1, "Client is required"),
-  notes: z.string().optional(), // meeting notes to feed the AI
-});
-
-export const briefUpdateSchema = z.object({
-  goals: z.string().optional(),
-  integrations: z.string().optional(),
-});
-
-export const contactSourceSchema = z.object({
-  type: z.enum(["WEBSITE", "ADS", "MANUAL", "OTHER"]),
-  label: z.string().min(1),
-});
-
-export const stageSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  order: z.number().int(),
-  needsManual: z.boolean().default(false),
-});
-
-export const manualActionSchema = z.object({
-  stageId: z.string().min(1),
-  description: z.string().min(1),
-  owner: z.string().optional(),
-});
-
 export const taskSchema = z.object({
-  title: z.string().min(1),
+  title: z.string().trim().min(1).max(500),
   description: z.string().optional(),
-  type: z.enum(["AUTOMATION", "FUNNEL", "FORM", "INTEGRATION", "OTHER"]).default("OTHER"),
+  type: z.enum(["AUTOMATION", "PIPELINE", "TAG", "FUNNEL", "FORM", "EMAIL", "INTEGRATION", "OTHER"]).default("OTHER"),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
   assigneeId: z.string().optional(),
 });
 

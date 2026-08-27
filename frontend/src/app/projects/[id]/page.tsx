@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Calendar, Check, Flag, KanbanSquare, Paperclip, Plus, ShieldAlert, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Calendar, Check, Flag, KanbanSquare, Paperclip, Plus, Trash2, Users } from "lucide-react";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
 import {
@@ -50,7 +50,7 @@ function Badge({ label, cls }: { label: string; cls: string }) {
   );
 }
 
-function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function Panel({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-900/[0.03]">
       <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -215,7 +215,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="space-y-3">
-          <Panel title="Blockers" icon={<ShieldAlert className="h-3.5 w-3.5" />}>
+          <Panel title="Blockers">
             {(project.blockers ?? []).filter((b) => !b.resolved).length === 0 ? (
               <p className="text-sm text-slate-400">No active blockers.</p>
             ) : (

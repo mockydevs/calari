@@ -31,7 +31,7 @@ interface DjangoUser {
   feature_permissions?: string[];
 }
 
-export function mapDjangoUser(d: DjangoUser): AppUser {
+function mapDjangoUser(d: DjangoUser): AppUser {
   const role: "ADMIN" | "MEMBER" =
     d.is_superuser || d.role === "admin" || d.role === "superuser" ? "ADMIN" : "MEMBER";
   return {
@@ -45,7 +45,7 @@ export function mapDjangoUser(d: DjangoUser): AppUser {
 }
 
 /** Admins implicitly have every feature; members must be granted it. */
-export function canFeature(user: AppUser, key: FeatureKey): boolean {
+function canFeature(user: AppUser, key: FeatureKey): boolean {
   return user.role === "ADMIN" || user.features.includes(key);
 }
 

@@ -7,15 +7,17 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import Count, Sum, Avg, Q
+from django.db.models import Count, Sum, Avg, Q, Exists, OuterRef
 from django.utils import timezone
 
 from projects.tasks import send_notification_email
 from rest_framework import viewsets, mixins, status as http
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.throttling import UserRateThrottle
@@ -23,8 +25,8 @@ from rest_framework.throttling import UserRateThrottle
 from .models import (
     Build, Task, TaskDependency, TaskType,
     Document, MeetingNote, Comment, Activity, ChangeRequest, ApprovalRecord,
-    BuildMemorySnapshot, ClientPortalFeedback, Notification, NotificationPreference,
-    AiApiKey, TeamInvite, BuildStatus,
+    BuildMemorySnapshot, Notification, NotificationPreference,
+    AiApiKey, AIProvider, TeamInvite, BuildStatus,
     ApprovalType, BuildKnowledge, KnowledgeQuality, AiConfig, AiGenerationLog, BuildSectionReview,
     BuildSection, BuildSectionReviewStatus, ChangeRequestStatus, MeetingActionItem,
     ProgressReport,
@@ -34,11 +36,11 @@ from .serializers import (
     TaskSerializer, TaskCardSerializer, TaskDependencySerializer,
     DocumentSerializer, MeetingNoteSerializer, CommentSerializer, ActivitySerializer,
     ChangeRequestSerializer, ApprovalRecordSerializer, BuildMemorySnapshotSerializer,
-    ClientPortalFeedbackSerializer, NotificationSerializer, NotificationPreferenceSerializer,
+    NotificationSerializer, NotificationPreferenceSerializer,
     AiApiKeySerializer, TeamInviteSerializer,
     BuildKnowledgeSerializer, AiConfigSerializer,
     BuildSectionReviewSerializer, MeetingActionItemSerializer, ProgressReportSerializer,
-    _user_name,
+    _user_name, PublishTasklistSerializer,
 )
 from . import services
 from .permissions import IsManagerOrBuildOwner, IsManagerOrBuildTaskOwner, can_manage_builds
@@ -314,7 +316,7 @@ _DETAIL_PREFETCH = (
     "change_requests__owner", "change_requests__created_by",
     "approvals__approver", "section_reviews__completed_by", "section_reviews__blocked_by",
     "memory_snapshots__created_by", "activities",
-    "action_items__introduced_in", "action_items__last_changed_in",
+    "action_items__introduced_in", "action_items__last_changed_in", "action_items__assigned_task__assignee",
     "progress_reports__created_by",
 )
 
@@ -426,15 +428,6 @@ class BuildViewSet(viewsets.ModelViewSet):
             f"/builds/{build.id}", actor=request.user, build_name=build.title,
         )
         return Response(BuildSerializer(build).data)
-
-    @action(detail=True, methods=["post"], url_path="enable-portal")
-    def enable_portal(self, request, pk=None):
-        build = self.get_object()
-        if not build.client_portal_token:
-            build.client_portal_token = secrets.token_urlsafe(24)
-        build.client_portal_enabled = True
-        build.save(update_fields=["client_portal_token", "client_portal_enabled", "updated_at"])
-        return Response({"token": build.client_portal_token, "enabled": True})
 
     @action(detail=True, methods=["get"])
     def progress(self, request, pk=None):
@@ -571,8 +564,12 @@ class BuildViewSet(viewsets.ModelViewSet):
         if not build.meeting_notes.exists():
             return Response({"error": "Add meeting notes before generating the tasklist."}, status=http.HTTP_400_BAD_REQUEST)
         latest_note = build.meeting_notes.order_by("-created_at").first()
-        build.tasklist_status = "processing"
-        build.save(update_fields=["tasklist_status", "updated_at"])
+        with transaction.atomic():
+            build = Build.objects.select_for_update().get(pk=build.pk)
+            if build.tasklist_status == "processing":
+                return Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
+            build.tasklist_status = "processing"
+            build.save(update_fields=["tasklist_status", "updated_at"])
         from .tasks import generate_meeting_tasklist
         err = _dispatch_async(generate_meeting_tasklist, build.id, latest_note.id if latest_note else None, request.user.id)
         if err:  # don't leave the UI stuck on "processing"
@@ -607,11 +604,19 @@ def my_builds(request):
 
 
 # ─── Tasks ────────────────────────────────────────────────────────────────────
+class TaskPagination(PageNumberPagination):
+    # Preserve the existing default, but let compact dashboard views fetch less.
+    page_size = 100
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.select_related("assignee", "build", "build__client").prefetch_related("documents__uploader", "comments__author").all()
+    queryset = Task.objects.select_related("assignee", "build", "build__client").all()
+    pagination_class = TaskPagination
     permission_classes = [IsManagerOrBuildTaskOwner]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["build", "status", "type", "assignee"]
+    filterset_fields = ["id", "build", "status", "type", "assignee", "priority"]
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "due_date"]
     ordering = ["created_at"]
@@ -619,52 +624,160 @@ class TaskViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         return TaskCardSerializer if self.action == "list" else TaskSerializer
 
+    @action(detail=False, methods=["get"])
+    def assignees(self, request):
+        if not can_manage_builds(request.user):
+            return Response({"error": "Permission denied"}, status=403)
+        return Response(list(User.objects.filter(is_active=True).order_by("full_name", "username").values("id", "full_name", "username")))
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        qs = self.filter_queryset(self.get_queryset())
+        return Response(qs.aggregate(
+            total=Count("id"),
+            in_progress=Count("id", filter=Q(status="IN_PROGRESS")),
+            blocked=Count("id", filter=Q(status="BLOCKED")),
+            done=Count("id", filter=Q(status="DONE")),
+            overdue=Count("id", filter=Q(due_date__lt=timezone.now()) & ~Q(status="DONE")),
+        ))
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        from onboarding.models import SlackWorkItem
+        qs = qs.annotate(slack_intake=Exists(SlackWorkItem.objects.filter(task_id=OuterRef("pk"))))
+        if self.action not in ("list", "summary", "assignees", "slack_context", "ghl_verification", "client_context", "reply_draft"):
+            qs = qs.prefetch_related("documents__uploader", "comments__author")
+        if not can_manage_builds(self.request.user):
+            qs = qs.filter(Q(build__isnull=False) | Q(assignee=self.request.user) | Q(creator=self.request.user))
+        kind = self.request.query_params.get("kind")
+        if kind in ("general", "ghl"):
+            qs = qs.filter(build__isnull=kind == "general")
+        return qs
+
+    @action(detail=True, methods=["get"], url_path="slack-context")
+    def slack_context(self, request, pk=None):
+        task = self.get_object()  # Same owner/manager boundary as the task itself.
+        from onboarding.investigation_views import private_access
+        private_access(request.user, task)
+        messages = task.slack_messages.select_related("event__channel")
+        paginator = PageNumberPagination()
+        paginator.page_size = 20
+        page = paginator.paginate_queryset(messages, request)
+        return paginator.get_paginated_response([{
+            "id": item.id, "original": item.event.text, "sender_id": item.event.sender_id,
+            "message_ts": item.event.message_ts, "channel_name": item.event.channel.name,
+            "interpretation": item.interpretation, "category": item.category, "kind": item.kind,
+            "received_at": item.event.received_at,
+        } for item in page])
+
+    @action(detail=True, methods=["get", "post"], url_path="client-context")
+    def client_context(self, request, pk=None):
+        from onboarding.investigation_views import task_context
+        return task_context(request, self.get_object())
+
+    @action(detail=True, methods=["put"], url_path="reply-draft")
+    def reply_draft(self, request, pk=None):
+        from onboarding.investigation_views import save_draft
+        return save_draft(request, self.get_object())
+
+    @action(detail=True, methods=["get", "put"], url_path="ghl-acceptance")
+    def ghl_acceptance(self, request, pk=None):
+        from .ghl_acceptance import view
+        return view(request, self.get_object())
+
+    def perform_destroy(self, instance):
+        if instance.slack_intake:
+            raise ValidationError("Slack-linked tasks retain their source history. Mark the task done instead of deleting it.")
+        instance.delete()
+
+    @action(detail=True, methods=["get", "post"], url_path="ghl-verification")
+    def ghl_verification(self, request, pk=None):
+        task = self.get_object()
+        from onboarding.investigation_views import private_access
+        private_access(request.user, task)
+        if request.method == "POST":
+            if task.status != "DONE":
+                raise ValidationError("Mark the task done before requesting verification.")
+            from projects.views import GhlTestThrottle
+            throttle = GhlTestThrottle()
+            if not throttle.allow_request(request, self):
+                self.throttled(request, throttle.wait())
+            if task.ghl_verification_status not in ("PENDING", "PROCESSING"):
+                changes = {}
+                TaskCardSerializer._queue_verification(changes, True)
+                Task.objects.filter(pk=task.pk, status="DONE", ghl_verification_revision=task.ghl_verification_revision).update(**changes)
+                task.refresh_from_db()
+        return Response({
+            "status": task.ghl_verification_status, "note": task.ghl_verification_note,
+            "checked_at": task.ghl_verification_checked_at,
+        })
+
     def perform_create(self, serializer):
-        task = serializer.save()
-        if not task.assignee and task.build.assignee:
+        task = serializer.save(creator=self.request.user)
+        if not task.assignee and task.build_id and task.build.assignee:
             task.assignee = task.build.assignee
             task.save(update_fields=["assignee"])
-        _log(task.build, self.request.user, f'Task "{task.title}" added.')
+        if task.build_id:
+            _log(task.build, self.request.user, f'Task "{task.title}" added.')
         if task.assignee and task.assignee != self.request.user:
             _notify(
                 task.assignee, "TASK_ASSIGNED",
                 f'You were assigned the task "{task.title}".',
-                f"/builds/{task.build_id}", actor=self.request.user, build_name=task.build.title,
+                "/tasks", actor=self.request.user, build_name=task.build.title if task.build_id else "Internal tasks",
             )
 
     def perform_update(self, serializer):
         prev_assignee_id = serializer.instance.assignee_id
-        task = serializer.save()
+        if "build" in serializer.validated_data and serializer.validated_data["build"] != serializer.instance.build:
+            raise ValidationError({"build": "A task cannot be moved to another build."})
+        task = serializer.save(locked=True)
+        self._sync_source(task)
         # Notify only when the assignee actually changes to a new person.
         if task.assignee_id and task.assignee_id != prev_assignee_id and task.assignee != self.request.user:
             _notify(
                 task.assignee, "TASK_ASSIGNED",
                 f'You were assigned the task "{task.title}".',
-                f"/builds/{task.build_id}", actor=self.request.user, build_name=task.build.title,
+                "/tasks", actor=self.request.user, build_name=task.build.title if task.build_id else "Internal tasks",
+            )
+
+    @staticmethod
+    def _sync_source(task):
+        if task.source_item_id:
+            verification = {}
+            if task.ghl_verification_status == "PENDING" or task.status != "DONE":
+                verification = {"verification": "UNVERIFIED", "verification_note": "Awaiting completion evidence and GHL check." if task.status == "DONE" else ""}
+            MeetingActionItem.objects.filter(pk=task.source_item_id).update(
+                status={"TODO": "OPEN", "IN_PROGRESS": "IN_PROGRESS", "BLOCKED": "OPEN", "DONE": "DONE"}[task.status],
+                locked=True, updated_at=timezone.now(),
+                **verification,
             )
 
     @action(detail=True, methods=["post"], url_path="status")
     def set_status(self, request, pk=None):
         task = self.get_object()
-        task.status = request.data.get("status", task.status)
-        if "progress_note" in request.data:
-            task.progress_note = request.data["progress_note"]
-        task.save()
-        _maybe_start_progress(task.build, request.user)
-        _log(task.build, request.user, f'Task "{task.title}" → {task.status}.')
+        serializer = TaskSerializer(task, data={k: v for k, v in request.data.items() if k in ("status", "progress_note")}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            task = serializer.save(locked=True)
+            self._sync_source(task)
+        if task.build_id:
+            _maybe_start_progress(task.build, request.user)
+            _log(task.build, request.user, f'Task "{task.title}" → {task.status}.')
         actor_name = _user_name(request.user)
         msg = f'{actor_name} updated task "{task.title}" to {task.status}.'
         if task.progress_note:
             msg += f" Note: {task.progress_note}"
         _notify(
-            task.build.creator, "TASK_UPDATED", msg,
-            f"/builds/{task.build_id}", actor=request.user, build_name=task.build.title,
+            task.build.creator if task.build_id else task.creator, "TASK_UPDATED", msg,
+            "/tasks", actor=request.user, build_name=task.build.title if task.build_id else "Internal tasks",
         )
         return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=["post"], url_path="generate-sop")
     def generate_sop(self, request, pk=None):
         task = self.get_object()
+        if not task.build_id:
+            raise ValidationError("GHL implementation guides require a linked build.")
         from .tasks import generate_task_sop
         return _dispatch_async(generate_task_sop, task.id) or \
             Response({"status": "processing"}, status=http.HTTP_202_ACCEPTED)
@@ -721,11 +834,48 @@ class _BaseViewSet(viewsets.ModelViewSet):
 class MeetingActionItemViewSet(_BaseViewSet):
     """The source-faithful meeting tasklist. Manual create/edit is allowed; any human
     edit locks the row so AI re-sync never overwrites it."""
-    queryset = MeetingActionItem.objects.select_related("build", "introduced_in", "last_changed_in").all()
+    queryset = MeetingActionItem.objects.select_related("build", "introduced_in", "last_changed_in", "assigned_task__assignee").all()
     serializer_class = MeetingActionItemSerializer
     filterset_fields = ["build", "section", "category", "status", "superseded"]
     ordering_fields = ["order", "created_at"]
     ordering = ["order", "created_at"]
+
+    @action(detail=False, methods=["post"], url_path="publish")
+    def publish(self, request):
+        """Approve selected suggestions into the staff inbox, once per source item."""
+        if not can_manage_builds(request.user):
+            return Response({"error": "Only task managers can assign meeting tasks."}, status=403)
+        payload = PublishTasklistSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        rows = payload.validated_data["items"]
+        created = []
+        with transaction.atomic():
+            build = Build.objects.select_for_update().get(pk=payload.validated_data["build"].pk)
+            if build.tasklist_status == "processing":
+                raise ValidationError("Wait for the meeting analysis to finish before assigning tasks.")
+            sources = {item.id: item for item in build.action_items.select_for_update().filter(id__in=[row["id"] for row in rows])}
+            for row in rows:
+                item = sources.get(row["id"])
+                if not item or item.superseded or item.category not in ("REQUEST", "CHANGE") or item.status in ("DONE", "DROPPED"):
+                    raise ValidationError("Select only open requests or changes from this build.")
+                if Task.objects.filter(source_item=item).exists():
+                    continue  # A retried request must never create duplicate assignments.
+                task = Task.objects.create(
+                    build=build, creator=request.user, source_item=item,
+                    title=item.text[:500], description="\n\n".join(filter(None, [item.text, item.detail])),
+                    type={"AUTOMATIONS": "AUTOMATION", "PIPELINE": "PIPELINE", "FIELDS_TAGS": "TAG", "FUNNELS": "FUNNEL", "FORMS_PAYMENTS": "FORM", "EMAIL_COPY": "EMAIL", "INTEGRATIONS": "INTEGRATION"}.get(item.section, "OTHER"),
+                    assignee=row["assignee"], due_date=row["due_date"], priority=row["priority"],
+                    ai_generated=item.ai_generated, locked=True,
+                    status="IN_PROGRESS" if item.status == "IN_PROGRESS" else "TODO",
+                )
+                item.locked = True
+                item.save(update_fields=["locked", "updated_at"])
+                created.append(task)
+            if created:
+                _log(build, request.user, f"Approved and assigned {len(created)} meeting tasks.")
+                for task in created:
+                    transaction.on_commit(lambda task=task: _notify(task.assignee, "TASK_ASSIGNED", f'You were assigned the task "{task.title}".', "/tasks", actor=request.user, build_name=build.title))
+        return Response({"created": len(created), "tasks": TaskCardSerializer(created, many=True).data})
 
     def perform_create(self, serializer):
         item = serializer.save()
@@ -733,14 +883,23 @@ class MeetingActionItemViewSet(_BaseViewSet):
 
     def perform_update(self, serializer):
         # A human touched it — protect from AI re-sync wipe.
+        if getattr(serializer.instance, "assigned_task", None):
+            raise ValidationError("This item is assigned. Manage its task in the task workspace.")
         serializer.save(locked=True)
+
+    def perform_destroy(self, instance):
+        if getattr(instance, "assigned_task", None):
+            raise ValidationError("Delete the assigned task before removing its source item.")
+        instance.delete()
 
     @action(detail=True, methods=["post"], url_path="status")
     def set_status(self, request, pk=None):
         item = self.get_object()
-        item.status = request.data.get("status", item.status)
-        item.locked = True
-        item.save(update_fields=["status", "locked", "updated_at"])
+        if not _can_manage_build(request.user, item.build):
+            return Response({"error": "Permission denied"}, status=403)
+        serializer = MeetingActionItemSerializer(item, data={"status": request.data.get("status", item.status)}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
         return Response(MeetingActionItemSerializer(item).data)
 
 
@@ -1224,9 +1383,6 @@ class BuildSectionReviewViewSet(_BaseViewSet):
         return Response(BuildSectionReviewSerializer(review).data)
 
 
-# ─── Vision blueprint sub-resources ───────────────────────────────────────────
-
-
 # ─── Notifications ────────────────────────────────────────────────────────────
 class NotificationViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
     """List/retrieve + mark-read + delete/clear. Always scoped to the current user."""
@@ -1240,6 +1396,15 @@ class NotificationViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSe
         if getattr(self, "swagger_fake_view", False):
             return Notification.objects.none()
         return Notification.objects.filter(user=self.request.user)
+
+    @action(detail=False, methods=["get"], url_path="unread-summary")
+    def unread_summary(self, request):
+        # The sidebar needs a count and one message, not 100 notification bodies.
+        unread = self.get_queryset().filter(read=False)
+        return Response({
+            "count": unread.count(),
+            "latest": unread.order_by("-created_at", "-id").values("id", "message").first(),
+        })
 
     @action(detail=True, methods=["post"], url_path="mark-read")
     def mark_read(self, request, pk=None):
@@ -1362,7 +1527,7 @@ def notification_preferences(request):
 
 # ─── AI API keys ──────────────────────────────────────────────────────────────
 class AiApiKeyViewSet(viewsets.ModelViewSet):
-    queryset = AiApiKey.objects.all()
+    queryset = AiApiKey.objects.filter(provider__in=AIProvider.values)
     serializer_class = AiApiKeySerializer
     permission_classes = [IsAiKeyManager]
     filter_backends = [DjangoFilterBackend]
@@ -1446,37 +1611,6 @@ class TeamInviteViewSet(viewsets.ModelViewSet):
         invite.save(update_fields=["token_hash", "expires_at"])
         self._send_invite_email(invite, token)
         return Response({"ok": True})
-
-
-# ─── Public client portal (token-based, no auth) ──────────────────────────────
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def portal_build(request, token):
-    build = Build.objects.filter(client_portal_token=token, client_portal_enabled=True).first()
-    if not build:
-        return Response({"error": "Not found"}, status=http.HTTP_404_NOT_FOUND)
-    return Response({
-        "title": build.title,
-        "status": build.status,
-        "goals": build.goals,
-        "integrations": build.integrations,
-        "action_items": MeetingActionItemSerializer(
-            build.action_items.filter(superseded=False), many=True).data,
-        "tasks": TaskCardSerializer(build.tasks.all(), many=True).data,
-    })
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def portal_feedback(request, token):
-    build = Build.objects.filter(client_portal_token=token, client_portal_enabled=True).first()
-    if not build:
-        return Response({"error": "Not found"}, status=http.HTTP_404_NOT_FOUND)
-    fb = ClientPortalFeedback.objects.create(
-        build=build, name=request.data.get("name", ""), message=request.data.get("message", ""),
-    )
-    _notify(build.creator, "NEW_COMMENT", f'Client feedback on "{build.title}".', f"/builds/{build.id}")
-    return Response(ClientPortalFeedbackSerializer(fb).data, status=http.HTTP_201_CREATED)
 
 
 # ─── S3 uploads (presign + finalize) ──────────────────────────────────────────

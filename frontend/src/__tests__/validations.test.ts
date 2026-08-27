@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   clientSchema,
-  buildCreateSchema,
-  briefUpdateSchema,
-  contactSourceSchema,
-  stageSchema,
   taskSchema,
   taskStatusSchema,
   commentSchema,
@@ -28,60 +24,6 @@ describe("clientSchema", () => {
   });
 });
 
-describe("buildCreateSchema", () => {
-  it("accepts valid build", () => {
-    expect(buildCreateSchema.safeParse({ title: "Build 1", clientId: "abc" }).success).toBe(true);
-  });
-  it("rejects empty title", () => {
-    expect(buildCreateSchema.safeParse({ title: "", clientId: "abc" }).success).toBe(false);
-  });
-  it("rejects empty clientId", () => {
-    expect(buildCreateSchema.safeParse({ title: "Build 1", clientId: "" }).success).toBe(false);
-  });
-  it("accepts optional notes", () => {
-    const r = buildCreateSchema.safeParse({ title: "Build 1", clientId: "abc", notes: "Some notes" });
-    expect(r.success).toBe(true);
-    if (r.success) expect(r.data.notes).toBe("Some notes");
-  });
-});
-
-describe("briefUpdateSchema", () => {
-  it("accepts partial update", () => {
-    expect(briefUpdateSchema.safeParse({ goals: "Close leads faster" }).success).toBe(true);
-  });
-  it("accepts empty object", () => {
-    expect(briefUpdateSchema.safeParse({}).success).toBe(true);
-  });
-});
-
-describe("contactSourceSchema", () => {
-  it("accepts all valid types", () => {
-    for (const type of ["WEBSITE", "ADS", "MANUAL", "OTHER"] as const) {
-      expect(contactSourceSchema.safeParse({ type, label: "Test" }).success).toBe(true);
-    }
-  });
-  it("rejects invalid type", () => {
-    expect(contactSourceSchema.safeParse({ type: "INVALID", label: "Test" }).success).toBe(false);
-  });
-  it("rejects empty label", () => {
-    expect(contactSourceSchema.safeParse({ type: "WEBSITE", label: "" }).success).toBe(false);
-  });
-});
-
-describe("stageSchema", () => {
-  it("accepts valid stage", () => {
-    expect(stageSchema.safeParse({ name: "Intake", order: 1 }).success).toBe(true);
-  });
-  it("defaults needsManual to false", () => {
-    const r = stageSchema.safeParse({ name: "Intake", order: 1 });
-    expect(r.success).toBe(true);
-    if (r.success) expect(r.data.needsManual).toBe(false);
-  });
-  it("rejects non-integer order", () => {
-    expect(stageSchema.safeParse({ name: "Intake", order: 1.5 }).success).toBe(false);
-  });
-});
-
 describe("taskSchema", () => {
   it("defaults type to OTHER", () => {
     const r = taskSchema.safeParse({ title: "Set up funnel" });
@@ -92,9 +34,14 @@ describe("taskSchema", () => {
     expect(taskSchema.safeParse({ title: "" }).success).toBe(false);
   });
   it("accepts all valid types", () => {
-    for (const type of ["AUTOMATION", "FUNNEL", "FORM", "INTEGRATION", "OTHER"] as const) {
+    for (const type of ["AUTOMATION", "PIPELINE", "TAG", "FUNNEL", "FORM", "EMAIL", "INTEGRATION", "OTHER"] as const) {
       expect(taskSchema.safeParse({ title: "Task", type }).success).toBe(true);
     }
+  });
+  it("rejects whitespace-only titles and unsupported priorities", () => {
+    expect(taskSchema.safeParse({ title: "   " }).success).toBe(false);
+    expect(taskSchema.safeParse({ title: "Task", priority: "CRITICAL" }).success).toBe(false);
+    expect(taskSchema.parse({ title: "  Task  ", priority: "URGENT" }).title).toBe("Task");
   });
 });
 

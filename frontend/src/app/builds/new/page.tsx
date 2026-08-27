@@ -26,8 +26,8 @@ export default async function NewBuildPage() {
           <ArrowLeft className="h-4 w-4" /> Back to builds
         </Link>
         <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-pink-700">Intake</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">New build</h1>
-        <p className="mt-1 text-sm text-slate-600">Name the build, pick the client, and add the call notes — paste them or upload the documents.</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Start with the conversation.</h1>
+        <p className="mt-2 text-sm text-slate-600">Choose a client, add meeting notes, then review and assign the AI-generated GHL tasks.</p>
       </div>
 
       {clients.length === 0 ? (

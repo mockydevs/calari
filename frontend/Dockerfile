@@ -59,5 +59,5 @@ EXPOSE 3000
 
 ENTRYPOINT ["tini", "--"]
 
-# Runs migrations then starts the server
+# Starts the standalone server; database migrations belong to the backend.
 CMD ["./docker-start.sh"]

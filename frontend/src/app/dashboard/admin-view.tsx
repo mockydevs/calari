@@ -1,8 +1,5 @@
 import Link from "next/link";
-import {
-  AlertTriangle, Building2, CheckCircle2, FolderKanban, ListChecks, PauseCircle,
-  Plus, ShieldAlert, Users, XCircle,
-} from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, FolderKanban, ListChecks, PauseCircle, Plus, Users, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type AdminStats = {
@@ -28,13 +25,13 @@ const STATUS_STYLE: Record<string, string> = {
   in_review: "bg-indigo-50 text-indigo-700 ring-indigo-200",
 };
 
-function StatCard({ label, value, icon: Icon, tone }: { label: string; value: number; icon: React.ComponentType<{ className?: string }>; tone: string }) {
+function StatCard({ label, value, icon: Icon, tone }: { label: string; value: number; icon?: React.ComponentType<{ className?: string }>; tone: string }) {
   return (
     <div className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-900/[0.03]">
-      <div className="flex items-center justify-between">
-        <span className={cn("flex h-9 w-9 items-center justify-center rounded-lg ring-1", tone)}>
+      <div className={cn("flex min-h-9 items-center", Icon ? "justify-between" : "justify-end")}>
+        {Icon && <span className={cn("flex h-9 w-9 items-center justify-center rounded-lg ring-1", tone)}>
           <Icon className="h-4.5 w-4.5" />
-        </span>
+        </span>}
         <span className="text-2xl font-semibold tabular-nums text-slate-950">{value}</span>
       </div>
       <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
@@ -85,8 +82,8 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
         <StatCard label="Active clients" value={clients.active} icon={Building2} tone="bg-emerald-50 text-emerald-700 ring-emerald-100" />
         <StatCard label="Total tasks" value={tasks.total} icon={ListChecks} tone="bg-pink-50 text-pink-700 ring-pink-100" />
         <StatCard label="Pending tasks" value={tasks.pending} icon={ListChecks} tone="bg-amber-50 text-amber-700 ring-amber-100" />
-        <StatCard label="Project blockers" value={blockers.project_open} icon={ShieldAlert} tone="bg-red-50 text-red-700 ring-red-100" />
-        <StatCard label="Task blockers" value={blockers.task_open} icon={ShieldAlert} tone="bg-red-50 text-red-700 ring-red-100" />
+        <StatCard label="Project blockers" value={blockers.project_open} tone="bg-red-50 text-red-700 ring-red-100" />
+        <StatCard label="Task blockers" value={blockers.task_open} tone="bg-red-50 text-red-700 ring-red-100" />
       </div>
 
       {/* User stats */}
@@ -94,8 +91,8 @@ export function AdminDashboard({ stats }: { stats: AdminStats }) {
         <StatCard label="Total users" value={users.total} icon={Users} tone="bg-slate-100 text-slate-600 ring-slate-200" />
         <StatCard label="Active" value={users.active} icon={Users} tone="bg-emerald-50 text-emerald-700 ring-emerald-100" />
         <StatCard label="Inactive" value={users.inactive} icon={Users} tone="bg-slate-100 text-slate-500 ring-slate-200" />
-        <StatCard label="Superusers" value={users.superusers} icon={ShieldAlert} tone="bg-indigo-50 text-indigo-700 ring-indigo-100" />
-        <StatCard label="Admins" value={users.admins} icon={ShieldAlert} tone="bg-pink-50 text-pink-700 ring-pink-100" />
+        <StatCard label="Superusers" value={users.superusers} tone="bg-indigo-50 text-indigo-700 ring-indigo-100" />
+        <StatCard label="Admins" value={users.admins} tone="bg-pink-50 text-pink-700 ring-pink-100" />
       </div>
 
       {/* Quick actions */}

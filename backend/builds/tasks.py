@@ -13,6 +13,13 @@ from .serializers import _user_name
 User = get_user_model()
 
 
+@shared_task
+def verify_completed_ghl_tasks():
+    """Drain durable completion checks. No network work happens in status clicks."""
+    from .ghl_verification import drain
+    return drain()
+
+
 def _run_qa_snapshot(build, user):
     """Run the AI QA review and persist it as a memory snapshot + activity."""
     result = services.run_brief_qa(build)
@@ -248,12 +255,12 @@ def generate_meeting_tasklist(self, build_id, note_id, user_id):
     note = MeetingNote.objects.filter(pk=note_id).first()
     actor = _user_name(user) or "system"
     # Ground categorization/phrasing in how Calari builds (Build Library), never scope.
-    reference = services.build_reference_context(build)
 
     existing = list(build.action_items.filter(superseded=False))
     has_any = build.action_items.exists()
 
     try:
+        reference = services.build_reference_context(build)
         if has_any:
             delta = services.reconcile_meeting_tasklist(existing, note.raw_text if note else "", reference_text=reference)
             added, modified, dropped = _apply_tasklist_delta(build, delta, note)
@@ -276,6 +283,7 @@ def generate_meeting_tasklist(self, build_id, note_id, user_id):
 def _apply_tasklist_full(build, items, note):
     """First run: replace only AI-authored, unlocked items; keep human work."""
     with transaction.atomic():
+        Build.objects.select_for_update().get(pk=build.pk)
         build.action_items.filter(ai_generated=True, locked=False).delete()
         start = (build.action_items.aggregate(m=models.Max("order")).get("m") or 0) + 1
         objs = []
@@ -301,6 +309,7 @@ def _apply_tasklist_delta(build, delta, note):
     modify = delta.get("modify", []) or []
     supersede = delta.get("supersede", []) or []
     with transaction.atomic():
+        Build.objects.select_for_update().get(pk=build.pk)
         start = (build.action_items.aggregate(m=models.Max("order")).get("m") or 0) + 1
         new_objs = []
         for i, it in enumerate(add):
@@ -329,7 +338,7 @@ def _apply_tasklist_delta(build, delta, note):
 
         dropped = 0
         for it in supersede:
-            obj = build.action_items.filter(pk=it.get("id"), superseded=False).first()
+            obj = build.action_items.filter(pk=it.get("id"), superseded=False, locked=False).first()
             if not obj:
                 continue
             obj.superseded = True
@@ -359,13 +368,9 @@ def analyze_build_progress(self, build_id, report_id, user_id):
         reference = services.build_reference_context(build)
     except Exception:  # noqa: BLE001
         reference = ""
-    # Optional: inspect the client's REAL GHL account (GHL MCP) so the audit verifies
-    # against ground truth, not just the staff write-up. No-op unless GHL MCP is configured.
+    # Optional, read-only inventory. Names alone do not verify behavior.
     try:
-        focus = "\n".join(
-            it.text for it in build.action_items.filter(superseded=False).only("text")[:60]
-        )
-        ghl_state = services.ghl_state_snapshot(build, focus=focus)
+        ghl_state = services.ghl_state_snapshot(build)
     except Exception:  # noqa: BLE001 — live verification is a bonus, never block the audit
         ghl_state = ""
     try:

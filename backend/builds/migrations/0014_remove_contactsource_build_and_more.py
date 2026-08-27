@@ -10,6 +10,12 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Remove the composite index before its field. SQLite rebuilds this
+        # table on RemoveField; keeping the index would break fresh installs.
+        migrations.RemoveIndex(
+            model_name='visiongap',
+            name='builds_visi_build_i_97ae19_idx',
+        ),
         migrations.RemoveField(
             model_name='contactsource',
             name='build',

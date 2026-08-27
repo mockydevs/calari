@@ -19,6 +19,31 @@ from .models import (
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+@shared_task
+def drain_client_investigations():
+    from .investigations import drain
+    return drain()
+
+
+@shared_task
+def purge_client_context():
+    from .investigations import purge_expired
+    purge_expired()
+
+
+@shared_task
+def drain_slack_intake():
+    """Bounded drain of the durable inbox. Safe to overlap across beat/workers."""
+    from .models import SlackIntakeEvent, SlackIntakeSettings
+    from .slack_intake import process_channel
+    if not SlackIntakeSettings.objects.filter(pk=1, enabled=True).exists():
+        return
+    channel_ids = list(SlackIntakeEvent.objects.filter(status="pending", channel__active=True)
+                       .order_by("channel_id").values_list("channel_id", flat=True).distinct()[:20])
+    for channel_id in channel_ids:
+        process_channel(channel_id)
+
+
 def _alert_ops(message: str) -> None:
     """Best-effort heads-up to the ops Slack channel; never raises."""
     try:

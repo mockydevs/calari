@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, ListChecks, MessageSquare, Paperclip, Plus, ShieldAlert, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ListChecks, MessageSquare, Paperclip, Plus, Tag, Trash2 } from "lucide-react";
 import { FileUpload } from "../../../file-upload";
 import { requireUser } from "@/lib/auth-helpers";
 import { serverApi } from "@/lib/portal/server";
@@ -41,7 +41,7 @@ const STATUS_STYLE: Record<string, string> = {
 const field = "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30";
 const addInput = "h-9 flex-1 rounded-md border border-slate-300 px-2.5 text-sm focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30";
 
-function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function Panel({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
       <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-950">{icon}{title}</div>
@@ -172,7 +172,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           </Panel>
 
           {/* Blockers */}
-          <Panel title="Blockers" icon={<ShieldAlert className="h-4 w-4 text-red-600" />}>
+          <Panel title="Blockers">
             {activeBlockers.length === 0 ? <p className="text-sm text-slate-400">No active blockers.</p> : (
               <ul className="space-y-2">
                 {activeBlockers.map((b) => (

@@ -1,4 +1,5 @@
 import "server-only";
+import { backendFetch } from "@/lib/portal/backend-fetch";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import {
@@ -58,7 +59,7 @@ export function djangoCookieHeader(access?: string, refresh?: string): string {
  */
 export async function refreshAccess(refresh: string): Promise<string | null> {
   try {
-    const res = await fetch(`${DJANGO_API}/token/refresh/`, {
+    const res = await backendFetch(`${DJANGO_API}/token/refresh/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -88,7 +89,7 @@ export async function portalLogin(
 ): Promise<Record<string, unknown> | null> {
   let res: Response;
   try {
-    res = await fetch(`${DJANGO_API}/token/`, {
+    res = await backendFetch(`${DJANGO_API}/token/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username_or_email: usernameOrEmail, password }),
@@ -118,7 +119,7 @@ export async function portalLogin(
  * works in server actions/route handlers; in read-only server components a
  * failed refresh surfaces as an error the caller can treat as logged-out.
  */
-export async function djangoServerFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function djangoServerFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const { access, refresh } = await getTokens();
   // DRF requires a trailing slash; add it before any query string (APPEND_SLASH
   // can't redirect a POST without losing the body → 500).
@@ -126,18 +127,23 @@ export async function djangoServerFetch(path: string, init: RequestInit = {}): P
   const [base, query] = clean.split("?");
   const withSlash = base.endsWith("/") ? base : `${base}/`;
   const url = `${DJANGO_API}/${withSlash}${query ? `?${query}` : ""}`;
-  const doFetch = (token?: string) =>
-    fetch(url, {
+  const doFetch = (token?: string) => {
+    const headers = new Headers(init.headers);
+    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    headers.set("Cookie", djangoCookieHeader(token, refresh));
+    return backendFetch(url, {
       ...init,
-      headers: { "Content-Type": "application/json", ...(init.headers || {}), Cookie: djangoCookieHeader(token, refresh) },
+      headers,
       cache: "no-store",
       redirect: "manual",
     });
+  };
   const isAuthChallenge = (r: Response) =>
     r.status === 401 || (r.status >= 300 && r.status < 400 && (r.headers.get("location") || "").includes("/login"));
 
   let res = await doFetch(access);
   if (isAuthChallenge(res) && refresh) {
+    await res.body?.cancel();
     const newAccess = await refreshAccess(refresh);
     if (newAccess) res = await doFetch(newAccess);
   }
@@ -175,7 +181,7 @@ export const getPortalUser = cache(async () => {
   const { access } = await getTokens();
   if (!access) return null;
   try {
-    const res = await fetch(`${DJANGO_API}/auth/me/`, {
+    const res = await backendFetch(`${DJANGO_API}/auth/me/`, {
       headers: { Cookie: djangoCookieHeader(access) },
       cache: "no-store",
       redirect: "manual", // Django 302s to /login/ when unauthenticated

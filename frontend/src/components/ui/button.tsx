@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const variants = {
-  default: "bg-gradient-to-r from-pink-600 to-fuchsia-600 text-white shadow-sm shadow-pink-900/15 hover:from-pink-700 hover:to-fuchsia-700",
+  default: "bg-pink-700 text-white shadow-sm hover:bg-pink-800",
   primary: "bg-slate-950 text-white shadow-sm shadow-slate-900/10 hover:bg-slate-800",
   outline: "border border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50",
   ghost: "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
