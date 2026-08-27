@@ -36,11 +36,32 @@ def unpack(result, operation=None):
 def redact(value, secrets=()):
     """Credentials never enter model context, previews, audit rows or exports."""
     if isinstance(value, dict):
-        return {key: '[REDACTED]' if re.sub(r'[^a-z]', '', key.lower()) in {
-            'authorization', 'accesstoken', 'refreshtoken', 'apitoken', 'apikey',
-            'privateintegrationtoken', 'password', 'secret', 'clientsecret',
-            'encryptedtoken', 'token', 'cardnumber', 'cvv', 'cvc',
-        } else redact(child, secrets) for key, child in value.items()}
+        result = {}
+        for key, child in value.items():
+            normalized = re.sub(r'[^a-z]', '', key.lower())
+            if normalized in {
+                'authorization', 'accesstoken', 'refreshtoken', 'apitoken', 'apikey',
+                'privateintegrationtoken', 'password', 'secret', 'clientsecret',
+                'encryptedtoken', 'token', 'cardnumber', 'cvv', 'cvc',
+            }:
+                result[key] = '[REDACTED]'
+            elif normalized == 'customfields':
+                # Opaque custom field IDs cannot establish that a value is not a
+                # credential. Retain field metadata, but withhold unknown values.
+                metadata = {'id', 'key', 'name', 'fieldkey', 'datatype', 'type'}
+                if isinstance(child, list):
+                    result[key] = [
+                        {field: redact(item, secrets) if re.sub(r'[^a-z]', '', field.lower()) in metadata else '[REDACTED]'
+                         for field, item in entry.items()} if isinstance(entry, dict) else '[REDACTED]'
+                        for entry in child
+                    ]
+                elif isinstance(child, dict):
+                    result[key] = {field: '[REDACTED]' for field in child}
+                else:
+                    result[key] = '[REDACTED]'
+            else:
+                result[key] = redact(child, secrets)
+        return result
     if isinstance(value, list):
         return [redact(child, secrets) for child in value]
     if isinstance(value, str):
@@ -107,6 +128,10 @@ def bind_params(operation, params, location):
         raise ChatError('Agency-wide, credential and global permission operations are disabled in this location-scoped workspace.')
     parameters = operation.get('parameters')
     fields = operation.get('requestBodyFields')
+    # GHL omits body metadata for documented bodyless operations. Absence alone
+    # never means a body is optional: only an explicit catalogue flag permits it.
+    if 'requestBodyFields' not in operation and operation.get('hasRequestBody') is False:
+        fields = []
     if (not isinstance(parameters, list) or not isinstance(fields, list)
             or any(not isinstance(field, dict) for field in parameters + fields)):
         raise ChatError('The operation input contract is incomplete. Nothing was executed.')

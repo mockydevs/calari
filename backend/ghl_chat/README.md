@@ -94,7 +94,9 @@ All data retrieval is bounded by six planning steps, 20 report pages, 2,000
 retrieved rows, 2 MB result storage and worker deadlines. Non-empty live
 pagination is not asserted as verified by the mocked tests.
 
-CSV contains the full **retrieved** dataset within those bounds; spreadsheet
-formula-leading cells are escaped. PDF records question, account, date range,
+CSV contains all **retrieved rows** within those bounds; credential-like fields
+and opaque custom-field values are redacted before saving or sending data to AI.
+Custom-field IDs/metadata remain visible, and the report discloses withheld values.
+Spreadsheet formula-leading cells are escaped. PDF records question, account, date range,
 answer, evidence and limitations. Failed PDF generation preserves the answer and
 CSV and reports its failure without inviting another mutation.

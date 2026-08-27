@@ -68,6 +68,10 @@ def finish(run, status='done'):
         marker = 'Restricted read mode: GHL could not establish a complete single-location token grant. Only the fixed location-scoped new-contact date report is enabled; all generic operations and mutations are blocked.'
         if marker not in run.limitations:
             run.limitations.insert(0, marker)
+    if run.rows:
+        marker = 'Credential-like fields and unclassified custom-field values are redacted from saved results, AI context and exports; exported records may therefore omit those values.'
+        if marker not in run.limitations:
+            run.limitations.append(marker)
     build_exports(run)
     run.save()
     audit(run, status, {'rows': len(run.rows), 'evidence_count': len(run.evidence)})
@@ -76,7 +80,7 @@ def finish(run, status='done'):
 def compact_operation(op):
     keys = ('operationId', 'domain', 'summary', 'description', 'method', 'path', 'requiredScopes', 'kind',
             'readOnlyHint', 'destructiveHint', 'requiresApproval', 'idempotencyRequired',
-            'parameters', 'requestBodyFields', 'payloadExample', 'responseProjection')
+            'parameters', 'hasRequestBody', 'requestBodyFields', 'payloadExample', 'responseProjection')
     return {k: v for k, v in op.items() if k in keys}
 
 

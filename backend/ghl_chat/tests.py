@@ -112,6 +112,30 @@ class BoundaryTests(SimpleTestCase):
                 bind_params(op, params, 'loc')
         self.assertEqual(bind_params(op, {'path': {'contactId': 'id'}}, 'loc')['path']['contactId'], 'id')
 
+    def test_authoritative_bodyless_workflow_metadata_allows_empty_inputs(self):
+        # Actual catalogue shape: bodyless GET omits requestBodyFields entirely.
+        op = services.compact_operation({
+            'operationId': 'get-workflow', 'domain': 'workflows', 'method': 'GET',
+            'path': '/workflows/', 'kind': 'read', 'readOnlyHint': True,
+            'requiresApproval': False, 'destructiveHint': False,
+            'idempotencyRequired': False, 'requiredScopes': ['workflows.readonly'],
+            'hasRequestBody': False, 'parameters': [],
+        })
+        self.assertIs(op['hasRequestBody'], False)
+        self.assertFalse(needs_confirmation(op))
+        self.assertEqual(bind_params(op, {}, 'loc'), {})
+        with self.assertRaises(ChatError):
+            bind_params(op, {'body': {'injected': 'value'}}, 'loc')
+
+    def test_absent_body_fields_remain_fail_closed_without_explicit_no_body_flag(self):
+        op = operation()
+        op.pop('requestBodyFields')
+        for flag in (None, True, 'false', 0):
+            with self.subTest(flag=flag), self.assertRaises(ChatError):
+                bind_params({**op, 'hasRequestBody': flag}, {}, 'loc')
+        with self.assertRaises(ChatError):
+            bind_params({**op, 'hasRequestBody': False, 'requestBodyFields': None}, {}, 'loc')
+
     def test_headers_global_scope_undocumented_inputs_and_wrong_account_blocked(self):
         for params in ({'headers': {'Authorization': 'secret'}}, {'query': {'companyId': 'agency'}},
                        {'body': {'locationId': 'other'}}, {'query': {'url': 'https://attacker.example'}},
@@ -141,6 +165,19 @@ class BoundaryTests(SimpleTestCase):
         text = json.dumps(result)
         for forbidden in ('secret', 'pit-private', 'pwd', 'abcdef'):
             self.assertNotIn(forbidden, text)
+
+    def test_opaque_custom_field_values_are_withheld_without_losing_field_ids(self):
+        payload = {'contacts': [{'id': 'contact-one', 'customFields': [
+            {'id': 'field-one', 'value': 'hidden-private-key'},
+            {'id': 'field-two', 'fieldValue': {'nested': 'another-private-value'}},
+        ]}], 'custom_fields': {'opaque-id': 'map-private-value'}}
+        result = redact(payload)
+        self.assertEqual(result['contacts'][0]['customFields'][0]['id'], 'field-one')
+        self.assertEqual(result['contacts'][0]['id'], 'contact-one')
+        self.assertEqual(result['custom_fields']['opaque-id'], '[REDACTED]')
+        for secret in ('hidden-private-key', 'another-private-value', 'map-private-value'):
+            self.assertNotIn(secret, json.dumps(result))
+        self.assertEqual(payload['contacts'][0]['customFields'][0]['value'], 'hidden-private-key')
 
     def test_gateway_uses_only_fixed_host_and_checks_token_location(self):
         conn = SimpleNamespace(location_id='loc', revision='revision')
@@ -440,6 +477,7 @@ class ChatWorkflowTests(TestCase):
         self.assertTrue(run.csv_data)
         self.assertTrue(bytes(run.pdf).startswith(b'%PDF'))
         self.assertTrue(any('only returned pages' in item for item in run.limitations))
+        self.assertTrue(any('custom-field values' in item for item in run.limitations))
         self.gateway.execute.assert_called_once()
 
     def test_hallucinated_operations_never_execute(self):
