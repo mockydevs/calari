@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUp, CalendarDays, ChevronDown, Database, History, Loader2, MessageSquare, Plus, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { api } from "@/lib/portal/api";
 import { cn } from "@/lib/utils";
 import { AccountAccess } from "./account-access";
 import { RunResult } from "./run-result";
-import { hasOutstandingRun, isWorking, type ChatAccounts, type ChatConversation, type ChatDetail, type ChatRun } from "./types";
+import { hasOutstandingRun, isWorking, prependHistory, type ChatAccounts, type ChatConversation, type ChatDetail, type ChatRun } from "./types";
 
 const STARTERS = [
   { title: "Lead report", prompt: "How many new contacts were created this month? Show the date range, account timezone, sources and underlying records. Explain any pagination limits." },
@@ -35,6 +35,8 @@ export function ChatWorkspace() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [pollError, setPollError] = useState("");
@@ -44,6 +46,9 @@ export function ChatWorkspace() {
   const [endDate, setEndDate] = useState("");
   const composer = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const transcript = useRef<HTMLDivElement>(null);
+  const prependScroll = useRef<{ id: string; height: number; top: number } | null>(null);
+  const fetchingOlder = useRef(false);
   const loadVersion = useRef(0);
   const sending = useRef(false);
   const retryEnvelope = useRef<{ conversationId: string; question: string; key: string } | null>(null);
@@ -113,9 +118,15 @@ export function ChatWorkspace() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [pollingId, pollingStatus, pollRetry, updateRun]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const position = prependScroll.current;
+    if (position && position.id === conversation?.id && transcript.current) {
+      transcript.current.scrollTop = position.top + transcript.current.scrollHeight - position.height;
+      prependScroll.current = null;
+      return;
+    }
     bottom.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
-  }, [conversation?.runs.length, activeRun?.status]);
+  }, [conversation?.id, conversation?.runs.length, conversation?.page, activeRun?.status]);
 
   function newChat(nextAccount = accountId) {
     loadVersion.current++;
@@ -125,6 +136,8 @@ export function ChatWorkspace() {
     setPollError("");
     setOpening(false);
     setShowHistory(false);
+    setHistoryError("");
+    prependScroll.current = null;
     retryEnvelope.current = null;
     composer.current?.focus();
   }
@@ -138,12 +151,31 @@ export function ChatWorkspace() {
     setPollError("");
     setDraft("");
     setShowHistory(false);
+    setHistoryError("");
+    prependScroll.current = null;
     retryEnvelope.current = null;
     try {
       const detail = await api.get<ChatDetail>(`ghl-chat/conversations/${item.id}/`);
       if (version === loadVersion.current) setConversation(detail);
     } catch (err) { if (version === loadVersion.current) setPollError(err instanceof Error ? err.message : "Could not open this conversation."); }
     finally { if (version === loadVersion.current) setOpening(false); }
+  }
+
+  async function loadOlder() {
+    if (!conversation?.has_more || fetchingOlder.current) return;
+    const targetId = conversation.id;
+    const version = loadVersion.current;
+    fetchingOlder.current = true;
+    setLoadingOlder(true);
+    setHistoryError("");
+    try {
+      const older = await api.get<ChatDetail>(`ghl-chat/conversations/${targetId}/?page=${(conversation.page ?? 1) + 1}`);
+      if (version !== loadVersion.current) return;
+      if (transcript.current) prependScroll.current = { id: targetId, height: transcript.current.scrollHeight, top: transcript.current.scrollTop };
+      setConversation((current) => current?.id === targetId ? prependHistory(current, older) : current);
+    } catch (err) {
+      if (version === loadVersion.current) setHistoryError(err instanceof Error ? err.message : "Could not load earlier messages.");
+    } finally { fetchingOlder.current = false; setLoadingOlder(false); }
   }
 
   async function send(event: React.FormEvent) {
@@ -195,8 +227,8 @@ export function ChatWorkspace() {
       </aside>
       <section className="flex min-w-0 flex-col">
         <div className="flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3"><div className="flex min-w-0 items-center gap-2"><Database className="h-4 w-4 shrink-0 text-slate-400" /><span className="truncate text-sm font-semibold">{account?.name || "Choose a GHL account"}</span>{account && <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", account.synthetic ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700")}>{account.synthetic ? "Synthetic demo" : "Live account"}</span>}</div><div className="flex items-center gap-2 text-[11px] text-slate-500">{account && <><span>{account.timezone}</span><span>·</span><span>{account.can_execute ? "Changes need confirmation" : "Read only"}</span></>}<button className="rounded border border-slate-200 px-2 py-1 lg:hidden" onClick={() => setShowHistory((shown) => !shown)} aria-label="Choose account"><ChevronDown className="h-4 w-4" /></button></div></div>
-        <div className="max-h-[calc(100dvh-360px)] min-h-[340px] flex-1 overflow-y-auto px-5 py-7 sm:px-8">
-          {loading || opening ? <div role="status" className="flex h-64 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 motion-safe:animate-spin" />{opening ? "Opening conversation…" : "Loading accounts…"}</div> : !data.accounts.length ? <div className="mx-auto max-w-md py-16 text-center"><h2 className="text-xl font-semibold">Connect an account to start</h2><p className="mt-3 text-sm leading-6 text-slate-500">{data.manager ? "Add a GHL token under Clients, then use Account access to enable chat for that account." : "Ask an administrator to grant you chat access to a connected GHL account."}</p>{data.manager && <Link href="/clients" className="mt-5 inline-block text-sm font-semibold text-pink-700 hover:underline">Go to Clients</Link>}</div> : conversation?.runs.length ? <div className="mx-auto max-w-3xl space-y-8">{conversation.runs.map((run) => <RunResult key={run.id} run={run} account={account} onUpdate={updateRun} />)}</div> : <div className="mx-auto max-w-2xl py-7 sm:py-12"><p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Your account, in conversation</p><h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">What would you like to know?</h2><p className="mt-3 max-w-lg text-sm leading-6 text-slate-500">Query GHL, investigate implementation issues, or prepare a change. Answers include evidence and data limits. Export results to CSV or PDF.</p><div className="mt-7 grid gap-3 sm:grid-cols-2">{STARTERS.map((starter) => <button key={starter.title} disabled={!account || submitting} onClick={() => { setDraft(starter.prompt); composer.current?.focus(); }} className="rounded-xl border border-slate-200 p-4 text-left transition-colors hover:border-pink-200 hover:bg-pink-50/30 disabled:opacity-50"><p className="text-sm font-semibold">{starter.title}</p><p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">{starter.prompt}</p></button>)}</div></div>}
+        <div ref={transcript} className="max-h-[calc(100dvh-360px)] min-h-[340px] flex-1 overflow-y-auto px-5 py-7 sm:px-8">
+          {loading || opening ? <div role="status" className="flex h-64 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 motion-safe:animate-spin" />{opening ? "Opening conversation…" : "Loading accounts…"}</div> : !data.accounts.length ? <div className="mx-auto max-w-md py-16 text-center"><h2 className="text-xl font-semibold">Connect an account to start</h2><p className="mt-3 text-sm leading-6 text-slate-500">{data.manager ? "Add a GHL token under Clients, then use Account access to enable chat for that account." : "Ask an administrator to grant you chat access to a connected GHL account."}</p>{data.manager && <Link href="/clients" className="mt-5 inline-block text-sm font-semibold text-pink-700 hover:underline">Go to Clients</Link>}</div> : conversation?.runs.length ? <div className="mx-auto max-w-3xl space-y-8">{conversation.has_more && <div className="text-center"><Button size="sm" variant="outline" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? "Loading earlier messages…" : "Load earlier messages"}</Button>{historyError && <p role="alert" className="mt-2 text-xs text-red-700">{historyError}</p>}</div>}{conversation.runs.map((run) => <RunResult key={run.id} run={run} account={account} onUpdate={updateRun} />)}</div> : <div className="mx-auto max-w-2xl py-7 sm:py-12"><p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Your account, in conversation</p><h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">What would you like to know?</h2><p className="mt-3 max-w-lg text-sm leading-6 text-slate-500">Query GHL, investigate implementation issues, or prepare a change. Answers include evidence and data limits. Export results to CSV or PDF.</p><div className="mt-7 grid gap-3 sm:grid-cols-2">{STARTERS.map((starter) => <button key={starter.title} disabled={!account || submitting} onClick={() => { setDraft(starter.prompt); composer.current?.focus(); }} className="rounded-xl border border-slate-200 p-4 text-left transition-colors hover:border-pink-200 hover:bg-pink-50/30 disabled:opacity-50"><p className="text-sm font-semibold">{starter.title}</p><p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">{starter.prompt}</p></button>)}</div></div>}
           {pollError && <div role="alert" className="mx-auto mt-4 max-w-3xl rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><p>{pollError}</p>{activeRun && <Button size="sm" variant="outline" className="mt-2" onClick={() => { setPollError(""); setPollRetry((value) => value + 1); }}>Retry status check</Button>}</div>}
           <div ref={bottom} />
         </div>

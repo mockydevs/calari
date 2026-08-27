@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ResponseText } from "@/app/chat/response-text";
 import { downloadChatExport } from "@/app/chat/exports";
-import { hasOutstandingRun, type ChatRun } from "@/app/chat/types";
+import { hasOutstandingRun, prependHistory, type ChatDetail, type ChatRun } from "@/app/chat/types";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -24,6 +24,23 @@ describe("GHL chat response rendering", () => {
     expect(hasOutstandingRun(runs("executing"))).toBe(true);
     expect(hasOutstandingRun(runs("done"))).toBe(false);
     expect(hasOutstandingRun(runs("rejected"))).toBe(false);
+  });
+
+  it("prepends older history without duplicates or overwriting a freshly polled run", () => {
+    const current = { id: "conversation", account_id: 1, page: 1, run_count: 30, runs: [
+      { id: "overlap", status: "done" }, { id: "newest", status: "running" },
+    ] } as ChatDetail;
+    const older = { ...current, page: 2, has_more: false, run_count: 29, runs: [
+      { id: "earliest", status: "done" }, { id: "overlap", status: "running" },
+    ] } as ChatDetail;
+    const result = prependHistory(current, older);
+    expect(result.runs.map((run) => run.id)).toEqual(["earliest", "overlap", "newest"]);
+    expect(result.runs[1].status).toBe("done");
+    expect(result.page).toBe(2);
+    expect(result.has_more).toBe(false);
+    expect(result.run_count).toBe(30);
+    expect(prependHistory(current, { ...older, account_id: 2 })).toBe(current);
+    expect(prependHistory(current, { ...older, id: "other" })).toBe(current);
   });
 });
 

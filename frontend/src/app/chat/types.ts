@@ -34,7 +34,15 @@ export type ChatRun = {
   csv_url?: string | null;
   pdf_url?: string | null;
 };
-export type ChatDetail = ChatConversation & { runs: ChatRun[] };
+export type ChatDetail = ChatConversation & { runs: ChatRun[]; page?: number; has_more?: boolean; run_count?: number };
+
+export function prependHistory(current: ChatDetail, older: ChatDetail): ChatDetail {
+  if (current.id !== older.id || current.account_id !== older.account_id) return current;
+  const loaded = new Set(current.runs.map((run) => run.id));
+  return { ...current, page: older.page, has_more: older.has_more,
+    run_count: Math.max(current.run_count ?? current.runs.length, older.run_count ?? older.runs.length),
+    runs: [...older.runs.filter((run) => !loaded.has(run.id)), ...current.runs] };
+}
 
 export function isWorking(status: ChatRun["status"]): boolean {
   return ["queued", "running", "execute_queued", "executing"].includes(status);
