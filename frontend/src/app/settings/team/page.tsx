@@ -3,13 +3,14 @@ import { requireFeature, FEATURE_KEYS, FEATURE_LABELS } from "@/lib/auth-helpers
 import { serverApi } from "@/lib/portal/server";
 import { approveUser, cancelInvite, deactivateUser, resendInvite, setUserFeatures } from "./actions";
 import { InviteForm } from "./invite-form";
+import { DeleteMemberButton } from "./delete-member-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-type DUser = { id: number; username: string; email: string; full_name: string; role: string; is_active: boolean; date_joined: string; feature_permissions?: string[] };
+type DUser = { id: number; username: string; email: string; full_name: string; role: string; is_superuser: boolean; is_active: boolean; date_joined: string; feature_permissions?: string[] };
 type DInvite = { id: number; name: string; email: string; role: string; expires_at: string };
 
 const ROLE_STYLES: Record<string, string> = {
@@ -32,6 +33,8 @@ export default async function TeamPage() {
   const pendingUsers = users.filter((u) => !u.is_active);
   // Only true admins/superusers may grant features.
   const isTrueAdmin = admin.role === "ADMIN";
+  const currentUser = users.find((u) => String(u.id) === admin.id);
+  const isSuperuser = currentUser?.is_superuser || currentUser?.role === "superuser";
 
   return (
     <div className="space-y-5">
@@ -120,13 +123,19 @@ export default async function TeamPage() {
                           </td>
                         )}
                         <td className="px-5 py-3.5">
-                          {u.is_active && String(u.id) !== admin.id ? (
-                            <form action={deactivateUser}><input type="hidden" name="id" value={u.id} /><Button size="sm" variant="outline">Deactivate</Button></form>
-                          ) : !u.is_active ? (
-                            <form action={approveUser}><input type="hidden" name="id" value={u.id} /><Button size="sm">Activate</Button></form>
-                          ) : (
-                            <span className="text-xs text-slate-400">You</span>
-                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {u.is_active && String(u.id) !== admin.id ? (
+                              <form action={deactivateUser}><input type="hidden" name="id" value={u.id} /><Button size="sm" variant="outline">Deactivate</Button></form>
+                            ) : !u.is_active ? (
+                              <form action={approveUser}><input type="hidden" name="id" value={u.id} /><Button size="sm">Activate</Button></form>
+                            ) : (
+                              <span className="text-xs text-slate-400">You</span>
+                            )}
+                            {isTrueAdmin && String(u.id) !== admin.id &&
+                              (isSuperuser || (!u.is_superuser && u.role !== "superuser")) && (
+                                <DeleteMemberButton id={u.id} name={u.full_name || u.username} />
+                              )}
+                          </div>
                         </td>
                       </tr>
                     ))}

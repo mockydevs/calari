@@ -4,6 +4,7 @@ import string
 from django.conf import settings
 from django.contrib.auth import get_user_model, authenticate
 from django.core.cache import cache
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.core.mail import send_mail
@@ -348,7 +349,7 @@ def register_user(request):
 @extend_schema(
     tags=['Auth — User Management'],
     summary='List all users',
-    description='Returns all portal users ordered by most recent join date. Requires admin or superuser role.',
+    description='Returns non-deleted portal users ordered by most recent join date. Requires team management access.',
     responses={200: UserSerializer(many=True)},
 )
 @api_view(['GET'])
@@ -358,7 +359,7 @@ def list_users(request):
     if not _can_manage_team(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
-    users = User.objects.all().order_by('-date_joined')
+    users = User.objects.filter(deleted_at__isnull=True).order_by('-date_joined')
     return Response(UserSerializer(users, many=True).data)
 
 
@@ -371,13 +372,14 @@ def list_users(request):
 )
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@transaction.atomic
 def update_user(request, user_id):
     """PATCH /api/auth/users/<id>/ — Manager updates user"""
     if not _can_manage_team(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.select_for_update().get(id=user_id, deleted_at__isnull=True)
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -428,6 +430,7 @@ def update_user(request, user_id):
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@transaction.atomic
 def deactivate_user(request, user_id):
     """POST /api/auth/users/<id>/deactivate/ — Manager deactivates user"""
     if not _can_manage_team(request.user):
@@ -437,7 +440,7 @@ def deactivate_user(request, user_id):
         return Response({'error': 'Cannot deactivate your own account'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.select_for_update().get(id=user_id, deleted_at__isnull=True)
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -468,13 +471,14 @@ def deactivate_user(request, user_id):
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@transaction.atomic
 def activate_user(request, user_id):
     """POST /api/auth/users/<id>/activate/ — Manager activates user"""
     if not _can_manage_team(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.select_for_update().get(id=user_id, deleted_at__isnull=True)
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -490,13 +494,14 @@ def activate_user(request, user_id):
 @extend_schema(
     tags=['Auth — User Management'],
     summary='Remove user',
-    description='Soft-deletes a user by deactivating their account. Cannot remove yourself or the last superuser.',
-    responses={200: OpenApiResponse(description='User removed (deactivated)'), 400: OpenApiResponse(description='Cannot delete own account or last superuser'), 403: OpenApiResponse(description='Permission denied'), 404: OpenApiResponse(description='User not found')},
+    description='Removes a user from the team and disables sign-in while retaining linked work and history. Cannot remove yourself or the last superuser.',
+    responses={200: OpenApiResponse(description='User removed from team'), 400: OpenApiResponse(description='Cannot delete own account or last superuser'), 403: OpenApiResponse(description='Permission denied'), 404: OpenApiResponse(description='User not found')},
 )
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@transaction.atomic
 def delete_user(request, user_id):
-    """DELETE /api/auth/users/<id>/ — Manager deletes user"""
+    """DELETE /api/auth/users/<id>/delete/ — Manager removes a team member."""
     if not _is_manager(request.user):
         return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -504,7 +509,7 @@ def delete_user(request, user_id):
         return Response({'error': 'Cannot delete your own account'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.select_for_update().get(id=user_id, deleted_at__isnull=True)
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -521,10 +526,12 @@ def delete_user(request, user_id):
         if superuser_count <= 1:
             return Response({'error': 'Cannot delete the last superuser'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Soft delete: deactivate instead of hard delete
+    # Hard deletion cascades to builds and other history. Keep the identity for
+    # attribution, but distinguish removal from reversible deactivation.
     user.is_active = False
-    user.save(update_fields=['is_active'])
-    return Response({'success': True, 'message': 'User deleted (deactivated)'})
+    user.deleted_at = timezone.now()
+    user.save(update_fields=['is_active', 'deleted_at'])
+    return Response({'success': True, 'message': 'User removed from team'})
 
 
 # ─── Forgot / Reset Password (self-service API) ───

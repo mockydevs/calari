@@ -40,6 +40,14 @@ export async function cancelInvite(formData: FormData) {
   revalidatePath("/settings/team");
 }
 
+export async function deleteUser(id: number) {
+  const admin = await requireAdmin();
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error("A valid user id is required");
+  if (String(id) === admin.id) throw new Error("You cannot delete yourself");
+  await serverApi.del(`auth/users/${id}/delete`);
+  revalidatePath("/settings/team");
+}
+
 export async function setUserFeatures(formData: FormData) {
   // Only true admins may grant features (a 'team'-granted member must not escalate).
   await requireAdmin();

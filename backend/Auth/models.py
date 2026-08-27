@@ -16,6 +16,8 @@ class DashboardUser(AbstractUser):
     full_name = models.CharField(max_length=255, blank=True)
     job_title = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
+    # Retain ownership/history without showing removed accounts in the team.
+    deleted_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
     profile_notes = models.TextField(blank=True)
     # Per-member feature grants. Admins/superusers implicitly have every feature;
