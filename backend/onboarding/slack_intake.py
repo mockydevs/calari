@@ -232,7 +232,8 @@ def route(event, analysis):
     prepared = []
     for item in items:
         link = SlackWorkItem.objects.filter(event=event, category=item["category"]).first() or SlackWorkItem.objects.filter(category=item["category"], event__channel=event.channel, event__thread_ts=event.thread_ts, task__build__isnull=True).exclude(task__status="DONE").order_by("-id").first()
-        task = Task.objects.select_for_update().select_related("assignee").get(pk=link.task_id) if link else None
+        # PostgreSQL cannot lock the nullable assignee side of this outer join.
+        task = Task.objects.select_for_update(of=("self",)).select_related("assignee").get(pk=link.task_id) if link else None
         owner = owners[item["category"]]
         if fallback and task and task.assignee_id != owner.pk:
             # Triage must reach every configured channel person even when an
