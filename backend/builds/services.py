@@ -304,7 +304,7 @@ def _chat(messages, *, model: str | None = None, response_format=None, max_token
 
     def error_text(exc):
         # Slack source messages must not leak through provider error bodies.
-        return type(exc).__name__ if op in ("slack_intake", "ghl_task_review", "client_investigation", "client_reply_draft") else str(exc)
+        return type(exc).__name__ if op in ("slack_intake", "ghl_task_review", "client_investigation", "client_reply_draft", "ghl_chat") else str(exc)
 
     t0 = time.monotonic()
     try:
@@ -312,7 +312,7 @@ def _chat(messages, *, model: str | None = None, response_format=None, max_token
         _record_ai_log(op, provider, target, usage, int((time.monotonic() - t0) * 1000), True)
         return content
     except Exception as exc:  # noqa: BLE001 — APIError/missing key/model-not-found/etc.
-        if op in ("client_investigation", "client_reply_draft"):
+        if op in ("client_investigation", "client_reply_draft", "ghl_chat"):
             # These jobs have an end-to-end time budget. Do not silently retry
             # through another provider or send the client's context elsewhere.
             _record_ai_log(op, provider, target, {}, int((time.monotonic() - t0) * 1000), False, error_text(exc))

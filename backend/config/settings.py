@@ -121,6 +121,7 @@ INSTALLED_APPS = [
     'vectorstore',
     'a2p',
     'onboarding',
+    'ghl_chat',
 
 ]
 
@@ -471,6 +472,10 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
+    'drain-ghl-chat': {
+        'task': 'ghl_chat.tasks.drain_chat',
+        'schedule': 5.0,
+    },
     "purge-client-context": {
         "task": "onboarding.tasks.purge_client_context",
         "schedule": 3600.0,

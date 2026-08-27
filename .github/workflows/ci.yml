@@ -57,7 +57,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           # Mirror the Dockerfile: these aren't in the hash-pinned export.
-          pip install --no-cache-dir "openai>=2,<3" "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0" "sentry-sdk>=2,<3" "pypdf>=5,<6"
+          pip install --no-cache-dir "openai>=2,<3" "anthropic>=0.40,<1.0" "pgvector>=0.3,<1.0" "sentry-sdk>=2,<3" "pypdf>=5,<6" "reportlab>=4.4,<5"
       - name: Django system check
         run: python manage.py check
       - name: Migration drift check
@@ -65,7 +65,7 @@ jobs:
       - name: Migrate
         run: python manage.py migrate --noinput
       - name: Unit tests
-        run: python manage.py test Auth builds onboarding projects a2p -v1
+        run: python manage.py test Auth builds onboarding projects a2p ghl_chat -v1
       - name: Login smoke test (boot + real auth)
         run: |
           python manage.py shell -c "import os; from django.contrib.auth import get_user_model as G; U=G(); U.objects.filter(email=os.environ['DEMO_ADMIN_EMAIL']).exists() or U.objects.create_superuser(username='ci', email=os.environ['DEMO_ADMIN_EMAIL'], password=os.environ['DEMO_ADMIN_PASSWORD'])"

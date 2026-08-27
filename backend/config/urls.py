@@ -39,6 +39,7 @@ urlpatterns = [
     path('api/builds/', include('builds.urls', namespace='builds')),
     path('api/a2p/', include('a2p.urls', namespace='a2p')),
     path('api/onboarding/', include('onboarding.urls', namespace='onboarding')),
+    path('api/ghl-chat/', include('ghl_chat.urls')),
 
     # API Docs
     path('swagger.json',  SpectacularAPIView.as_view(),                         name='schema'),
