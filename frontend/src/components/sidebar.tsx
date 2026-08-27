@@ -15,6 +15,7 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
     { href: "/dashboard", label: "Dashboard", iconName: "LayoutDashboard", show: true },
     { href: "/tasks", label: "Tasks", iconName: "ListChecks", show: true },
     { href: "/projects", label: "Projects", iconName: "FolderKanban", show: true },
+    { href: "/chat", label: "GHL Chat", iconName: "MessageSquare", show: true },
     { href: "/builds", label: "GHL delivery", iconName: "BriefcaseBusiness", show: true },
     { href: "/library", label: "Build Library", iconName: "BookOpen", show: true },
     { href: "/a2p", label: "A2P intake", iconName: "MessageSquare", show: can("a2p") },
@@ -41,7 +42,7 @@ export function Sidebar({ user }: { user: { id: string; name: string; role: stri
 
       <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 py-5">
         {[
-          { label: "Workspace", paths: ["/dashboard", "/tasks", "/projects"] },
+          { label: "Workspace", paths: ["/dashboard", "/tasks", "/projects", "/chat"] },
           { label: "Client delivery", paths: ["/builds", "/clients", "/library", "/a2p"] },
           { label: "Administration", paths: ["/settings/team", "/settings/ai", "/settings/connections"] },
         ].map(group => {

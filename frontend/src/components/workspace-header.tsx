@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight, CircleHelp } from "lucide-react";
 
-const labels: Record<string, string> = { dashboard: "Overview", tasks: "Tasks", builds: "GHL delivery", projects: "Projects", clients: "Clients", settings: "Settings", library: "Build library", notifications: "Notifications", a2p: "A2P intake" };
+const labels: Record<string, string> = { dashboard: "Overview", chat: "GHL Chat", tasks: "Tasks", builds: "GHL delivery", projects: "Projects", clients: "Clients", settings: "Settings", library: "Build library", notifications: "Notifications", a2p: "A2P intake" };
 export function WorkspaceHeader() {
   const pathname = usePathname();
   const area = pathname.split('/')[1];
