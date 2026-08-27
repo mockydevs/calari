@@ -136,6 +136,14 @@ def bind_params(operation, params, location):
             raise ChatError('Undocumented path or query parameters were blocked.')
     # Body metadata may flatten nested fields; validate top-level keys only.
     allowed_body = {field.get('name', '').split('.')[0].split('[')[0] for field in fields}
+    # MCP v2 omits locationId from this specific operation's body catalogue.
+    # The REST search still accepts it; bind it here as a server-owned scope,
+    # never as an arbitrary undocumented parameter supplied by the model.
+    if (operation.get('operationId') == 'search-contacts-advanced'
+            and operation.get('method') == 'POST'
+            and operation.get('path') in ('/contacts/search', '/contacts/search/')):
+        params.setdefault('body', {})['locationId'] = location
+        allowed_body.add('locationId')
     if set(params.get('body', {})) - allowed_body:
         raise ChatError('Undocumented request body fields were blocked.')
     return params

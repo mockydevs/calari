@@ -48,6 +48,8 @@ describe("Django proxy", () => {
     expect(response.bodyUsed).toBe(false);
     expect(result.headers.get("content-disposition")).toContain("test.pdf");
     expect(result.headers.get("content-type")).toBe("application/pdf");
+    expect(result.headers.get("cache-control")).toBe("private, no-store");
+    expect(result.headers.get("x-content-type-options")).toBe("nosniff");
     expect(await result.text()).toBe("download contents");
   });
 

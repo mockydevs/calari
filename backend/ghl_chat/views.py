@@ -140,7 +140,7 @@ def messages(request, conversation_id):
         raise ValidationError('A UUID request_key is required for safe retries.') from None
     with transaction.atomic():
         conversation = get_object_or_404(own_conversations(request.user).select_for_update(of=('self',)), pk=conversation_id)
-        existing = conversation.runs.filter(request_key=key).first()
+        existing = conversation.runs.defer('rows', 'csv_data', 'pdf').filter(request_key=key).first()
         if existing:
             if existing.question != question.strip():
                 raise ValidationError('This request_key belongs to a different question.')

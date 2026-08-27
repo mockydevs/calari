@@ -9,6 +9,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
@@ -44,6 +46,20 @@ def step(action, **kwargs):
 
 
 class BoundaryTests(SimpleTestCase):
+    @override_settings(SETTINGS_MODULE='config.settings_local')
+    def test_local_worker_once_drains_without_sleeping(self):
+        with patch('ghl_chat.management.commands.run_ghl_chat.drain_chat') as drain, patch('ghl_chat.management.commands.run_ghl_chat.time.sleep') as sleep:
+            call_command('run_ghl_chat', once=True)
+        drain.assert_called_once_with()
+        sleep.assert_not_called()
+
+    @override_settings(SETTINGS_MODULE='config.settings')
+    def test_local_worker_refuses_production_settings(self):
+        with patch('ghl_chat.management.commands.run_ghl_chat.drain_chat') as drain:
+            with self.assertRaises(CommandError):
+                call_command('run_ghl_chat', once=True)
+        drain.assert_not_called()
+
     def test_success_envelopes_and_negative_results(self):
         payload = {'success': True, 'status': 200, 'operationId': 'op', 'data': {'contacts': [], 'total': 0}}
         for envelope in ({'structuredContent': payload}, {'content': [{'type': 'text', 'text': json.dumps(payload)}]}):
@@ -107,6 +123,17 @@ class BoundaryTests(SimpleTestCase):
         for op in ({**operation(), 'requestBodyFields': None}, {**operation(), 'path': 'https://attacker.example'}):
             with self.assertRaises(ChatError):
                 bind_params(op, {}, 'loc')
+
+    def test_contact_catalogue_omits_server_owned_location_body_field(self):
+        op = operation()
+        op['requestBodyFields'] = [field for field in op['requestBodyFields'] if field['name'] != 'locationId']
+        self.assertEqual(bind_params(op, {'body': {'pageLimit': 100}}, 'loc')['body'],
+                         {'pageLimit': 100, 'locationId': 'loc'})
+        with self.assertRaises(ChatError):
+            bind_params(op, {'body': {'locationId': 'other'}}, 'loc')
+        for altered in ({**op, 'operationId': 'another'}, {**op, 'path': '/other'}, {**op, 'method': 'PUT'}):
+            with self.assertRaises(ChatError):
+                bind_params(altered, {'body': {'locationId': 'loc'}}, 'loc')
 
     def test_sensitive_keys_and_echoed_credentials_are_redacted(self):
         result = redact({'access_token': 'secret', 'children': [{'note': 'echo pit-private', 'password': 'pwd'}],

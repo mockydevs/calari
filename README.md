@@ -3,6 +3,7 @@
 See [Task workspace overhaul](docs/task-workspace.md) for the new task/GHL workflows, local preview setup, verification, and rollout notes.
 See [Code quality and build review](docs/code-quality-review.md) for cleanup, checks, performance safeguards, and remaining production validation.
 See [Fathom meeting imports](docs/fathom-integration.md) for webhook setup, automatic routing, the meeting inbox, and activation requirements.
+See [GHL Chat](docs/ghl-chat.md) for private account conversations, confirmed API actions, CSV/PDF exports, and execution limits.
 
 One repository, two clean halves:
 

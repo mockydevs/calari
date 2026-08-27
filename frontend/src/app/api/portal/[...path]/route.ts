@@ -86,6 +86,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (contentType) out.headers.set("content-type", contentType);
   const disposition = res.headers.get("content-disposition");
   if (disposition) out.headers.set("content-disposition", disposition);
+  // Authenticated responses and private report files must not enter shared caches.
+  out.headers.set("cache-control", "private, no-store");
+  out.headers.set("x-content-type-options", "nosniff");
   return out;
 }
 

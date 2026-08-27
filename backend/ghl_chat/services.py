@@ -117,7 +117,7 @@ def ask(run):
                             'current_date': account_now.date().isoformat(), 'account_now': account_now.isoformat()}
     run.save(update_fields=['account_snapshot'])
     history = [{'question': r.question, 'answer': r.answer[:3000], 'status': r.status}
-               for r in reversed(list(run.conversation.runs.exclude(pk=run.pk).order_by('-created_at')[:8]))]
+               for r in reversed(list(run.conversation.runs.exclude(pk=run.pk).only('question', 'answer', 'status').order_by('-created_at')[:8]))]
     discovered, described, results = {}, {}, []
     deadline = time.monotonic() + 150
 
