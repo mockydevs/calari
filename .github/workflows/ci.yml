@@ -79,7 +79,7 @@ jobs:
             -d '{"username_or_email":"ci@example.com","password":"cipass123"}')
           echo "login status: $code"
           test "$code" = "200" || { echo "::error::Login smoke failed (expected 200, got $code)"; exit 1; }
-          grep -q '"ok": *true' /tmp/login.json || { echo "::error::Login response missing ok:true"; exit 1; }
+          python -c "import json; data=json.load(open('/tmp/login.json')); assert data.get('success') is True and data.get('user', {}).get('email') == 'ci@example.com', 'Login response missing authenticated CI user'"
 
   frontend:
     runs-on: ubuntu-latest
